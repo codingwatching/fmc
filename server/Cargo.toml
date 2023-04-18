@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 #bevy = { version = "0.10.1", features = [], default-features = false }
-bevy = { git = "https://github.com/bevyengine/bevy", features = []}
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "315f3ca", features = []}
 fmc_networking = { path = "../fmc_networking" }
 
 # Produces values that are slightly less than 1.0 for simplex noise.

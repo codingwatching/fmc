@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { git = "https://github.com/bevyengine/bevy", features = ["dynamic_linking"]}
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "315f3ca", features = ["dynamic_linking"]}
 fmc_networking = { path = "../fmc_networking" }
 
 futures-lite = "1.12.0"
