@@ -74,7 +74,7 @@ fn equip_item(
     changed_interface_query: Query<(&Interface, &SelectedItemBox), Changed<SelectedItemBox>>,
     item_box_query: Query<&ItemBox>,
     equipped_entity_query: Query<Entity, With<EquippedItem>>,
-    changed_equipped_item_query: Query<&ItemStack, Or<(Changed<ItemStack>, Added<EquippedItem>)>>,
+    changed_equipped_item_query: Query<&ItemStack, (Or<(Changed<ItemStack>, Added<EquippedItem>)>, With<EquippedItem>)>,
     mut animation_query: Query<(&mut AnimationPlayer, &mut Handle<Scene>), With<HandAnimationMarker>>,
 ) {
     // equip and unequip when the equipment interface is hidden/shown or the selected box changes
@@ -105,11 +105,13 @@ fn equip_item(
             let item = items.get(&item_id);
             let model = models.get(&item.model_id).unwrap();
 
+            if &model.handle == scene.as_ref() {
+                continue;
+            }
+
             *scene = model.handle.clone();
             animation_player.start(item.equip_animation.clone());
-            if animation_player.elapsed() >= ANIMATION_LEN {
-                animation_player.set_elapsed(ANIMATION_LEN - f32::EPSILON);
-            }
+            animation_player.set_elapsed(ANIMATION_LEN / 2.0);
         } else {
             *scene = Handle::default();
         }
