@@ -1,0 +1,11 @@
+{
+    "name": "Crafting table",
+    "image": "crafting_table.png",
+    "block": "crafting_table",
+    "equip_model": {
+        "name": "crafting_table",
+        "position": [-0.075, 0.04, 0.2],
+        "scale": 0.025
+    },
+    "stack_size": 64
+}

@@ -1,0 +1,12 @@
+{
+    "type": "model",
+    "name": "torch",
+    "center_model": {
+        "name": "torch"
+    },
+    "friction": {
+        "drag": [0.0, 0.0, 0.0]
+    },
+    "cull": false,
+    "drop": "torch"
+}

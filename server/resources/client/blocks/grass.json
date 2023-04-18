@@ -1,0 +1,13 @@
+{
+    "parent": "default_block.json",
+    "name": "grass",
+    "faces": {
+        "top": "grass_top.png",
+        "bottom": "dirt.png",
+        "left": "grass_side.png",
+        "right": "grass_side.png",
+        "front": "grass_side.png",
+        "back": "grass_side.png"
+    },
+    "drop": "dirt"
+}

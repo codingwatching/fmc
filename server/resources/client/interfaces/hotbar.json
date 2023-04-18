@@ -1,0 +1,16 @@
+{
+    "name": "hotbar",
+    "mouse": false,
+    "keyboard": false,
+    "equipment": true,
+    "position": {
+        "bottom": 0.0
+    },
+    "image": "hotbar.png",
+    "item_box_sections": [
+        {
+            "position": [3, 3],
+            "size": [176.0, 16.0]
+        }
+    ]
+}

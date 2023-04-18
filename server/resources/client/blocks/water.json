@@ -1,0 +1,73 @@
+{
+    "type": "cube",
+    "name": "water",
+    "material": "water",
+    "friction": {
+        "drag": [0.9, 0.9, 0.9] 
+    },
+    "cull": false,
+    "cull_only_if_same_block": true,
+    "interactable": false,
+    "quads": [
+        {
+            "vertices": [
+                [0.0, 0.9, 0.0],
+                [0.0, 0.9, 1.0],
+                [1.0, 0.9, 0.0],
+                [1.0, 0.9, 1.0]
+            ],
+            "texture": "still_water.png",
+            "cull_face": "bottom"
+        },
+        {
+            "vertices": [
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0]
+            ],
+            "texture": "still_water.png",
+            "cull_face": "top"
+        },
+        {
+            "vertices": [
+                [1.0, 0.0, 0.0],
+                [1.0, 0.9, 0.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 0.9, 1.0]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "left"
+        },
+        {
+            "vertices": [
+                [0.0, 0.0, 1.0],
+                [0.0, 0.9, 1.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.9, 0.0]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "right"
+        },
+        {
+            "vertices": [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.9, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.9, 0.0]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "back"
+        },
+        {
+            "vertices": [
+                [1.0, 0.0, 1.0],
+                [1.0, 0.9, 1.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.9, 1.0]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "front"
+        }
+    ]
+}

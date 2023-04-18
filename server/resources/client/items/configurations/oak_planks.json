@@ -1,0 +1,11 @@
+{
+    "name": "Oak planks",
+    "image": "oak_planks.png",
+    "block": "oak_planks",
+    "equip_model": {
+        "name": "oak_planks",
+        "position": [-0.075, 0.04, 0.2],
+        "scale": 0.025
+    },
+    "stack_size": 64
+}

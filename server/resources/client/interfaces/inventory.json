@@ -1,0 +1,52 @@
+{
+    "name": "inventory",
+    "exclusive": true,
+    "image": "inventory.png",
+    "item_box_sections": [
+        {
+            "name": "hotbar",
+            "position": [8, 106],
+            "size": [160, 16]
+        },
+        {
+            "name": "inventory",
+            "position": [8, 48],
+            "size": [124, 52]
+        },
+        {
+            "name": "helmet",
+            "position": [8, 17],
+            "size": [16, 16],
+            "allowed_item_types": ["helmet"]
+        },
+        {
+            "name": "chestplate",
+            "position": [26, 17],
+            "size": [16, 16],
+            "allowed_item_types": ["chestplate"]
+        },
+        {
+            "name": "leggings",
+            "position": [44, 17],
+            "size": [16, 16],
+            "allowed_item_types": ["leggings"]
+        },
+        {
+            "name": "boots",
+            "position": [62, 17],
+            "size": [16, 16],
+            "allowed_item_types": ["boots"]
+        },
+        {
+            "name": "crafting_input",
+            "position": [98, 8],
+            "size": [34, 34]
+        },
+        {
+            "name": "crafting_output",
+            "position": [152, 18],
+            "size": [16, 16],
+            "allowed_item_types": []
+        }
+    ]
+}

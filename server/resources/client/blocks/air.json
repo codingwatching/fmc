@@ -1,0 +1,9 @@
+{
+    "type": "cube",
+    "name": "air",
+    "material": "water",
+    "friction": {
+        "drag": [0.85, 0.02, 0.85]
+    },
+    "cull": false
+}

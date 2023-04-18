@@ -1,0 +1,13 @@
+{
+    "type": "block",
+    "base_color": {
+        "Rgba": {
+            "red": 0,
+            "green": 0,
+            "blue": 1,
+            "alpha": 1
+        }
+    },
+    "transparency": "blend",
+    "animation_frames": 32
+}
