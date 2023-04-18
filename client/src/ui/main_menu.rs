@@ -55,7 +55,7 @@ fn setup(
                             width: Val::Percent(30.0),
                             height: Val::Percent(5.0),
                         },
-                        overflow: Overflow::Hidden,
+                        overflow: Overflow::clip(), 
                         ..default()
                     },
                     ..default()
