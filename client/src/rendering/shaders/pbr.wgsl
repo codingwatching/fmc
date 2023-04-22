@@ -20,6 +20,8 @@ const STANDARD_MATERIAL_FLAGS_UNLIT_BIT: u32                      = 32u;
 const STANDARD_MATERIAL_FLAGS_TWO_COMPONENT_NORMAL_MAP: u32       = 64u;
 const STANDARD_MATERIAL_FLAGS_FLIP_NORMAL_MAP_Y: u32              = 128u;
 const STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT: u32                = 256u;
+const STANDARD_MATERIAL_FLAGS_DEPTH_MAP_BIT: u32                  = 512u;
+const STANDARD_MATERIAL_FLAGS_IS_WATER: u32                       = 1024u;
 const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS: u32       = 3758096384u; // (0b111u32 << 29)
 const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE: u32              = 0u;          // (0u32 << 29)
 const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_MASK: u32                = 536870912u;  // (1u32 << 29)
@@ -55,6 +57,7 @@ fn standard_material_new() -> StandardMaterial {
 #import bevy_pbr::pbr_functions
 
 #import bevy_pbr::prepass_utils
+
 @group(1) @binding(0)
 var<uniform> material: StandardMaterial;
 @group(1) @binding(1)
@@ -85,6 +88,7 @@ var texture_array_sampler: sampler;
 struct FragmentInput {
     @builtin(front_facing) is_front: bool,
     @builtin(position) frag_coord: vec4<f32>,
+    @builtin(sample_index) sample_index: u32,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
@@ -99,9 +103,19 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     var output_color: vec4<f32> = material.base_color;
 
     // For some reason this refuses to take a u32 as the index
-    let texture_index: i32 = in.texture_index + i32(globals.time) % i32(material.animation_frames);
-    output_color = output_color * textureSample(texture_array, texture_array_sampler, in.uv, texture_index);
+    if ((material.flags & STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) == 0u) {
+        let texture_index: i32 = in.texture_index + i32(globals.time) % i32(material.animation_frames);
+        output_color = output_color * textureSample(texture_array, texture_array_sampler, in.uv, texture_index);
+    }
 
+    if ((material.flags & STANDARD_MATERIAL_FLAGS_IS_WATER) != 0u) {
+        let z_depth_ndc = prepass_depth(in.frag_coord, in.sample_index);
+        let z_depth_buffer_view = view.projection[3][2] / z_depth_ndc;
+        let z_fragment_view = view.projection[3][2] / in.frag_coord.z;
+        let diff = z_fragment_view - z_depth_buffer_view;
+        let alpha = exp(-diff * 0.08 - 1.0);
+        output_color.a = alpha;
+    }
 #ifdef VERTEX_COLORS
     output_color = output_color * in.color;
 #endif
@@ -187,7 +201,6 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         output_color = alpha_discard(material, output_color);
     }
 
-    // fog
     if (fog.mode != FOG_MODE_OFF && (material.flags & STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
         output_color = apply_fog(output_color, in.world_position.xyz, view.world_position.xyz);
     }

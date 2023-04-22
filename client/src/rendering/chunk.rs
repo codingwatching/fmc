@@ -2,7 +2,9 @@ use std::{collections::HashMap, ops::Index, sync::Arc};
 
 use bevy::{
     prelude::*,
-    render::{mesh::Indices, render_resource::PrimitiveTopology, view::NoFrustumCulling},
+    render::{
+        mesh::Indices, primitives::Aabb, render_resource::PrimitiveTopology, view::NoFrustumCulling,
+    },
     tasks::{AsyncComputeTaskPool, Task},
 };
 
@@ -11,7 +13,7 @@ use futures_lite::future;
 
 use crate::{
     constants::*,
-    game_state::{self, GameState},
+    game_state::GameState,
     rendering::materials,
     world::{
         blocks::{Block, BlockFace, Blocks, QuadPrimitive},
@@ -150,7 +152,7 @@ fn handle_mesh_tasks(
 struct MeshBuilder {
     pub vertices: Vec<[f32; 3]>,
     //pub triangles: Vec<u32>,
-    pub normals: Vec<[f32; 3]>,
+    //pub normals: Vec<[f32; 3]>,
     //pub uvs: Vec<u32>,
     pub uvs: Vec<[f32; 2]>,
     pub texture_indices: Vec<i32>,
@@ -161,7 +163,7 @@ impl MeshBuilder {
     fn to_mesh(self) -> Mesh {
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.vertices);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        //mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         //mesh.insert_attribute(materials::BLOCK_ATTRIBUTE_UV, self.uvs);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
         mesh.insert_attribute(materials::BLOCK_ATTRIBUTE_UV, self.texture_indices);

@@ -9,6 +9,8 @@ use fmc_networking::{messages, NetworkData};
 
 use crate::{game_state::GameState, player::Player, rendering::materials};
 
+use super::MovesWithOrigin;
+
 pub const SUN_DISTANCE: f32 = 400000.0;
 
 pub struct SkyPlugin;
@@ -46,8 +48,12 @@ fn setup(
         })
         .insert(NotShadowCaster)
         .insert(NotShadowReceiver)
-        //.insert(NotShadowCaster)
         .id();
+
+    //commands.insert_resource(AmbientLight {
+    //        color: Color::WHITE,
+    //        brightness: 0.5,
+    //});
 
     // Overlays a DirectionalLight on top of the sun that is generated in the shader, since that
     // one doesn't actually illuminate anything.
@@ -56,7 +62,7 @@ fn setup(
         .spawn(DirectionalLightBundle {
             directional_light: DirectionalLight {
                 illuminance: 10000.0,
-                shadows_enabled: true,
+                shadows_enabled: false,
                 //shadow_normal_bias: 0.5,
                 ..default()
             },
@@ -64,20 +70,6 @@ fn setup(
         })
         .id();
 
-    commands.spawn(FogSettings {
-        color: Color::rgba(0.1, 0.2, 0.4, 1.0),
-        directional_light_color: Color::rgba(1.0, 0.95, 0.75, 0.5),
-        directional_light_exponent: 30.0,
-        //falloff: FogFalloff::from_visibility_colors(
-        //    1.0, // distance in world units up to which objects retain visibility (>= 5% contrast)
-        //    Color::rgb(0.35, 0.5, 0.66), // atmospheric extinction color (after light is lost due to absorption by atmospheric particles)
-        //    Color::rgb(0.8, 0.844, 1.0), // atmospheric inscattering color (light gained due to scattering from the sun)
-        //),
-        falloff: FogFalloff::Linear {
-            start: 10.0,
-            end: 20.0,
-        },
-    });
     //commands.spawn(DirectionalLightBundle {
     //    directional_light: DirectionalLight {
     //        illuminance: 10000.0,
@@ -97,12 +89,12 @@ fn setup(
 
     commands
         .entity(player_id)
-        .push_children(&[sky_entity, sun_entity]);
+        .push_children(&[sun_entity, sky_entity]);
 }
 
 fn pass_time(
     sky_material_query: Query<&Handle<materials::SkyMaterial>>,
-    mut sun_light_query: Query<(&GlobalTransform, &mut Transform, &mut DirectionalLight)>,
+    mut sun_light_query: Query<(&mut Transform, &mut DirectionalLight)>,
     mut materials: ResMut<Assets<materials::SkyMaterial>>,
     mut server_time_events: EventReader<NetworkData<messages::Time>>,
 ) {
@@ -112,24 +104,19 @@ fn pass_time(
         return;
     };
 
-    let (t, mut light_transform, mut light) = sun_light_query.single_mut();
+    let (mut light_transform, mut light) = sun_light_query.single_mut();
 
     // Sun goes in a circle around the player
-    let position = Vec3::new(angle.cos() * 500., angle.sin() * 500., 0.0);
+    let position = Vec3::new(angle.cos() * 25000., angle.sin() * 25000., 0.0);
 
     if position.y < 0.0 {
         light.illuminance = 0.0;
     } else {
         light.illuminance = 10000.0;
     }
-    //if position.y < 0.0 {
-    //    light.intensity = 0.0;
-    //} else {
-    //    light.intensity = 10000.0;
-    //}
 
     light_transform.translation = position;
-    light_transform.look_at(Vec3::ZERO, Vec3::Z);
+    light_transform.look_at(Vec3::ZERO, Vec3::Y);
 
     let handle = sky_material_query.single();
     let material = materials.get_mut(handle).unwrap();

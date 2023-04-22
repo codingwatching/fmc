@@ -10,7 +10,7 @@ use crate::{
             chunk::{Chunk, ChunkMarker, VisibleSides},
             WorldMap,
         },
-        Origin,
+        MovesWithOrigin, Origin,
     },
 };
 
@@ -19,7 +19,7 @@ use bevy::{
     render::primitives::{Frustum, Sphere},
 };
 use fmc_networking::{messages, NetworkClient, NetworkData};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use super::chunk::VisibleSidesEvent;
 
@@ -90,20 +90,25 @@ fn chunk_unloading(
     // Keep chunks 5 past the render distance to allow for some leeway.
     let max_distance = settings.render_distance as i32 + 5;
 
-    let removed: HashMap<IVec3, Chunk> = world_map.chunks.drain_filter(|chunk_pos, chunk| {
-        if (chunk_pos.x - origin.x).abs() / CHUNK_SIZE as i32 > max_distance
-            || (chunk_pos.y - origin.y).abs() / CHUNK_SIZE as i32 > max_distance
-            || (chunk_pos.z - origin.z).abs() / CHUNK_SIZE as i32 > max_distance
-        {
-            if let Some(entity) = chunk.entity {
-                commands.entity(entity).despawn_recursive();
+    let removed: HashMap<IVec3, Chunk> = world_map
+        .chunks
+        .drain_filter(|chunk_pos, chunk| {
+            if (chunk_pos.x - origin.x).abs() / CHUNK_SIZE as i32 > max_distance
+                || (chunk_pos.y - origin.y).abs() / CHUNK_SIZE as i32 > max_distance
+                || (chunk_pos.z - origin.z).abs() / CHUNK_SIZE as i32 > max_distance
+            {
+                if let Some(entity) = chunk.entity {
+                    commands.entity(entity).despawn_recursive();
+                }
+                true
+            } else {
+                false
             }
-            true
-        } else {
-            false
-        }
-    }).collect();
-    net.send_message(messages::UnsubscribeFromChunks{ chunks: removed.into_keys().collect::<Vec<IVec3>>()});
+        })
+        .collect();
+    net.send_message(messages::UnsubscribeFromChunks {
+        chunks: removed.into_keys().collect::<Vec<IVec3>>(),
+    });
 }
 
 // The frustum chunk loading system needs some help. This loads the 3x3x3 chunks that are closest.
@@ -444,6 +449,7 @@ fn handle_chunk_responses(
                         local: Transform::from_translation((chunk.position - origin.0).as_vec3()),
                         ..default()
                     })
+                    .insert(MovesWithOrigin)
                     .insert(ChunkMarker)
                     .id();
 
@@ -461,7 +467,7 @@ fn handle_chunk_responses(
 }
 
 // TODO: This doesn't feel like it belongs in this file.
-/// Handles block udates sent from the server.
+// Handles block udates sent from the server.
 fn handle_block_updates(
     mut world_map: ResMut<WorldMap>,
     net: Res<NetworkClient>,

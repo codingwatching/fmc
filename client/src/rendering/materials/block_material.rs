@@ -1,8 +1,7 @@
 use bevy::{
     asset::Handle,
     pbr::{
-        AlphaMode, MaterialPipeline, MaterialPipelineKey, StandardMaterialFlags,
-        PBR_PREPASS_SHADER_HANDLE,
+        AlphaMode, MaterialPipeline, MaterialPipelineKey,
     },
     prelude::*,
     reflect::TypeUuid,
@@ -249,6 +248,45 @@ pub struct BlockMaterial {
     // TODO: Need a way to define the length of the animation too.
     /// Cycle through the n next textures in the texture array. Defaults to 1(no animation)
     pub animation_frames: u32,
+
+    // TODO: There's probably some good general way to specify this. You should be able to say how
+    // far into a "liquid" you can see, and a host of other stuff. But I barely understand.
+    // Hardcoded :)
+    pub is_water: bool,
+}
+
+// NOTE: These must match the bit flags in bevy_pbr/src/render/pbr_types.wgsl!
+bitflags::bitflags! {
+    /// Bitflags info about the material a shader is currently rendering.
+    /// This is accessible in the shader in the [`StandardMaterialUniform`]
+    #[repr(transparent)]
+    pub struct BlockMaterialFlags: u32 {
+        const BASE_COLOR_TEXTURE         = (1 << 0);
+        const EMISSIVE_TEXTURE           = (1 << 1);
+        const METALLIC_ROUGHNESS_TEXTURE = (1 << 2);
+        const OCCLUSION_TEXTURE          = (1 << 3);
+        const DOUBLE_SIDED               = (1 << 4);
+        const UNLIT                      = (1 << 5);
+        const TWO_COMPONENT_NORMAL_MAP   = (1 << 6);
+        const FLIP_NORMAL_MAP_Y          = (1 << 7);
+        const FOG_ENABLED                = (1 << 8);
+        const DEPTH_MAP                  = (1 << 9); // Used for parallax mapping
+        const IS_WATER                   = (1 << 10);
+        const ALPHA_MODE_RESERVED_BITS   = (Self::ALPHA_MODE_MASK_BITS << Self::ALPHA_MODE_SHIFT_BITS); // ← Bitmask reserving bits for the `AlphaMode`
+        const ALPHA_MODE_OPAQUE          = (0 << Self::ALPHA_MODE_SHIFT_BITS);                          // ← Values are just sequential values bitshifted into
+        const ALPHA_MODE_MASK            = (1 << Self::ALPHA_MODE_SHIFT_BITS);                          //   the bitmask, and can range from 0 to 7.
+        const ALPHA_MODE_BLEND           = (2 << Self::ALPHA_MODE_SHIFT_BITS);                          //
+        const ALPHA_MODE_PREMULTIPLIED   = (3 << Self::ALPHA_MODE_SHIFT_BITS);                          //
+        const ALPHA_MODE_ADD             = (4 << Self::ALPHA_MODE_SHIFT_BITS);                          //   Right now only values 0–5 are used, which still gives
+        const ALPHA_MODE_MULTIPLY        = (5 << Self::ALPHA_MODE_SHIFT_BITS);                          // ← us "room" for two more modes without adding more bits
+        const NONE                       = 0;
+        const UNINITIALIZED              = 0xFFFF;
+    }
+}
+
+impl BlockMaterialFlags {
+    const ALPHA_MODE_MASK_BITS: u32 = 0b111;
+    const ALPHA_MODE_SHIFT_BITS: u32 = 32 - Self::ALPHA_MODE_MASK_BITS.count_ones();
 }
 
 #[derive(Clone, Default, ShaderType)]
@@ -328,17 +366,16 @@ impl Material for BlockMaterial {
         return Ok(());
     }
 
-    fn vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/mesh.wgsl".into()
-    }
-
     fn prepass_vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/mesh.wgsl".into()
+        "src/rendering/shaders/mesh_prepass.wgsl".into()
     }
 
     fn prepass_fragment_shader() -> ShaderRef {
-        PBR_PREPASS_SHADER_HANDLE.typed().into()
-        //"src/rendering/shaders/pbr.wgsl".into()
+        "src/rendering/shaders/pbr_prepass.wgsl".into()
+    }
+
+    fn vertex_shader() -> ShaderRef {
+        "src/rendering/shaders/mesh.wgsl".into()
     }
 
     fn fragment_shader() -> ShaderRef {
@@ -358,27 +395,30 @@ impl Material for BlockMaterial {
 
 impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
     fn as_bind_group_shader_type(&self, images: &RenderAssets<Image>) -> BlockMaterialUniform {
-        let mut flags = StandardMaterialFlags::NONE;
+        let mut flags = BlockMaterialFlags::NONE;
         if self.base_color_texture.is_some() {
-            flags |= StandardMaterialFlags::BASE_COLOR_TEXTURE;
+            flags |= BlockMaterialFlags::BASE_COLOR_TEXTURE;
         }
         if self.emissive_texture.is_some() {
-            flags |= StandardMaterialFlags::EMISSIVE_TEXTURE;
+            flags |= BlockMaterialFlags::EMISSIVE_TEXTURE;
         }
         if self.metallic_roughness_texture.is_some() {
-            flags |= StandardMaterialFlags::METALLIC_ROUGHNESS_TEXTURE;
+            flags |= BlockMaterialFlags::METALLIC_ROUGHNESS_TEXTURE;
         }
         if self.occlusion_texture.is_some() {
-            flags |= StandardMaterialFlags::OCCLUSION_TEXTURE;
+            flags |= BlockMaterialFlags::OCCLUSION_TEXTURE;
         }
         if self.double_sided {
-            flags |= StandardMaterialFlags::DOUBLE_SIDED;
+            flags |= BlockMaterialFlags::DOUBLE_SIDED;
         }
         if self.unlit {
-            flags |= StandardMaterialFlags::UNLIT;
+            flags |= BlockMaterialFlags::UNLIT;
         }
         if self.fog_enabled {
-            flags |= StandardMaterialFlags::FOG_ENABLED;
+            flags |= BlockMaterialFlags::FOG_ENABLED;
+        }
+        if self.is_water {
+            flags |= BlockMaterialFlags::IS_WATER;
         }
         let has_normal_map = self.normal_map_texture.is_some();
         if has_normal_map {
@@ -389,27 +429,27 @@ impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
                     | TextureFormat::Rg16Unorm
                     | TextureFormat::Bc5RgUnorm
                     | TextureFormat::EacRg11Unorm => {
-                        flags |= StandardMaterialFlags::TWO_COMPONENT_NORMAL_MAP;
+                        flags |= BlockMaterialFlags::TWO_COMPONENT_NORMAL_MAP;
                     }
                     _ => {}
                 }
             }
             if self.flip_normal_map_y {
-                flags |= StandardMaterialFlags::FLIP_NORMAL_MAP_Y;
+                flags |= BlockMaterialFlags::FLIP_NORMAL_MAP_Y;
             }
         }
         // NOTE: 0.5 is from the glTF default - do we want this?
         let mut alpha_cutoff = 0.5;
         match self.alpha_mode {
-            AlphaMode::Opaque => flags |= StandardMaterialFlags::ALPHA_MODE_OPAQUE,
+            AlphaMode::Opaque => flags |= BlockMaterialFlags::ALPHA_MODE_OPAQUE,
             AlphaMode::Mask(c) => {
                 alpha_cutoff = c;
-                flags |= StandardMaterialFlags::ALPHA_MODE_MASK;
+                flags |= BlockMaterialFlags::ALPHA_MODE_MASK;
             }
-            AlphaMode::Blend => flags |= StandardMaterialFlags::ALPHA_MODE_BLEND,
-            AlphaMode::Premultiplied => flags |= StandardMaterialFlags::ALPHA_MODE_PREMULTIPLIED,
-            AlphaMode::Add => flags |= StandardMaterialFlags::ALPHA_MODE_ADD,
-            AlphaMode::Multiply => flags |= StandardMaterialFlags::ALPHA_MODE_MULTIPLY,
+            AlphaMode::Blend => flags |= BlockMaterialFlags::ALPHA_MODE_BLEND,
+            AlphaMode::Premultiplied => flags |= BlockMaterialFlags::ALPHA_MODE_PREMULTIPLIED,
+            AlphaMode::Add => flags |= BlockMaterialFlags::ALPHA_MODE_ADD,
+            AlphaMode::Multiply => flags |= BlockMaterialFlags::ALPHA_MODE_MULTIPLY,
         };
 
         BlockMaterialUniform {

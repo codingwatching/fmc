@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::{
-    math::Vec3A, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb, window::PrimaryWindow, animation::animation_player,
+    math::Vec3A, pbr::NotShadowCaster, prelude::*, render::primitives::Aabb, window::PrimaryWindow,
 };
 use fmc_networking::{messages, ConnectionId, NetworkClient, NetworkData};
 
@@ -19,7 +19,7 @@ use crate::{
 use super::{
     camera::PlayerCameraMarker,
     interfaces::{
-        items::{ItemId, ItemStack, Items},
+        items::{ItemStack, Items},
         Interface, ItemBox, SelectedItemBox,
     },
     Player,
@@ -40,7 +40,6 @@ impl Plugin for HandPlugin {
 
 #[derive(Component)]
 struct EquippedItem;
-
 
 #[derive(Component)]
 struct HandAnimationMarker;
@@ -74,8 +73,17 @@ fn equip_item(
     changed_interface_query: Query<(&Interface, &SelectedItemBox), Changed<SelectedItemBox>>,
     item_box_query: Query<&ItemBox>,
     equipped_entity_query: Query<Entity, With<EquippedItem>>,
-    changed_equipped_item_query: Query<&ItemStack, (Or<(Changed<ItemStack>, Added<EquippedItem>)>, With<EquippedItem>)>,
-    mut animation_query: Query<(&mut AnimationPlayer, &mut Handle<Scene>), With<HandAnimationMarker>>,
+    changed_equipped_item_query: Query<
+        &ItemStack,
+        (
+            Or<(Changed<ItemStack>, Added<EquippedItem>)>,
+            With<EquippedItem>,
+        ),
+    >,
+    mut animation_query: Query<
+        (&mut AnimationPlayer, &mut Handle<Scene>),
+        With<HandAnimationMarker>,
+    >,
 ) {
     // equip and unequip when the equipment interface is hidden/shown or the selected box changes
     for (interface, selected) in changed_interface_query.iter() {
@@ -93,7 +101,7 @@ fn equip_item(
             section: item_box.section_index as u32,
             index: item_box.index as u32,
         });
-        
+
         commands.entity(selected.0).insert(EquippedItem);
     }
 

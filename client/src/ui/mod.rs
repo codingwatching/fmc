@@ -17,7 +17,7 @@ impl Plugin for UiPlugin {
 
         app.add_plugin(main_menu::MainMenuPlugin)
             .add_plugin(text::TextPlugin)
-            //.add_systems(Startup, game_cursor_setup)
+            .add_systems(Startup, game_cursor_setup)
             .add_systems(Update, change_interface.run_if(state_changed::<UiState>()))
             .add_systems(OnExit(GameState::MainMenu), enter_exit_ui)
             .add_systems(OnEnter(GameState::MainMenu), enter_exit_ui);

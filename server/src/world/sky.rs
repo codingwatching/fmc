@@ -18,7 +18,6 @@ fn day_night_cycle(bevy_time: Res<Time>, net: Res<NetworkServer>, mut time: Loca
 
     let message = messages::Time {
         angle: *time * std::f32::consts::TAU / DAY_LENGTH,
-        //angle: std::f32::consts::PI / 2.0
     };
     net.broadcast(message);
 }

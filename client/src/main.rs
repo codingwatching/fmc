@@ -22,13 +22,13 @@ mod world;
 fn main() {
     App::new()
         //.insert_resource(Msaa { samples: 4 })
-        // This is for pixel graphics
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin {
                     watch_for_changes: false,
                     asset_folder: "".to_string(),
                 })
+                // This is for pixel graphics
                 .set(ImagePlugin::default_nearest()),
         )
         //.add_plugin(LogDiagnosticsPlugin::default())

@@ -30,12 +30,15 @@ impl Plugin for WorldPlugin {
 #[derive(Resource, Deref, DerefMut, Clone, Copy)]
 pub struct Origin(pub IVec3);
 
+#[derive(Component)]
+pub struct MovesWithOrigin;
+
 fn update_origin(
     mut origin: ResMut<Origin>,
     mut positions: ParamSet<(
         Query<&Transform, (Changed<Transform>, With<Player>)>,
         // Move all object roots, no UI
-        Query<&mut Transform, (Without<Parent>, Without<Style>)>,
+        Query<&mut Transform, With<MovesWithOrigin>>,
     )>,
 ) {
     let for_lifetime = positions.p0();

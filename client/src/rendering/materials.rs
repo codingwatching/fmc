@@ -14,12 +14,3 @@ impl Plugin for MaterialsPlugin {
             .add_plugin(MaterialPlugin::<SkyMaterial>::default());
     }
 }
-
-//#[derive(Debug, Clone, TypeUuid)]
-//#[uuid = "2ea7ea3b-5b0f-436b-a57b-d68b60c1c690"]
-//struct FluidMaterial {}
-//
-//#[derive(Clone)]
-//struct GpuFluidMaterial {}
-//
-//impl SpecializedMaterial for FluidMaterial {}

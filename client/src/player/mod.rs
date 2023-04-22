@@ -1,5 +1,6 @@
 // Copied from https://github.com/sburris0/bevy_flycam/blob/master/src/lib.rs
 use bevy::{
+    core_pipeline::prepass::{DepthPrepass, NormalPrepass},
     prelude::*,
     render::primitives::Aabb,
     window::{CursorGrabMode, PrimaryWindow},
@@ -10,6 +11,7 @@ use crate::{
     constants::CHUNK_SIZE,
     game_state::GameState,
     settings::Settings,
+    world::MovesWithOrigin,
     //world::{blocks::BlockSide, world_map::WorldMap},
 };
 
@@ -102,6 +104,21 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
             .into(),
             ..default()
         })
+        .insert(DepthPrepass)
+        //.insert(FogSettings {
+        //    color: Color::rgba(0.1, 0.2, 0.4, 1.0),
+        //    directional_light_color: Color::rgba(1.0, 0.95, 0.75, 0.5),
+        //    directional_light_exponent: 30.0,
+        //    //falloff: FogFalloff::from_visibility_colors(
+        //    //    1.0, // distance in world units up to which objects retain visibility (>= 5% contrast)
+        //    //    Color::rgb(0.35, 0.5, 0.66), // atmospheric extinction color (after light is lost due to absorption by atmospheric particles)
+        //    //    Color::rgb(0.8, 0.844, 1.0), // atmospheric inscattering color (light gained due to scattering from the sun)
+        //    //),
+        //    falloff: FogFalloff::Linear {
+        //        start: 10.0,
+        //        end: 20.0,
+        //    },
+        //})
         .insert(camera::PlayerCameraMarker)
         .insert(camera::CameraState::default())
         // XXX: Remove in future if requirement for parent to have is removed. Needed for equipped
@@ -120,6 +137,7 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
             local: Transform::from_translation(spawn_point),
             ..default()
         })
+        .insert(MovesWithOrigin)
         .insert(aabb)
         .id();
 
