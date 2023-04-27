@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::{PlayerEquipment, PlayerInventoryCraftingTable, PlayerName, PlayerEquippedItem};
+use super::{PlayerEquipment, PlayerEquippedItem, PlayerInventoryCraftingTable, PlayerName};
 
 pub struct InventoryPlugin;
 impl Plugin for InventoryPlugin {
@@ -188,7 +188,7 @@ impl PlayerInventoryInterface<'_> {
         section: u32,
         index: u32,
         amount: u32,
-        held_item_stack: &mut ItemStack
+        held_item_stack: &mut ItemStack,
     ) -> PlayerInterfaceUpdate {
         let mut interface_update = PlayerInterfaceUpdate::default();
 
@@ -236,7 +236,8 @@ impl PlayerInventoryInterface<'_> {
                     let output_item = recipe.output_item();
                     let item_config = self.item_configs.get_config(&output_item.id);
 
-                    if held_item_stack.is_empty() || held_item_stack.item().unwrap() == output_item {
+                    if held_item_stack.is_empty() || held_item_stack.item().unwrap() == output_item
+                    {
                         let amount = if held_item_stack.is_empty() {
                             std::cmp::min(item_config.max_stack_size, amount)
                         } else {
@@ -247,9 +248,13 @@ impl PlayerInventoryInterface<'_> {
                             recipe.craft(&mut self.crafting_table.as_mut_slice(), amount)
                         {
                             // TODO: Clean up when craft return value is converted to ItemStack
-                            *held_item_stack = ItemStack::new(item, held_item_stack.size() + amount, item_config.max_stack_size);
+                            *held_item_stack = ItemStack::new(
+                                item,
+                                held_item_stack.size() + amount,
+                                item_config.max_stack_size,
+                            );
                             interface_update.inventory = Some(self.build_crafting_table());
-                        } 
+                        }
                     }
                 }
             }
@@ -428,8 +433,12 @@ fn update_inventory_interface(
             item_configs: &items,
         };
 
-        let interface_update =
-            interface.take_item(take_event.section, take_event.from_box, take_event.quantity, &mut held_item);
+        let interface_update = interface.take_item(
+            take_event.section,
+            take_event.from_box,
+            take_event.quantity,
+            &mut held_item,
+        );
 
         if let Some(inventory_update) = interface_update.inventory {
             net.send_one(take_event.source, inventory_update);
@@ -476,7 +485,7 @@ fn update_inventory_interface(
     }
 }
 
-// TODO: The client can be bad 
+// TODO: The client can be bad
 fn equip_item(
     net: Res<NetworkServer>,
     players: Res<Players>,
@@ -485,7 +494,7 @@ fn equip_item(
 ) {
     for equip_event in equip_events.iter() {
         if equip_event.name != "hotbar" {
-            return
+            return;
         }
 
         if equip_event.index > 8 {

@@ -1,4 +1,7 @@
-use bevy::{math::{DVec3, DQuat}, prelude::*};
+use bevy::{
+    math::{DQuat, DVec3},
+    prelude::*,
+};
 use std::collections::HashMap;
 
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
@@ -11,7 +14,7 @@ pub use player::*;
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    world::{world_map::chunk_manager::ChunkSubscriptions, models::Model},
+    world::{models::Model, world_map::chunk_manager::ChunkSubscriptions},
 };
 
 pub struct PlayersPlugin;
@@ -94,7 +97,9 @@ fn handle_player_rotation_updates(
         let (mut camera, children) = player_query.get_mut(entity).unwrap();
         camera.rotation = rotation_update.rotation.as_f64();
 
-        let mut transform = player_model_transforms.get_mut(*children.first().unwrap()).unwrap();
+        let mut transform = player_model_transforms
+            .get_mut(*children.first().unwrap())
+            .unwrap();
         let theta = f64::atan2(camera.rotation.y, camera.rotation.w);
         transform.rotation = DQuat::from_xyzw(0.0, f64::sin(theta), 0.0, f64::cos(theta));
     }

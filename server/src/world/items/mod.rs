@@ -1,4 +1,4 @@
-use bevy::{prelude::*, math::DVec3};
+use bevy::{math::DVec3, prelude::*};
 use fmc_networking::BlockId;
 
 use std::collections::{HashMap, HashSet};
@@ -15,7 +15,10 @@ pub mod crafting;
 
 //pub use dropped::DropItemEvent;
 
-use super::{models::{ModelId, ModelMap}, world_map::{ChangedBlockEvent, BlockUpdate}};
+use super::{
+    models::{ModelId, ModelMap},
+    world_map::{BlockUpdate, ChangedBlockEvent},
+};
 
 pub type ItemId = u32;
 
@@ -27,8 +30,10 @@ impl Plugin for ItemPlugin {
         let database = app.world.resource::<DatabaseArc>();
         app.insert_resource(Items::load(database.as_ref()));
 
-        app.add_plugin(crafting::CraftingPlugin)
-            .add_systems(Update, (pick_up_items, trigger_physics_update_on_block_change));
+        app.add_plugin(crafting::CraftingPlugin).add_systems(
+            Update,
+            (pick_up_items, trigger_physics_update_on_block_change),
+        );
     }
 }
 
@@ -318,10 +323,9 @@ fn trigger_physics_update_on_block_change(
     for block_update in block_updates.iter() {
         let position = match block_update {
             BlockUpdate::Change(position, _, _) => *position,
-            _ => continue
+            _ => continue,
         };
-        let chunk_position =
-            utils::world_position_to_chunk_position(position);
+        let chunk_position = utils::world_position_to_chunk_position(position);
         let item_entities = match model_map.get_entities(&chunk_position) {
             Some(e) => e,
             None => continue,

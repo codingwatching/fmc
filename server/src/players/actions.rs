@@ -205,8 +205,6 @@ pub fn handle_left_clicks(
     });
 }
 
-// TODO: Remove used item from inventory, check if item is placeable. Orientation of placed
-// block.
 // Process block events sent by the clients. Client should make sure that it is a valid placement.
 pub fn place_blocks(
     net: Res<NetworkServer>,
@@ -247,7 +245,6 @@ pub fn place_blocks(
         let blocks = Blocks::get();
 
         for (index, block_id) in event.blocks.iter() {
-
             if *block_id != item_config.block || equipped_item.size() == 0 {
                 net.disconnect(event.source);
                 continue;

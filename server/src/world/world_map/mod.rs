@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use bevy::prelude::*;
+use bevy::{prelude::*, tasks::IoTaskPool};
 
 use fmc_networking::{messages, BlockId, NetworkServer};
 
@@ -11,7 +11,7 @@ mod world_map;
 
 pub use world_map::WorldMap;
 
-use crate::utils;
+use crate::{utils, database::{DatabaseArc, Database}};
 
 use self::{
     chunk::{Chunk, ChunkType},
@@ -25,7 +25,7 @@ impl Plugin for WorldMapPlugin {
             .add_plugin(terrain_generation::TerrainGenerationPlugin)
             .add_event::<BlockUpdate>()
             .add_event::<ChangedBlockEvent>()
-            .add_systems(PreUpdate, handle_block_updates);
+            .add_systems(PreUpdate, handle_block_updates.run_if(on_event::<BlockUpdate>()));
     }
 }
 
@@ -79,18 +79,39 @@ pub enum BlockUpdate {
     // Particles?
 }
 
+pub async fn save_block(database: Arc<Database>, position: IVec3, block: BlockId, state: Option<u16>) {
+    let connection = database.get_connection();
+    match connection.execute(
+        r#"
+        insert or replace into
+            blocks (x,y,z,block_id,block_state)
+        values
+            (?,?,?,?,?)
+        "#,
+        rusqlite::params![position.x, position.y, position.z, block, state],
+    ) {
+        Ok(..) => (),
+        Err(e) => panic!("Failed to write block to database with error: {e}"),
+    }
+}
+
 // TODO: Batch block updates into their corresponding chunks so they can be applied together
 // avoiding lookups.
 // Applies block updates to the world and sends them to the players.
 fn handle_block_updates(
+    database: Res<DatabaseArc>,
     mut world_map: ResMut<world_map::WorldMap>,
     mut block_events: EventReader<BlockUpdate>,
     chunk_subsriptions: Res<ChunkSubscriptions>,
     net: Res<NetworkServer>,
 ) {
+    let task_pool = IoTaskPool::get();
+
     for event in block_events.iter() {
         match event {
             BlockUpdate::Change(position, block_id, block_state) => {
+                task_pool.spawn(save_block(database.clone(), *position, *block_id, *block_state)).detach();
+
                 let (chunk_pos, block_index) =
                     utils::world_position_to_chunk_position_and_block_index(*position);
 

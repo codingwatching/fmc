@@ -94,8 +94,6 @@ fn is_same_sha1(archive_1: &Vec<u8>, archive_2: &Vec<u8>) -> bool {
 /// Creates an archive from all the assets in the Assets directory
 fn build_asset_archive() -> Vec<u8> {
     let mut archive = tar::Builder::new(Vec::new());
-    archive
-        .append_dir_all(".", "resources/client")
-        .unwrap();
+    archive.append_dir_all(".", "resources/client").unwrap();
     return archive.into_inner().unwrap();
 }

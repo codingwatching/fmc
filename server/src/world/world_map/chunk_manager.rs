@@ -32,7 +32,14 @@ impl Plugin for ChunkManagerPlugin {
             .add_event::<ChunkSubscriptionEvent>()
             .insert_resource(WorldMap::default())
             .insert_resource(ChunkSubscriptions::default())
-            .add_systems(Update, (handle_chunk_requests, handle_chunk_loading_tasks));
+            .add_systems(
+                Update,
+                (
+                    chunk_unloading,
+                    handle_chunk_requests,
+                    handle_chunk_loading_tasks,
+                ),
+            );
 
         //.add_system(update_chunks);
     }
@@ -129,35 +136,29 @@ async fn load_chunk(
 
     let air = Blocks::get().get_id("air");
 
-    // First try to load the chunk.
-    //let time = std::time::Instant::now();
-    let mut chunk = if let Some(chunk) = db.load_chunk(&position).await {
-        match chunk.chunk_type {
-            ChunkType::Partial => chunk,
-            _ => return (position, chunk, partial_chunks),
-        }
-    } else {
-        Chunk::new(air)
-    };
-    //dbg!(time.elapsed());
+    let saved_blocks = db.load_chunk(&position).await;
+    if saved_blocks.len() > 0 {
+        dbg!(&saved_blocks);
+    }
 
     let (uniform, blocks) = terrain_generator.generate_chunk(position, seed).await;
 
-    if uniform {
+    if uniform && saved_blocks.len() == 0 {
         let block = *blocks.get(&position).unwrap();
-        chunk.chunk_type = ChunkType::Uniform(block);
-        chunk.blocks.shrink_to_fit();
-
-        //let time = std::time::Instant::now();
-        //db.save_chunk(&position, &chunk).await;
-        //dbg!(time.elapsed());
+        let chunk = Chunk {
+            chunk_type: ChunkType::Uniform(block),
+            blocks: Vec::new(),
+            block_state: HashMap::new(),
+        };
 
         return (position, chunk, partial_chunks);
     }
 
+    let mut chunk = Chunk::new(air);
+
     for (world_pos, block) in blocks {
         let (chunk_pos, idx) = utils::world_position_to_chunk_position_and_block_index(world_pos);
-        if chunk_pos == position {
+        if position == chunk_pos {
             if block == air {
                 // Chunk might contain previously generated partial chunks so we only overwrite
                 // when the generated block is not air.
@@ -174,13 +175,12 @@ async fn load_chunk(
         }
     }
 
-    //let time = std::time::Instant::now();
-    //db.save_chunk(&position, &chunk).await;
-
-    //for (pos, p_chunk) in partial_chunks.iter() {
-    //    db.save_chunk(pos, p_chunk).await;
-    //}
-    //dbg!(time.elapsed());
+    for (idx, (block_id, block_state)) in saved_blocks.into_iter() {
+        chunk[idx] = block_id;
+        if let Some(block_state) = block_state {
+            chunk.block_state.insert(idx, block_state);
+        }
+    }
 
     return (position, chunk, partial_chunks);
 }
@@ -201,7 +201,7 @@ fn handle_chunk_requests(
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     net: Res<NetworkServer>,
     terrain_generator: Res<TerrainGeneratorArc>,
-    db: Res<DatabaseArc>,
+    database: Res<DatabaseArc>,
     settings: Res<ServerSettings>,
     mut requests: EventReader<NetworkData<messages::ChunkRequest>>,
     mut chunk_subscription_events: EventWriter<ChunkSubscriptionEvent>,
@@ -245,7 +245,7 @@ fn handle_chunk_requests(
             let task = thread_pool.spawn(load_chunk(
                 chunk_pos,
                 terrain_generator.clone(),
-                db.clone(),
+                database.clone(),
                 settings.seed,
             ));
             commands.spawn(ChunkLoadingTask(task));

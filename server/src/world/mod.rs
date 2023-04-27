@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    database::{Database, DatabaseArc},
+    database::DatabaseArc,
     settings::ServerSettings,
 };
 

@@ -102,12 +102,6 @@ impl Chunk {
             }
         }
     }
-
-    pub fn serialize(&self) -> (Vec<u8>, Vec<u8>) {
-        let blocks = bincode::serialize(&self.blocks).unwrap();
-        let state = bincode::serialize(&self.block_state).unwrap();
-        return (blocks, state);
-    }
 }
 
 // So you can index like 'chunk[[1,2,3]]'

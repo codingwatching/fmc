@@ -101,7 +101,6 @@ impl WorldMap {
                 distance_next.x += t_block.x;
                 // Have to do this for each branch, so it get's a little noisy.
                 if let Some(block_id) = self.get_block(block_pos) {
-
                     if let Friction::Drag(_) = &blocks.get_config(&block_id).config.friction {
                         continue;
                     }

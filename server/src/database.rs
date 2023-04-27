@@ -16,30 +16,6 @@ use crate::{
     },
 };
 
-// TODO: I dislike how chunks are stored. It would be much nicer if blocks could just be stored as
-// x,y,z,block,block_state.
-// PROS:
-// * You could update individual blocks without going through incremental_blob_write
-//      * I'm unsure of how blob_write interacts with WAL mode, might also be better if blob_write
-//        locks the database while writing.
-// * State updates wouldn't need to write the entire hashmap, saving disk usage. This could also be
-//   fixed by just packing the state with the block id into 32bit instead of 16 bits each.
-// * The chunks table would be much cleaner to interact with.
-// CONS:
-// * As the block table increases in size lookup will become increasingly slow (right?).
-//      * Might be alleviated by having multiple tables each storing a super chunk.
-//        This could even result in O(1) lookup if you initialize all positions in the super chunk.
-//        Would no longer save space on air chunks anymore though.
-//        Air chunks would be all NULL, partial would be some NULL, and normal would be none NULL.
-//      * There's some indexing I haven't explored, I don't understand it so will have to test.
-//        I think WITHOUT ROWID does some fancy indexing stuff which makes it faster.
-//        In that case storing the blocks individually might not actually be that bad.
-//      * If the block x,y,z is stored as x * WORLD_SIZE^2 + y * WORLD_SIZE + z there might be some
-//        speedup in range queries as the indices would be contiguous. It would result in a 128-bit
-//        index though, as WORLD_SIZE would have to be 2^32 to have any appreciable size, resulting
-//        in a 25% size increase for the index (not too bad).
-//
-//
 // Database layout description:
 //
 // chunks:
@@ -136,7 +112,7 @@ pub struct Database {
 //    }
 //}
 
-// TODO: Extract functions and have them take a connection isntead?
+// TODO: Extract functions and have them take a connection instead?
 impl Database {
     pub fn new(path: String) -> Self {
         return Self { path };
@@ -155,7 +131,7 @@ impl Database {
         let conn = self.get_connection();
         conn.pragma_update(None, "journal_mode", "wal").unwrap();
 
-        conn.execute("drop table if exists blocks", []).unwrap();
+        //conn.execute("drop table if exists blocks", []).unwrap();
         conn.execute("drop table if exists block_ids", []).unwrap();
         conn.execute("drop table if exists item_ids", []).unwrap();
         conn.execute("drop table if exists model_ids", []).unwrap();
@@ -268,7 +244,7 @@ impl Database {
             chunk.blocks[index] = row.get::<_, BlockId>(3).unwrap();
 
             // TODO: rusqlite supports FromSql for serde_json::Value, but since serde_json has been
-            // forked, I think rusqlite must be forked too... Idk if this is desired.
+            // forked.
             if let Ok(block_state_ref) = row.get_ref(4) {
                 match block_state_ref {
                     rusqlite::types::ValueRef::Blob(bytes) => chunk
@@ -288,48 +264,94 @@ impl Database {
     // 1. both block_state and blocks are NULL, it's an air chunk
     // 2. blocks can be deserialized to a hashmap, it's a partially generated chunk
     // 3. blocks can be deserialized to a vec, it's a fully generated chunk
-    pub async fn load_chunk(&self, position: &IVec3) -> Option<Chunk> {
-        return None;
+    //pub async fn load_chunk(&self, position: &IVec3) -> Option<Chunk> {
+    //    let conn = self.get_connection();
+
+    //    let (mut chunk, count) = Self::_load_chunk(conn, position);
+
+    //    // The block_state column is abused to reduce the storage space of uniform chunks (air,
+    //    // water, etc) down to 1 block's worth. u16::MAX is stored (an otherwise invalid block
+    //    // state) to mark them.
+
+    //    if count == CHUNK_SIZE.pow(3) {
+    //        return Some(chunk);
+    //    } else if count > 0 {
+    //        match chunk.block_state.get(&0) {
+    //            Some(block_state) if *block_state == u16::MAX => {
+    //                if count == 1 {
+    //                    chunk.chunk_type = ChunkType::Uniform(chunk.blocks[0]);
+    //                    chunk.blocks = Vec::new();
+    //                    chunk.block_state = HashMap::new();
+    //                    return Some(chunk);
+    //                } else {
+    //                    // This is a chunk that was previously uniform, but has had blocks inserted
+    //                    // into it through adjacent chunk's terrain generation. It needs to be
+    //                    // converted to a normal chunk.
+    //                    let base_block = chunk.blocks[0];
+    //                    chunk.blocks.iter_mut().for_each(|block| {
+    //                        if *block == 0 {
+    //                            *block = base_block;
+    //                        }
+    //                    });
+    //                    chunk.chunk_type = ChunkType::Normal;
+    //                    self.save_chunk(position, &chunk).await;
+    //                    return Some(chunk);
+    //                }
+    //            }
+    //            _ => (),
+    //        }
+    //        chunk.chunk_type = ChunkType::Partial;
+    //        return Some(chunk);
+    //    } else {
+    //        return None;
+    //    }
+    //}
+
+    pub async fn load_chunk(&self, position: &IVec3) -> HashMap<usize, (BlockId, Option<u16>)> {
         let conn = self.get_connection();
 
-        let (mut chunk, count) = Self::_load_chunk(conn, position);
+        let mut block_stmt = conn
+            .prepare(
+                r#"
+            select
+                x, y, z, block_id, block_state
+            from
+                blocks
+            where
+                (x between ? and ?)
+            and
+                (y between ? and ?)
+            and
+                (z between ? and ?)"#,
+            )
+            .unwrap();
 
-        // The block_state column is abused to reduce the storage space of uniform chunks (air,
-        // water, etc) down to 1 block's worth. u16::MAX is stored (an otherwise invalid block
-        // state) to mark them.
+        const OFFSET: i32 = CHUNK_SIZE as i32 - 1;
+        let mut rows = block_stmt
+            .query([
+                &position.x,
+                &(position.x + OFFSET),
+                &position.y,
+                &(position.y + OFFSET),
+                &position.z,
+                &(position.z + OFFSET),
+            ])
+            .unwrap();
 
-        if count == CHUNK_SIZE.pow(3) {
-            return Some(chunk);
-        } else if count > 0 {
-            match chunk.block_state.get(&0) {
-                Some(block_state) if *block_state == u16::MAX => {
-                    if count == 1 {
-                        chunk.chunk_type = ChunkType::Uniform(chunk.blocks[0]);
-                        chunk.blocks = Vec::new();
-                        chunk.block_state = HashMap::new();
-                        return Some(chunk);
-                    } else {
-                        // This is a chunk that was previously uniform, but has had blocks inserted
-                        // into it through adjacent chunk's terrain generation. It needs to be
-                        // converted to a normal chunk.
-                        let base_block = chunk.blocks[0];
-                        chunk.blocks.iter_mut().for_each(|block| {
-                            if *block == 0 {
-                                *block = base_block;
-                            }
-                        });
-                        chunk.chunk_type = ChunkType::Normal;
-                        self.save_chunk(position, &chunk).await;
-                        return Some(chunk);
-                    }
-                }
-                _ => (),
-            }
-            chunk.chunk_type = ChunkType::Partial;
-            return Some(chunk);
-        } else {
-            return None;
+        let mut blocks = HashMap::new();
+
+        while let Some(row) = rows.next().unwrap() {
+            let index = (((row.get::<_, i32>(0).unwrap() & OFFSET) << 8)
+                | ((row.get::<_, i32>(1).unwrap() & OFFSET) << 4)
+                | (row.get::<_, i32>(2).unwrap() & OFFSET)) as usize;
+
+            blocks.insert(
+                index,
+                (row.get::<_, BlockId>(3).unwrap(), row.get::<_, u16>(4).ok()),
+            );
         }
+
+        return blocks;
     }
 
     pub async fn save_chunk(&self, position: &IVec3, chunk: &Chunk) {
