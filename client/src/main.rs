@@ -31,8 +31,8 @@ fn main() {
                 // This is for pixel graphics
                 .set(ImagePlugin::default_nearest()),
         )
-        //.add_plugin(LogDiagnosticsPlugin::default())
-        //.add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(LogDiagnosticsPlugin::default())
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(networking::ClientPlugin)
         .add_plugin(assets::AssetPlugin)
         .add_plugin(game_state::GameStatePlugin)

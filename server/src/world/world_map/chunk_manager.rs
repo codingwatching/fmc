@@ -298,7 +298,7 @@ fn chunk_unloading(
             } else {
                 // TODO: This happens sometimes and I don't know why, will not be a problem when
                 // chunk loading is removed from client side.
-                warn!("Connection {connection}, tried to unsubscribe to a chunk it was not subscribed to");
+                warn!("Connection {connection}, tried to unsubscribe from a chunk it was not subscribed to");
             }
         }
     }

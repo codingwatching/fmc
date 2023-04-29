@@ -62,30 +62,13 @@ fn setup(
         .spawn(DirectionalLightBundle {
             directional_light: DirectionalLight {
                 illuminance: 10000.0,
-                shadows_enabled: false,
+                shadows_enabled: true,
                 //shadow_normal_bias: 0.5,
                 ..default()
             },
             ..default()
         })
         .id();
-
-    //commands.spawn(DirectionalLightBundle {
-    //    directional_light: DirectionalLight {
-    //        illuminance: 10000.0,
-    //        shadows_enabled: true,
-    //        //shadow_normal_bias: 0.5,
-    //        ..default()
-    //    },
-    //    transform: Transform::from_rotation(Quat::from_euler(
-    //        EulerRot::ZYX,
-    //        0.0,
-    //        std::f32::consts::PI / 2.,
-    //        -std::f32::consts::PI / 4.,
-    //    ))
-    //    .with_translation(Vec3::new(0.0, 100.0, 0.0)),
-    //    ..default()
-    //});
 
     commands
         .entity(player_id)

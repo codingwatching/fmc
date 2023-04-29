@@ -192,11 +192,11 @@ fn frustum_chunk_loading(
     }
 
     // Reset the visibility of all chunks
-    chunk_query.for_each_mut(|(_, visibility, _)| {
-        if let Some(mut visibility) = visibility {
-            *visibility = Visibility::Hidden;
-        }
-    });
+    //chunk_query.for_each_mut(|(_, visibility, _)| {
+    //    if let Some(mut visibility) = visibility {
+    //        *visibility = Visibility::Hidden;
+    //    }
+    //});
 
     let (frustum, camera_position) = camera_query.single();
 
@@ -273,7 +273,7 @@ fn frustum_chunk_loading(
                             chunk_query.get_unchecked(chunk_entity)
                         {
                             if let Some(mut visibility) = visibility {
-                                *visibility = Visibility::Visible;
+                                //*visibility = Visibility::Inherited;
                             } else if mesh_task.is_none() {
                                 chunk_mesh_events.send(ChunkMeshEvent {
                                     position: *$pos,

@@ -19,7 +19,7 @@ impl Settings {
     // temporary default values
     pub fn new() -> Self {
         Self {
-            render_distance: 30,
+            render_distance: 15,
             volume: 100,
             sensitivity: 0.00012,
             flight_speed: 50.,

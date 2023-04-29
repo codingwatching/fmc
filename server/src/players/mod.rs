@@ -98,9 +98,7 @@ fn handle_player_position_updates(
 // Client sends the rotation of its camera. Used to know where they are looking, and
 // how the player model should be positioned.
 fn handle_player_rotation_updates(
-    net: Res<NetworkServer>,
     players: Res<Players>,
-    chunk_subscriptions: Res<ChunkSubscriptions>,
     mut player_query: Query<(&mut PlayerCamera, &Children)>,
     mut player_model_transforms: Query<&mut F64Transform, With<Model>>,
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
@@ -118,6 +116,8 @@ fn handle_player_rotation_updates(
     }
 }
 
+// TODO: If it can't find a valid spawn point it will just ocillate in an infinite loop between the
+// air chunk above and the one it can't find anything in.
 // TODO: This might take a really long time to compute because of the chunk loading, and should
 // probably be done ahead of time through an async task. Idk if the spawn point should change
 // between each spawn. A good idea if it's really hard to validate that the player won't suffocate

@@ -117,7 +117,7 @@ fn handle_mesh_tasks(
                         .insert(ChunkMeshMarker)
                         // This is a marker for bevy's internal frustum culling, we do our own for
                         // chunk meshes.
-                        .insert(NoFrustumCulling)
+                        //.insert(NoFrustumCulling)
                         .id(),
                 );
             }
@@ -131,7 +131,7 @@ fn handle_mesh_tasks(
                             transform,
                             ..default()
                         })
-                        .insert(NoFrustumCulling)
+                        //.insert(NoFrustumCulling)
                         .id(),
                 );
             }
