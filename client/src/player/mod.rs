@@ -75,7 +75,6 @@ impl Player {
 
 fn setup_player(mut commands: Commands, settings: Res<Settings>) {
     let player = Player::new();
-    let spawn_point = Vec3::new(0.0, 240.0, 0.0);
     // TODO: The server should be able to define this so that you can play as different sized
     // things.
     let aabb = Aabb::from_min_max(
@@ -134,7 +133,7 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
         // I type this.
         .insert(VisibilityBundle::default())
         .insert(TransformBundle {
-            local: Transform::from_translation(spawn_point),
+            local: Transform::from_translation(Vec3::NAN),
             ..default()
         })
         .insert(MovesWithOrigin)
@@ -152,11 +151,11 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
 // defaults, but should be updated by the server on connection.
 fn handle_player_config(
     mut config_events: EventReader<NetworkData<messages::PlayerConfiguration>>,
-    mut player_query: Query<(&mut Player, &mut Aabb), With<Player>>,
+    mut aabb_query:Query<&mut Aabb, With<Player>>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
 ) {
     for config in config_events.iter() {
-        let (mut player, mut aabb) = player_query.single_mut();
+        let mut aabb = aabb_query.single_mut();
         let mut camera_transform = camera_query.single_mut();
 
         camera_transform.translation = config.camera_position;

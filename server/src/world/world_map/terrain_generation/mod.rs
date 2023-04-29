@@ -162,7 +162,7 @@ impl TerrainGenerator {
     // clamped between the MAX_TERRAIN_HEIGHT and MIN_TERRAIN_HEIGHT.
     // The second is 'compression', it acts as a second lever on how high the terrain
     // should be. It's value is used as as density modifier. Terrain above the base terrain height
-    // has its density decreased, and below, increased depending on how for away they are from the
+    // has its density decreased, and below, increased, depending on how for away they are from the
     // base terrain height, farther == more. Example: A compression value of 0.5 and a block
     // above the base terrain. First we find the value's ratio of MAX_RELATIVE_HEIGHT, 100 say, this
     // would be 50. This means we don't want any blocks above base_terrain_height+50. To accomplish
@@ -178,12 +178,11 @@ impl TerrainGenerator {
     pub async fn generate_chunk(
         &self,
         position: IVec3,
-        seed: u64,
     ) -> (bool, HashMap<IVec3, BlockId>) {
         let mut blocks: HashMap<IVec3, BlockId> = HashMap::with_capacity(CHUNK_SIZE.pow(3));
 
         // A (not so) unique seed for the chunk, good enough for now.
-        let seed = seed
+        let seed = self.seed
             + (position.x * i32::MAX.pow(3) + position.y * i32::MAX.pow(2) + position.z) as u64;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 

@@ -35,10 +35,13 @@ impl Plugin for MovementPlugin {
                 toggle_flight,
                 change_player_velocity,
                 simulate_player_physics.after(change_player_velocity),
-                handle_position_updates_from_server,
             )
                 .run_if(in_state(GameState::Playing)),
-        );
+        )
+            // TODO: This is another one of the things the server just sends on connection.
+            // Workaround by just having it run all the time, but once the server can be notified
+            // that the client is actually ready to receive it should be moved above with the rest. 
+            .add_systems(Update, handle_position_updates_from_server);
     }
 }
 

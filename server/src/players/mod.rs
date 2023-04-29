@@ -14,7 +14,7 @@ pub use player::*;
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    world::{models::Model, world_map::chunk_manager::ChunkSubscriptions},
+    world::{models::Model, world_map::{chunk_manager::ChunkSubscriptions, WorldMap, terrain_generation::TerrainGeneratorArc, chunk::{Chunk, ChunkType}}, WorldProperties, blocks::Blocks}, database::DatabaseArc, utils, constants::CHUNK_SIZE,
 };
 
 pub struct PlayersPlugin;
@@ -105,18 +105,57 @@ fn handle_player_rotation_updates(
     }
 }
 
-// TODO: Actually respawn
+// TODO: This might take a really long time to compute because of the chunk loading, and should
+// probably be done ahead of time through an async task. Idk if the spawn point should change
+// between each spawn. A good idea if it's really hard to validate that the player won't suffocate
+// infinitely.
 fn respawn_players(
     net: Res<NetworkServer>,
+    world_properties: Res<WorldProperties>,
+    terrain_generator: Res<TerrainGeneratorArc>,
+    database: Res<DatabaseArc>,
     mut respawn_events: EventReader<PlayerRespawnEvent>,
     connection_query: Query<&ConnectionId>,
 ) {
     for event in respawn_events.iter() {
+        let air = Blocks::get().get_id("air");
+
+        let mut position = utils::world_position_to_chunk_position(world_properties.spawn_point.center);
+        let spawn_position = 'outer: loop {
+            let chunk = futures_lite::future::block_on(Chunk::load(position, terrain_generator.clone(), database.clone())).1;
+
+            match chunk.chunk_type {
+                ChunkType::Uniform(block) if block == air => {
+                    position.y -= CHUNK_SIZE as i32;
+                    continue;
+                },
+                _ => ()
+            }
+
+            // Find a spot that has a block with two air blocks above.
+            let mut one_air = false;
+            let mut two_air = false;
+            for (i, block) in chunk.blocks.into_iter().enumerate() {
+                if block == air {
+                    if !one_air {
+                        one_air = true;
+                    } else {
+                        two_air = true;
+                    }
+                } else if one_air && two_air{
+                    break 'outer utils::block_index_to_position(i);
+                } else {
+                    one_air = false;
+                    two_air = false;
+                }
+            }
+        };
+
         if let Ok(connection_id) = connection_query.get(event.0) {
             net.send_one(
                 *connection_id,
                 messages::PlayerPosition {
-                    position: DVec3::new(0.0, 240.0, 0.0),
+                    position: spawn_position.as_dvec3(),
                 },
             );
         }

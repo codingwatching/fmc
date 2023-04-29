@@ -54,8 +54,6 @@ pub struct PlayerBundle {
 
 impl PlayerBundle {
     pub fn new() -> Self {
-        let mut inventory = ItemStorage(vec![ItemStack::default(); 36]);
-
         Self {
             global_transform: F64GlobalTransform::default(),
             // Put the player somewhere high while it is waiting to be spawned for the first time.
@@ -66,7 +64,7 @@ impl PlayerBundle {
                 translation: DVec3::new(0.3, 1.8, 0.3),
                 ..default()
             }),
-            inventory,
+            inventory: ItemStorage(vec![ItemStack::default(); 36]),
             equipment: PlayerEquipment::default(),
             equipped_item: PlayerEquippedItem::default(),
             crafting_table: PlayerInventoryCraftingTable::default(),

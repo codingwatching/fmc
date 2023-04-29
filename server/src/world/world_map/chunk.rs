@@ -1,9 +1,14 @@
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
+use std::sync::Arc;
 
-use crate::constants::*;
+use crate::{constants::*, utils};
+use crate::database::Database;
 use crate::world::blocks::Blocks;
+use bevy::prelude::IVec3;
 use fmc_networking::BlockId;
+
+use super::terrain_generation::TerrainGenerator;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum ChunkType {
@@ -41,6 +46,62 @@ impl Chunk {
             blocks,
             block_state,
         };
+    }
+
+    // Load/Generate a chunk
+    pub async fn load(
+        position: IVec3,
+        terrain_generator: Arc<TerrainGenerator>,
+        database: Arc<Database>,
+    ) -> (IVec3, Chunk, HashMap<IVec3, Chunk>) {
+        let mut partial_chunks: HashMap<IVec3, Chunk> = HashMap::new();
+
+        let air = Blocks::get().get_id("air");
+
+        let saved_blocks = database.load_chunk(&position).await;
+
+        let (uniform, blocks) = terrain_generator.generate_chunk(position).await;
+
+        if uniform && saved_blocks.len() == 0 {
+            let block = *blocks.get(&position).unwrap();
+            let chunk = Chunk {
+                chunk_type: ChunkType::Uniform(block),
+                blocks: Vec::new(),
+                block_state: HashMap::new(),
+            };
+
+            return (position, chunk, partial_chunks);
+        }
+
+        let mut chunk = Chunk::new(air);
+
+        for (world_pos, block) in blocks {
+            let (chunk_pos, idx) = utils::world_position_to_chunk_position_and_block_index(world_pos);
+            if position == chunk_pos {
+                if block == air {
+                    // Chunk might contain previously generated partial chunks so we only overwrite
+                    // when the generated block is not air.
+                    continue;
+                }
+                chunk[idx] = block;
+            } else if let Some(partial) = partial_chunks.get_mut(&chunk_pos) {
+                partial[idx] = block;
+            } else {
+                let mut partial = Chunk::new(air);
+                partial.chunk_type = ChunkType::Partial;
+                partial[idx] = block;
+                partial_chunks.insert(chunk_pos, partial);
+            }
+        }
+
+        for (idx, (block_id, block_state)) in saved_blocks.into_iter() {
+            chunk[idx] = block_id;
+            if let Some(block_state) = block_state {
+                chunk.block_state.insert(idx, block_state);
+            }
+        }
+
+        return (position, chunk, partial_chunks);
     }
 
     pub fn combine(&mut self, mut other: Chunk) {

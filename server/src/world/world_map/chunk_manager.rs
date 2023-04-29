@@ -11,14 +11,13 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 use futures_lite::future;
 
 use crate::{
-    database::{Database, DatabaseArc},
-    settings::ServerSettings,
+    database::DatabaseArc,
     utils,
     world::{
         blocks::Blocks,
         world_map::{
             chunk::{Chunk, ChunkType},
-            terrain_generation::{TerrainGenerator, TerrainGeneratorArc},
+            terrain_generation::TerrainGeneratorArc,
             WorldMap,
         },
     },
@@ -125,66 +124,6 @@ impl ChunkSubscriptions {
 #[derive(Component)]
 struct ChunkLoadingTask(Task<(IVec3, Chunk, HashMap<IVec3, Chunk>)>);
 
-// Async task to load/generate a chunk
-async fn load_chunk(
-    position: IVec3,
-    terrain_generator: Arc<TerrainGenerator>,
-    db: Arc<Database>,
-    seed: u64,
-) -> (IVec3, Chunk, HashMap<IVec3, Chunk>) {
-    let mut partial_chunks: HashMap<IVec3, Chunk> = HashMap::new();
-
-    let air = Blocks::get().get_id("air");
-
-    let saved_blocks = db.load_chunk(&position).await;
-    if saved_blocks.len() > 0 {
-        dbg!(&saved_blocks);
-    }
-
-    let (uniform, blocks) = terrain_generator.generate_chunk(position, seed).await;
-
-    if uniform && saved_blocks.len() == 0 {
-        let block = *blocks.get(&position).unwrap();
-        let chunk = Chunk {
-            chunk_type: ChunkType::Uniform(block),
-            blocks: Vec::new(),
-            block_state: HashMap::new(),
-        };
-
-        return (position, chunk, partial_chunks);
-    }
-
-    let mut chunk = Chunk::new(air);
-
-    for (world_pos, block) in blocks {
-        let (chunk_pos, idx) = utils::world_position_to_chunk_position_and_block_index(world_pos);
-        if position == chunk_pos {
-            if block == air {
-                // Chunk might contain previously generated partial chunks so we only overwrite
-                // when the generated block is not air.
-                continue;
-            }
-            chunk[idx] = block;
-        } else if let Some(partial) = partial_chunks.get_mut(&chunk_pos) {
-            partial[idx] = block;
-        } else {
-            let mut partial = Chunk::new(air);
-            partial.chunk_type = ChunkType::Partial;
-            partial[idx] = block;
-            partial_chunks.insert(chunk_pos, partial);
-        }
-    }
-
-    for (idx, (block_id, block_state)) in saved_blocks.into_iter() {
-        chunk[idx] = block_id;
-        if let Some(block_state) = block_state {
-            chunk.block_state.insert(idx, block_state);
-        }
-    }
-
-    return (position, chunk, partial_chunks);
-}
-
 // TODO: There's a tiny mismatch between the amount of chunk received by the client and the chunks
 // generated. Client measures 7368 chunks while server says there's 7375 when I start it without
 // moving the camera.
@@ -202,7 +141,6 @@ fn handle_chunk_requests(
     net: Res<NetworkServer>,
     terrain_generator: Res<TerrainGeneratorArc>,
     database: Res<DatabaseArc>,
-    settings: Res<ServerSettings>,
     mut requests: EventReader<NetworkData<messages::ChunkRequest>>,
     mut chunk_subscription_events: EventWriter<ChunkSubscriptionEvent>,
 ) {
@@ -242,11 +180,10 @@ fn handle_chunk_requests(
             // TODO: Many tasks for the same chunk can be launched. For well behaved clients it
             // (probably) is no problem.
             // Load from disk, or generate if it hasn't been generated.
-            let task = thread_pool.spawn(load_chunk(
+            let task = thread_pool.spawn(Chunk::load(
                 chunk_pos,
                 terrain_generator.clone(),
                 database.clone(),
-                settings.seed,
             ));
             commands.spawn(ChunkLoadingTask(task));
         }

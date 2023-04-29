@@ -56,7 +56,7 @@ fn load_world_properties(
 
 #[derive(Serialize, Deserialize, Resource)]
 pub struct WorldProperties {
-    spawn_point: SpawnPoint,
+    pub spawn_point: SpawnPoint,
 }
 
 // TODO: This needs a system to find a new spawn point every time a player is respawned.
