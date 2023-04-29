@@ -11,7 +11,10 @@ mod world_map;
 
 pub use world_map::WorldMap;
 
-use crate::{utils, database::{DatabaseArc, Database}};
+use crate::{
+    database::{Database, DatabaseArc},
+    utils,
+};
 
 use self::{
     chunk::{Chunk, ChunkType},
@@ -25,7 +28,10 @@ impl Plugin for WorldMapPlugin {
             .add_plugin(terrain_generation::TerrainGenerationPlugin)
             .add_event::<BlockUpdate>()
             .add_event::<ChangedBlockEvent>()
-            .add_systems(PreUpdate, handle_block_updates.run_if(on_event::<BlockUpdate>()));
+            .add_systems(
+                PreUpdate,
+                handle_block_updates.run_if(on_event::<BlockUpdate>()),
+            );
     }
 }
 
@@ -79,7 +85,12 @@ pub enum BlockUpdate {
     // Particles?
 }
 
-pub async fn save_block(database: Arc<Database>, position: IVec3, block: BlockId, state: Option<u16>) {
+pub async fn save_block(
+    database: Arc<Database>,
+    position: IVec3,
+    block: BlockId,
+    state: Option<u16>,
+) {
     let connection = database.get_connection();
     match connection.execute(
         r#"
@@ -110,7 +121,14 @@ fn handle_block_updates(
     for event in block_events.iter() {
         match event {
             BlockUpdate::Change(position, block_id, block_state) => {
-                task_pool.spawn(save_block(database.clone(), *position, *block_id, *block_state)).detach();
+                task_pool
+                    .spawn(save_block(
+                        database.clone(),
+                        *position,
+                        *block_id,
+                        *block_state,
+                    ))
+                    .detach();
 
                 let (chunk_pos, block_index) =
                     utils::world_position_to_chunk_position_and_block_index(*position);

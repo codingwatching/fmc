@@ -296,8 +296,9 @@ fn chunk_unloading(
             if chunk_subscriptions.unsubscribe(&chunk_pos, &connection) {
                 unload_chunk_events.send(ChunkUnloadEvent(*chunk_pos));
             } else {
-                // naughty player, tried to unsubscribe from chunk it isn't subscribed to.
-                todo!()
+                // TODO: This happens sometimes and I don't know why, will not be a problem when
+                // chunk loading is removed from client side.
+                warn!("Connection {connection}, tried to unsubscribe to a chunk it was not subscribed to");
             }
         }
     }

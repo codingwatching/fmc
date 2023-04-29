@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
-use crate::{constants::*, utils};
 use crate::database::Database;
 use crate::world::blocks::Blocks;
+use crate::{constants::*, utils};
 use bevy::prelude::IVec3;
 use fmc_networking::BlockId;
 
@@ -24,13 +24,12 @@ pub enum ChunkType {
 // TODO: Is it necessary to pack the block state? It's sent to the clients so needs to be small.
 // Maybe arbitrary data is wanted. When making, thought orientation obviously needed, and nice to
 // change color of things like water or torch, but can't think of anything that is needed
-// otherwise. XXX: It's used by the database to mark uniform chunks by setting it to u16::MAX.
+// otherwise. XXX: It's used by the database to mark uniform chunks by setting it to
+// u16::MAX(invalid state).
 pub struct Chunk {
     pub chunk_type: ChunkType,
-    // TODO: Maybe store blocks as xzy for compression? Blocks are more likely to stay the same in
-    // the y direction?
     /// Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
-    /// (zero indexed) the formula x * CHUNK_SIZE^2 + y * CHUNK_SIZE + z is used.
+    /// (zero indexed) the formula x * CHUNK_SIZE^2 + z * CHUNK_SIZE + y is used.
     pub blocks: Vec<BlockId>,
     //block_entities: HashMap<IVec3, Entity>
     /// Block state containing optional information, see fmc_networking for bit layout
@@ -76,7 +75,8 @@ impl Chunk {
         let mut chunk = Chunk::new(air);
 
         for (world_pos, block) in blocks {
-            let (chunk_pos, idx) = utils::world_position_to_chunk_position_and_block_index(world_pos);
+            let (chunk_pos, idx) =
+                utils::world_position_to_chunk_position_and_block_index(world_pos);
             if position == chunk_pos {
                 if block == air {
                     // Chunk might contain previously generated partial chunks so we only overwrite
@@ -170,13 +170,13 @@ impl Index<[usize; 3]> for Chunk {
     type Output = BlockId;
 
     fn index(&self, idx: [usize; 3]) -> &Self::Output {
-        return &self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[1] * CHUNK_SIZE + idx[2]];
+        return &self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
     }
 }
 
 impl IndexMut<[usize; 3]> for Chunk {
     fn index_mut(&mut self, idx: [usize; 3]) -> &mut Self::Output {
-        return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[1] * CHUNK_SIZE + idx[2]];
+        return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
     }
 }
 

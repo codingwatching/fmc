@@ -77,7 +77,7 @@ pub trait BlockFunctionality {
 //}
 
 pub struct Block {
-    pub config: BlockConfig,
+    config: BlockConfig,
     /// This function is used to set up the ecs entity for the block if it should have
     /// functionality. e.g. a furnace needs ui components and its internal smelting state.
     spawn_entity_fn: Option<fn(&mut Commands, Entity, Vec<u8>)>,

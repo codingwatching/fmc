@@ -1,10 +1,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    database::DatabaseArc,
-    settings::ServerSettings,
-};
+use crate::{database::DatabaseArc, settings::ServerSettings};
 
 use self::world_map::terrain_generation::TerrainGeneratorArc;
 

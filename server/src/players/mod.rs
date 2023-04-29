@@ -14,7 +14,20 @@ pub use player::*;
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    world::{models::Model, world_map::{chunk_manager::ChunkSubscriptions, WorldMap, terrain_generation::TerrainGeneratorArc, chunk::{Chunk, ChunkType}}, WorldProperties, blocks::Blocks}, database::DatabaseArc, utils, constants::CHUNK_SIZE,
+    constants::CHUNK_SIZE,
+    database::DatabaseArc,
+    utils,
+    world::{
+        blocks::{Blocks, Friction},
+        models::Model,
+        world_map::{
+            chunk::{Chunk, ChunkType},
+            chunk_manager::ChunkSubscriptions,
+            terrain_generation::TerrainGeneratorArc,
+            WorldMap,
+        },
+        WorldProperties,
+    },
 };
 
 pub struct PlayersPlugin;
@@ -118,37 +131,52 @@ fn respawn_players(
     connection_query: Query<&ConnectionId>,
 ) {
     for event in respawn_events.iter() {
-        let air = Blocks::get().get_id("air");
+        let blocks = Blocks::get();
+        let air = blocks.get_id("air");
 
-        let mut position = utils::world_position_to_chunk_position(world_properties.spawn_point.center);
+        let mut chunk_position =
+            utils::world_position_to_chunk_position(world_properties.spawn_point.center);
         let spawn_position = 'outer: loop {
-            let chunk = futures_lite::future::block_on(Chunk::load(position, terrain_generator.clone(), database.clone())).1;
+            let chunk = futures_lite::future::block_on(Chunk::load(
+                chunk_position,
+                terrain_generator.clone(),
+                database.clone(),
+            ))
+            .1;
 
             match chunk.chunk_type {
                 ChunkType::Uniform(block) if block == air => {
-                    position.y -= CHUNK_SIZE as i32;
+                    chunk_position.y -= CHUNK_SIZE as i32;
                     continue;
-                },
-                _ => ()
+                }
+                _ => (),
             }
 
             // Find a spot that has a block with two air blocks above.
-            let mut one_air = false;
-            let mut two_air = false;
-            for (i, block) in chunk.blocks.into_iter().enumerate() {
-                if block == air {
-                    if !one_air {
-                        one_air = true;
+            for (i, block_chunk) in chunk.blocks.chunks_exact(CHUNK_SIZE).enumerate() {
+                let mut count = 0;
+                for (j, block) in block_chunk.iter().enumerate() {
+                    if count == 3 {
+                        let mut spawn_position =
+                            chunk_position + utils::block_index_to_position(i * CHUNK_SIZE + j);
+                        spawn_position.y -= 2;
+                        break 'outer spawn_position;
+                    } else if count == 0 && *block != air {
+                        match blocks.get_config(&block).friction {
+                            Friction::Drag(_) => continue,
+                            _ => count += 1,
+                        };
+                    } else if count == 1 && *block == air {
+                        count += 1;
+                    } else if count == 2 && *block == air {
+                        count += 1;
                     } else {
-                        two_air = true;
+                        count = 0;
                     }
-                } else if one_air && two_air{
-                    break 'outer utils::block_index_to_position(i);
-                } else {
-                    one_air = false;
-                    two_air = false;
                 }
             }
+
+            chunk_position.y += CHUNK_SIZE as i32;
         };
 
         if let Ok(connection_id) = connection_query.get(event.0) {

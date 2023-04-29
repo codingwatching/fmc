@@ -108,7 +108,7 @@ impl TerrainGenerator {
             .generate()
             .0;
 
-        // TODO: Fork simdnoise and add this as another operation?
+        // TODO: Fork simdnoise and add this as another simd operation?
         // Scale to between -1 and 1
         let scale = (1.0 - GAIN.powi(OCTAVES)) / (1.0 - GAIN);
         noise.iter_mut().for_each(|x| *x /= scale);
@@ -175,18 +175,15 @@ impl TerrainGenerator {
     /// Generates all blocks for the chunk at the given position.
     /// Blocks that are generated outside of the chunk are also included (trees etc.)
     /// Return type (uniform, blocks), uniform if all blocks of same type.
-    pub async fn generate_chunk(
-        &self,
-        position: IVec3,
-    ) -> (bool, HashMap<IVec3, BlockId>) {
+    pub async fn generate_chunk(&self, position: IVec3) -> (bool, HashMap<IVec3, BlockId>) {
         let mut blocks: HashMap<IVec3, BlockId> = HashMap::with_capacity(CHUNK_SIZE.pow(3));
 
-        // A (not so) unique seed for the chunk, good enough for now.
+        // Seed used for feature placing, unique to each chunk. (it's not actually unique now)
         let seed = self.seed
             + (position.x * i32::MAX.pow(3) + position.y * i32::MAX.pow(2) + position.z) as u64;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
-        let (terrain_height, min, max) = self.terrain_height(position.x, position.z);
+        let (terrain_height, _min, max) = self.terrain_height(position.x, position.z);
 
         // Don't waste time generating if it is guaranteed to be air.
         if max * MAX_BASE_HEIGHT + MAX_RELATIVE_HEIGHT < position.y as f32 {
@@ -194,6 +191,9 @@ impl TerrainGenerator {
             return (true, blocks);
         }
 
+        // y_offset is the amount of blocks above the chunk that need to be generated. These are
+        // needed to determine how deep the chunk's blocks are. I don't think there's any easy way
+        // to do this since it's all 3d noise, no terrain height to read from.
         let mut y_offset = 0;
 
         let biomes: Vec<&biomes::Biome> = terrain_height
@@ -232,6 +232,8 @@ impl TerrainGenerator {
 
                 // Find how deep we are already.
                 for y in CHUNK_SIZE..CHUNK_SIZE + y_offset {
+                    // TODO: This needs to be converted to order xzy in simdnoise fork to make all
+                    // access contiguous.
                     let block_index =
                         z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
                     let density = terrain_shape[block_index];

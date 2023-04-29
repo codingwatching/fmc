@@ -8,6 +8,7 @@ use bevy::{
 use fmc_networking::BlockId;
 use futures_lite::future;
 
+use crate::utils;
 use crate::world::blocks::Blocks;
 use crate::{constants::*, game_state::GameState, utils::Direction, world::world_map::WorldMap};
 
@@ -137,7 +138,7 @@ impl Chunk {
     }
 
     pub fn get_block_state(&self, x: usize, y: usize, z: usize) -> Option<u16> {
-        let index = x << 8 | y << 4 | z;
+        let index = x << 8 | z << 4 | y;
         return self.block_state.get(&index).copied();
     }
 }
@@ -171,7 +172,7 @@ impl Index<[usize; 3]> for Chunk {
         if self.is_uniform() {
             return &self.blocks[0];
         } else {
-            return &self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[1] * CHUNK_SIZE + idx[2]];
+            return &self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
         }
     }
 }
@@ -181,7 +182,7 @@ impl IndexMut<[usize; 3]> for Chunk {
         if self.is_uniform() {
             return &mut self.blocks[0];
         } else {
-            return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[1] * CHUNK_SIZE + idx[2]];
+            return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
         }
     }
 }
@@ -193,9 +194,8 @@ impl Index<IVec3> for Chunk {
         if self.is_uniform() {
             return &self.blocks[0];
         } else {
-            return &self.blocks[idx.x as usize * CHUNK_SIZE.pow(2)
-                + idx.y as usize * CHUNK_SIZE
-                + idx.z as usize];
+            let idx = utils::world_position_to_block_index(idx);
+            return &self.blocks[idx];
         }
     }
 }
@@ -205,9 +205,8 @@ impl IndexMut<IVec3> for Chunk {
         if self.is_uniform() {
             return &mut self.blocks[0];
         } else {
-            return &mut self.blocks[idx.x as usize * CHUNK_SIZE.pow(2)
-                + idx.y as usize * CHUNK_SIZE
-                + idx.z as usize];
+            let idx = utils::world_position_to_block_index(idx);
+            return &mut self.blocks[idx];
         }
     }
 }
@@ -319,7 +318,7 @@ impl VisibleSides {
         // Iterate over the outermost blocks of the chunk
         for i in 0i32..CHUNK_SIZE as i32 {
             for j in 0i32..CHUNK_SIZE as i32 {
-                for k in (0i32..CHUNK_SIZE as i32).step_by(15) {
+                for k in (0i32..CHUNK_SIZE as i32).step_by(CHUNK_SIZE - 1) {
                     let front_back = IVec3::new(i, j, k);
                     let left_right = IVec3::new(k, i, j);
                     let top_bottom = IVec3::new(i, k, j);

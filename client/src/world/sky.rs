@@ -50,10 +50,10 @@ fn setup(
         .insert(NotShadowReceiver)
         .id();
 
-    //commands.insert_resource(AmbientLight {
-    //        color: Color::WHITE,
-    //        brightness: 0.5,
-    //});
+    commands.insert_resource(AmbientLight {
+            color: Color::WHITE,
+            brightness: 0.5,
+    });
 
     // Overlays a DirectionalLight on top of the sun that is generated in the shader, since that
     // one doesn't actually illuminate anything.

@@ -314,7 +314,7 @@ impl Database {
             .prepare(
                 r#"
             select
-                x, y, z, block_id, block_state
+                x, z, y, block_id, block_state
             from
                 blocks
             where
