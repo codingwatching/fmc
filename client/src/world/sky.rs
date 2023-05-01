@@ -15,7 +15,7 @@ pub struct SkyPlugin;
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            OnExit(GameState::Connecting),
+            OnEnter(GameState::Playing),
             // This is just a hacky way to have it run after player setup, all of this should
             // be removed when the sky is defined by the server.
             setup,
