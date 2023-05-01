@@ -7,11 +7,11 @@ struct Vertex {
     @location(0) position: vec3<f32>,
 
 #ifdef VERTEX_UVS
-    @location(2) uv: vec2<f32>,
+    @location(1) uv: vec2<f32>,
 #endif // VERTEX_UVS
 
 #ifdef NORMAL_PREPASS
-    @location(1) normal: vec3<f32>,
+    @location(2) normal: vec3<f32>,
 #ifdef VERTEX_TANGENTS
     @location(3) tangent: vec4<f32>,
 #endif // VERTEX_TANGENTS
@@ -88,6 +88,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 #ifdef PREPASS_FRAGMENT
 struct FragmentInput {
+#ifdef VERTEX_UVS
+    @location(0) uv: vec2<f32>,
+#endif // VERTEX_UVS
 #ifdef NORMAL_PREPASS
     @location(1) world_normal: vec3<f32>,
 #endif // NORMAL_PREPASS

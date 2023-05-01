@@ -25,7 +25,7 @@ fn main() {
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin {
-                    watch_for_changes: false,
+                    watch_for_changes: true,
                     asset_folder: "".to_string(),
                 })
                 // This is for pixel graphics

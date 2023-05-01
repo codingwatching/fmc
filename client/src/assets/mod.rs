@@ -89,13 +89,7 @@ fn handle_assets_response(
     for tarball in asset_events.iter() {
         info!("Received assets from server...");
         // Remove old assets if they exist.
-        match std::fs::remove_dir_all("server_assets") {
-            Ok(_) => (),
-            Err(e) => warn!(
-                "Failed to delete old assets folder while downloading new assets!\nError: {}",
-                e
-            ),
-        };
+        std::fs::remove_dir_all("server_assets").ok();
 
         let mut archive = tar::Archive::new(std::io::Cursor::new(&tarball.file));
         archive.unpack("./server_assets").unwrap();

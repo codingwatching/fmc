@@ -113,7 +113,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         let z_depth_buffer_view = view.projection[3][2] / z_depth_ndc;
         let z_fragment_view = view.projection[3][2] / in.frag_coord.z;
         let diff = z_fragment_view - z_depth_buffer_view;
-        let alpha = exp(-diff * 0.08 - 1.0);
+        let alpha = min(exp(-diff * 0.08 - 1.0), 1.0);
         output_color.a = alpha;
     }
 #ifdef VERTEX_COLORS

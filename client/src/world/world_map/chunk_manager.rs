@@ -181,7 +181,7 @@ fn frustum_chunk_loading(
     mut chunk_query: Query<
         (
             &VisibleSides,
-            Option<&mut Visibility>,
+            Option<&mut ComputedVisibility>,
             Option<&ChunkMeshTask>,
         ),
         With<ChunkMarker>,

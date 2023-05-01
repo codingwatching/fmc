@@ -9,8 +9,6 @@ use fmc_networking::{messages, NetworkData};
 
 use crate::{game_state::GameState, player::Player, rendering::materials};
 
-use super::MovesWithOrigin;
-
 pub const SUN_DISTANCE: f32 = 400000.0;
 
 pub struct SkyPlugin;
@@ -52,7 +50,7 @@ fn setup(
 
     commands.insert_resource(AmbientLight {
             color: Color::WHITE,
-            brightness: 0.5,
+            brightness: 0.03,
     });
 
     // Overlays a DirectionalLight on top of the sun that is generated in the shader, since that
@@ -63,7 +61,6 @@ fn setup(
             directional_light: DirectionalLight {
                 illuminance: 10000.0,
                 shadows_enabled: true,
-                //shadow_normal_bias: 0.5,
                 ..default()
             },
             ..default()
@@ -90,13 +87,9 @@ fn pass_time(
     let (mut light_transform, mut light) = sun_light_query.single_mut();
 
     // Sun goes in a circle around the player
-    let position = Vec3::new(angle.cos() * 25000., angle.sin() * 25000., 0.0);
+    let position = Vec3::new(angle.cos() * 500., angle.sin() * 500., 0.0);
 
-    if position.y < 0.0 {
-        light.illuminance = 0.0;
-    } else {
-        light.illuminance = 10000.0;
-    }
+    light.illuminance = (angle.sin() * 10000.0).max(0.0);
 
     light_transform.translation = position;
     light_transform.look_at(Vec3::ZERO, Vec3::Y);
