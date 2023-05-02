@@ -75,6 +75,19 @@ impl TerrainGenerator {
         .generate()
         .0;
 
+        //let mut noise = NoiseBuilder::ridge_3d_offset(
+        //    x as f32,
+        //    CHUNK_SIZE,
+        //    y as f32,
+        //    CHUNK_SIZE + y_offset,
+        //    z as f32,
+        //    CHUNK_SIZE,
+        //)
+        //.with_octaves(5)
+        //.with_gain(GAIN)
+        //.generate()
+        //.0;
+
         // Fbm noise has amplitude of "gain^0 + gain^1 ... + gain^octaves", closed form is
         // (1 - gain^octaves) / (1 - gain). Used to scale the noise down to a range of -1 to 1
         let scale = (1.0 - GAIN.powi(OCTAVES)) / (1.0 - GAIN);
@@ -180,7 +193,7 @@ impl TerrainGenerator {
 
         // Seed used for feature placing, unique to each chunk. (it's not actually unique now)
         let seed = self.seed
-            + (position.x * i32::MAX.pow(3) + position.y * i32::MAX.pow(2) + position.z) as u64;
+            + (position.x.overflowing_mul(i32::MAX).0 + position.z) as u64;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
         let (terrain_height, _min, max) = self.terrain_height(position.x, position.z);

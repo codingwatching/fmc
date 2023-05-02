@@ -1,8 +1,6 @@
 use bevy::{
     asset::Handle,
-    pbr::{
-        AlphaMode, MaterialPipeline, MaterialPipelineKey,
-    },
+    pbr::{AlphaMode, MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypeUuid,
     render::{

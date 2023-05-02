@@ -2,14 +2,14 @@
 // updates for celestial objects.
 
 use bevy::{
-    pbr::{NotShadowCaster, NotShadowReceiver},
+    pbr::{
+        CascadeShadowConfigBuilder, DirectionalLightShadowMap, NotShadowCaster, NotShadowReceiver,
+    },
     prelude::*,
 };
 use fmc_networking::{messages, NetworkData};
 
 use crate::{game_state::GameState, player::Player, rendering::materials};
-
-pub const SUN_DISTANCE: f32 = 400000.0;
 
 pub struct SkyPlugin;
 impl Plugin for SkyPlugin {
@@ -49,8 +49,8 @@ fn setup(
         .id();
 
     commands.insert_resource(AmbientLight {
-            color: Color::WHITE,
-            brightness: 0.03,
+        color: Color::WHITE,
+        brightness: 0.03,
     });
 
     // Overlays a DirectionalLight on top of the sun that is generated in the shader, since that
@@ -59,7 +59,6 @@ fn setup(
     let sun_entity = commands
         .spawn(DirectionalLightBundle {
             directional_light: DirectionalLight {
-                illuminance: 10000.0,
                 shadows_enabled: true,
                 ..default()
             },
@@ -86,10 +85,9 @@ fn pass_time(
 
     let (mut light_transform, mut light) = sun_light_query.single_mut();
 
-    // Sun goes in a circle around the player
-    let position = Vec3::new(angle.cos() * 500., angle.sin() * 500., 0.0);
+    let position = Vec3::new(angle.cos(), angle.sin(), 0.0);
 
-    light.illuminance = (angle.sin() * 10000.0).max(0.0);
+    light.illuminance = (angle.sin() * 20000.0).max(0.0);
 
     light_transform.translation = position;
     light_transform.look_at(Vec3::ZERO, Vec3::Y);
@@ -97,7 +95,7 @@ fn pass_time(
     let handle = sky_material_query.single();
     let material = materials.get_mut(handle).unwrap();
 
-    let position = Vec3::new(angle.cos() * SUN_DISTANCE, angle.sin() * SUN_DISTANCE, 0.0);
+    let position = Vec3::new(angle.cos(), angle.sin(), 0.0);
 
     material.sun_position.x = position.x;
     material.sun_position.y = position.y;

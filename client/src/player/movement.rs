@@ -38,10 +38,10 @@ impl Plugin for MovementPlugin {
             )
                 .run_if(in_state(GameState::Playing)),
         )
-            // TODO: This is another one of the things the server just sends on connection.
-            // Workaround by just having it run all the time, but once the server can be notified
-            // that the client is actually ready to receive it should be moved above with the rest. 
-            .add_systems(Update, handle_position_updates_from_server);
+        // TODO: This is another one of the things the server just sends on connection.
+        // Workaround by just having it run all the time, but once the server can be notified
+        // that the client is actually ready to receive it should be moved above with the rest.
+        .add_systems(Update, handle_position_updates_from_server);
     }
 }
 

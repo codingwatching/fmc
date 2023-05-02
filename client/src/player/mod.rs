@@ -1,17 +1,9 @@
 // Copied from https://github.com/sburris0/bevy_flycam/blob/master/src/lib.rs
-use bevy::{
-    core_pipeline::prepass::DepthPrepass,
-    prelude::*,
-    render::primitives::Aabb,
-    window::{CursorGrabMode, PrimaryWindow},
-};
+use bevy::{core_pipeline::prepass::DepthPrepass, prelude::*, render::primitives::Aabb};
 use fmc_networking::{messages, NetworkData};
 
 use crate::{
-    constants::CHUNK_SIZE,
-    game_state::GameState,
-    settings::Settings,
-    world::MovesWithOrigin,
+    constants::CHUNK_SIZE, game_state::GameState, settings::Settings, world::MovesWithOrigin,
 };
 
 mod camera;
@@ -33,15 +25,10 @@ impl Plugin for PlayerPlugin {
             .add_plugin(interfaces::InterfacePlugin)
             .add_plugin(hand::HandPlugin)
             .add_plugin(key_bindings::KeyBindingsPlugin)
-            .add_systems(Startup, (setup_player, initial_grab_cursor))
+            .add_systems(Startup, setup_player)
             .add_systems(
                 Update,
-                (
-                    //.with_system(outline_selected_block)
-                    cursor_grab,
-                    camera::camera_rotation,
-                    handle_player_config,
-                )
+                (camera::camera_rotation, handle_player_config)
                     .run_if(in_state(GameState::Playing)),
             );
     }
@@ -136,7 +123,7 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
 // defaults, but should be updated by the server on connection.
 fn handle_player_config(
     mut config_events: EventReader<NetworkData<messages::PlayerConfiguration>>,
-    mut aabb_query:Query<&mut Aabb, With<Player>>,
+    mut aabb_query: Query<&mut Aabb, With<Player>>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
 ) {
     for config in config_events.iter() {
@@ -146,31 +133,5 @@ fn handle_player_config(
         camera_transform.translation = config.camera_position;
 
         *aabb = Aabb::from_min_max(Vec3::ZERO, config.aabb_dimensions)
-    }
-}
-
-// TODO: All this cursor stuff should be moved to window management.
-fn toggle_grab_cursor(window: &mut Window) {
-    match window.cursor.grab_mode {
-        CursorGrabMode::Confined => {
-            window.cursor.grab_mode = CursorGrabMode::None;
-            window.cursor.visible = false;
-        }
-        CursorGrabMode::None => {
-            window.cursor.grab_mode = CursorGrabMode::Locked;
-            window.cursor.visible = true;
-        }
-        _ => (),
-    }
-}
-
-// Grabs the cursor when game first starts
-fn initial_grab_cursor(mut window: Query<&mut Window, With<PrimaryWindow>>) {
-    toggle_grab_cursor(&mut window.single_mut());
-}
-
-fn cursor_grab(keys: Res<Input<KeyCode>>, mut window: Query<&mut Window, With<PrimaryWindow>>) {
-    if keys.just_pressed(KeyCode::Escape) {
-        toggle_grab_cursor(&mut window.single_mut());
     }
 }

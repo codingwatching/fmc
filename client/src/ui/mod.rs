@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    window::{CursorGrabMode, PrimaryWindow},
+};
 
 use crate::game_state::GameState;
 
@@ -17,10 +20,13 @@ impl Plugin for UiPlugin {
 
         app.add_plugin(main_menu::MainMenuPlugin)
             .add_plugin(text::TextPlugin)
-            .add_systems(Startup, game_cursor_setup)
+            .add_systems(Startup, player_cursor_setup)
             .add_systems(Update, change_interface.run_if(state_changed::<UiState>()))
             .add_systems(OnExit(GameState::MainMenu), enter_exit_ui)
-            .add_systems(OnEnter(GameState::MainMenu), enter_exit_ui);
+            .add_systems(
+                OnEnter(GameState::MainMenu),
+                (enter_exit_ui, release_cursor),
+            );
     }
 }
 
@@ -63,7 +69,7 @@ fn enter_exit_ui(game_state: Res<State<GameState>>, mut ui_state: ResMut<NextSta
 
 // The cross placed in the middle while playing
 // TODO: Make it a cross instead of a dot, and white transparent
-fn game_cursor_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
+fn player_cursor_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     // red dot cursor
     let entity = commands
         .spawn(NodeBundle {
@@ -80,4 +86,10 @@ fn game_cursor_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>)
         .id();
 
     interfaces.insert(UiState::None, entity);
+}
+
+fn release_cursor(mut window: Query<&mut Window, With<PrimaryWindow>>) {
+    let mut window = window.single_mut();
+    window.cursor.grab_mode = CursorGrabMode::None;
+    window.cursor.visible = true;
 }

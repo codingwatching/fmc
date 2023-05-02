@@ -4,7 +4,11 @@ use std::{
     io::Read,
 };
 
-use bevy::{prelude::*, render::texture::CompressedImageFormats, window::PrimaryWindow};
+use bevy::{
+    prelude::*,
+    render::texture::CompressedImageFormats,
+    window::{CursorGrabMode, PrimaryWindow},
+};
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
 use serde::{Deserialize, Serialize};
@@ -1003,8 +1007,6 @@ fn update_item_box_images(
     }
 }
 
-// TODO: Should also be visible when there's buttons not just item boxes, but buttons don't exist
-// yet.
 fn cursor_visibility(
     mut window: Query<&mut Window, With<PrimaryWindow>>,
     changed_interfaces: Query<(&Interface, &Visibility), Changed<Visibility>>,
@@ -1017,8 +1019,14 @@ fn cursor_visibility(
                 window.cursor.visible = true;
                 let position = Vec2::new(window.width() / 2.0, window.height() / 2.0);
                 window.set_cursor_position(Some(position));
+                window.cursor.grab_mode = CursorGrabMode::None;
             } else {
                 window.cursor.visible = false;
+                window.cursor.grab_mode = if cfg!(unix) {
+                    CursorGrabMode::Locked
+                } else {
+                    CursorGrabMode::Confined
+                };
             }
         }
     }

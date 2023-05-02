@@ -1,4 +1,8 @@
-use std::{collections::HashMap, ops::Index, sync::Arc};
+use std::{
+    collections::HashMap,
+    ops::Index,
+    sync::{RwLock, RwLockReadGuard},
+};
 
 use bevy::prelude::*;
 use fmc_networking::{messages, BlockId, NetworkClient};
@@ -9,7 +13,9 @@ use crate::{
     rendering::materials::{self, BlockMaterial},
 };
 
-pub static BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::new();
+// TODO: I'm not convinced this should be global, with the rwlock it's maybe trying too hard. It is
+// very noisy passing it around though.
+pub static BLOCKS: once_cell::sync::OnceCell<RwLock<Blocks>> = once_cell::sync::OnceCell::new();
 
 const MODEL_PATH: &str = "server_assets/textures/models/";
 
@@ -352,7 +358,10 @@ pub fn load_blocks(
         return;
     }
 
-    BLOCKS.set(Blocks { inner: blocks }).unwrap();
+    match BLOCKS.get() {
+        Some(b) => *b.write().unwrap() = Blocks { inner: blocks },
+        None => BLOCKS.set(RwLock::new(Blocks { inner: blocks })).unwrap(),
+    }
 }
 
 // TODO: Wrap into Blocks(_Blocks), this way it can have 2 get functions. One for the OnceCell and
@@ -367,19 +376,16 @@ pub struct Blocks {
 }
 
 impl Blocks {
-    pub fn get() -> &'static Self {
+    pub fn get() -> RwLockReadGuard<'static, Self> {
         return BLOCKS
             .get()
-            .expect("The blocks have not been loaded yet, make sure this is only used after.");
+            .expect("The blocks have not been loaded yet, make sure this is only used after.")
+            .read()
+            .unwrap();
     }
 
     pub fn contains(&self, block_id: BlockId) -> bool {
         return block_id as usize <= self.inner.len() && block_id != 0;
-    }
-
-    // TODO: Remove this, chunk blocks should be checked at reception for validity.
-    pub fn get_config(&self, block_id: &BlockId) -> Option<&Block> {
-        return self.inner.get(block_id);
     }
 }
 
