@@ -66,7 +66,7 @@ fn handle_network_events(
 
                 let config = messages::ServerConfig {
                     assets_hash: assets_hash.hash.clone(),
-                    block_ids: Blocks::get().clone_ids(),
+                    block_ids: Blocks::get().filenames(),
                     model_ids: models.clone_ids(),
                     item_ids: items.clone_ids(),
                 };
@@ -75,7 +75,14 @@ fn handle_network_events(
                 let mut entity_commands = commands.spawn_empty();
 
                 let player_bundle = if let Some(saved_player) = database.load_player(username) {
-                    PlayerBundle::from(saved_player)
+                    let bundle = PlayerBundle::from(saved_player);
+                    net.send_one(
+                        *connection_id,
+                        messages::PlayerPosition {
+                            position: bundle.transform.translation,
+                        },
+                    );
+                    bundle
                 } else {
                     // Move new players to spawn
                     respawn_events.send(PlayerRespawnEvent(entity_commands.id()));
@@ -87,13 +94,6 @@ fn handle_network_events(
                     messages::PlayerConfiguration {
                         aabb_dimensions: player_bundle.aabb.half_extents.as_vec3() * 2.0,
                         camera_position: player_bundle.camera.translation.as_vec3(),
-                    },
-                );
-
-                net.send_one(
-                    *connection_id,
-                    messages::PlayerPosition {
-                        position: player_bundle.transform.translation,
                     },
                 );
 

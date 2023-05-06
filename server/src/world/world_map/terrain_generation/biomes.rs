@@ -13,7 +13,7 @@ pub struct Biome {
     pub surface_features: Vec<FeaturePlacer>,
     // TODO: Some way to determine appropriate "filler" blocks. This block above this altitude,
     // this below...
-    pub water: BlockId,
+    pub liquid: BlockId,
     pub filler: BlockId,
     pub sand: BlockId,
 }
@@ -37,7 +37,7 @@ impl BiomeMap {
                 3,
                 Box::new(Tree::new(blocks.get_id("oak"), blocks.get_id("leaves"))),
             )],
-            water: blocks.get_id("water"),
+            liquid: blocks.get_id("water"),
             filler: blocks.get_id("air"),
             sand: blocks.get_id("sand"),
         };

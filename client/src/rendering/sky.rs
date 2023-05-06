@@ -2,9 +2,7 @@
 // updates for celestial objects.
 
 use bevy::{
-    pbr::{
-        CascadeShadowConfigBuilder, DirectionalLightShadowMap, NotShadowCaster, NotShadowReceiver,
-    },
+    pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::*,
 };
 use fmc_networking::{messages, NetworkData};
@@ -50,30 +48,15 @@ fn setup(
 
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 0.03,
+        brightness: 1.5,
     });
 
-    // Overlays a DirectionalLight on top of the sun that is generated in the shader, since that
-    // one doesn't actually illuminate anything.
-    // commands.insert_resource(DirectionalLightShadowMap { size: 4096 });
-    let sun_entity = commands
-        .spawn(DirectionalLightBundle {
-            directional_light: DirectionalLight {
-                shadows_enabled: true,
-                ..default()
-            },
-            ..default()
-        })
-        .id();
-
-    commands
-        .entity(player_id)
-        .push_children(&[sun_entity, sky_entity]);
+    commands.entity(player_id).push_children(&[sky_entity]);
 }
 
 fn pass_time(
     sky_material_query: Query<&Handle<materials::SkyMaterial>>,
-    mut sun_light_query: Query<(&mut Transform, &mut DirectionalLight)>,
+    mut ambient_light: ResMut<AmbientLight>,
     mut materials: ResMut<Assets<materials::SkyMaterial>>,
     mut server_time_events: EventReader<NetworkData<messages::Time>>,
 ) {
@@ -83,19 +66,11 @@ fn pass_time(
         return;
     };
 
-    let (mut light_transform, mut light) = sun_light_query.single_mut();
+    ambient_light.brightness = angle.sin() * 1.5;
 
     let position = Vec3::new(angle.cos(), angle.sin(), 0.0);
-
-    light.illuminance = (angle.sin() * 20000.0).max(0.0);
-
-    light_transform.translation = position;
-    light_transform.look_at(Vec3::ZERO, Vec3::Y);
-
     let handle = sky_material_query.single();
     let material = materials.get_mut(handle).unwrap();
-
-    let position = Vec3::new(angle.cos(), angle.sin(), 0.0);
 
     material.sun_position.x = position.x;
     material.sun_position.y = position.y;

@@ -11,6 +11,7 @@
 // add extra json data as the blocks state. This is useful e.g. for furnaces that need to keep
 // track of what is being smelted and what interface should be show to the player when it is
 // interacted with.
+//
 // TODO: It should store block configs in the worlds database so that worlds are more portable.
 //       Addendum: It should store the entire resource folder.
 //       It should instead emit warnings when configs(and other things it was initialized with) go
@@ -76,6 +77,7 @@ pub trait BlockFunctionality {
 //    }
 //}
 
+#[derive(Clone)]
 pub struct Block {
     config: BlockConfig,
     /// This function is used to set up the ecs entity for the block if it should have
@@ -117,9 +119,11 @@ impl Block {
 pub struct Blocks {
     // TODO: Can be a vec.
     // block id -> block config
-    blocks: HashMap<BlockId, Block>,
+    blocks: Vec<Block>,
     // block name -> block id
     ids: HashMap<String, BlockId>,
+    // Filenames sent to client. The block ids are implied by the filename location in the the vec.
+    filenames: Vec<String>,
 }
 
 impl Blocks {
@@ -128,32 +132,66 @@ impl Blocks {
     // If a block that has previously been loaded into the world is removed from the assets, the server
     // will fail to load.
     fn load(database: &Database) {
-        let mut blocks = Self {
-            blocks: HashMap::new(),
+        let mut blocks = Blocks {
+            blocks: Vec::new(),
             ids: database.load_block_ids(),
+            filenames: Vec::new(),
         };
 
+        let mut block_ids = blocks.ids.clone();
         let item_ids = database.load_item_ids();
+        let mut maybe_blocks = vec![None; block_ids.len()];
+        let mut filenames = vec![String::default(); block_ids.len()];
 
-        for (filename, block_id) in blocks.ids.iter() {
-            let file_path = BLOCK_CONFIG_PATH.to_owned() + &filename + ".json";
+
+        let directory = std::fs::read_dir(crate::world::blocks::BLOCK_CONFIG_PATH).expect(
+            "Could not read files from block configuration directory, make sure it is present.\n",
+        );
+
+        for dir_entry in directory {
+            let file_path = match dir_entry {
+                Ok(d) => d.path(),
+                Err(e) => panic!(
+                    "Failed to read the filename of a block config, Error: {}",
+                    e
+                ),
+            };
+
+            if file_path.is_dir() {
+                continue;
+            }
+
             let block_config_json = BlockConfigJson::from_file(&file_path);
+
             let drop = match block_config_json.drop {
                 Some(drop) => match BlockDrop::from(&drop, &item_ids) {
                     Ok(d) => Some(d),
                     Err(e) => {
-                        panic!("Failed to read 'drop' field for block at: {file_path}\nError: {e}")
+                        panic!("Failed to read 'drop' field for block at: {}\nError: {e}", file_path.display())
                     }
                 },
                 None => None,
             };
-            let block_config = BlockConfig {
-                friction: block_config_json.friction,
-                hardness: block_config_json.hardness,
-                drop,
-            };
-            blocks.blocks.insert(*block_id, Block::new(block_config));
+
+            if let Some(block_id) = block_ids.remove(&block_config_json.name) {
+                let block_config = BlockConfig {
+                    name: block_config_json.name,
+                    friction: block_config_json.friction,
+                    hardness: block_config_json.hardness,
+                    drop,
+                };
+
+                maybe_blocks[block_id as usize] = Some(Block::new(block_config));
+                filenames[block_id as usize] = file_path.file_stem().unwrap().to_str().unwrap().to_owned();
+            }
         }
+
+        if block_ids.len() > 0 {
+            panic!("Misconfigured resource pack, missing blocks: {:?}", block_ids.values().collect::<Vec<_>>());
+        }
+
+        blocks.blocks = maybe_blocks.into_iter().flatten().collect();
+        blocks.filenames = filenames;
 
         BLOCKS.set(blocks).ok();
     }
@@ -163,16 +201,7 @@ impl Blocks {
     }
 
     pub fn get_config(&self, block_id: &BlockId) -> &Block {
-        return self.blocks.get(block_id).unwrap();
-    }
-
-    pub fn get_mut(&mut self, block_id: &BlockId) -> &mut Block {
-        return self.blocks.get_mut(block_id).unwrap();
-    }
-
-    pub fn get_mut_by_name(&mut self, block_name: &str) -> &mut Block {
-        let id = self.get_id(block_name);
-        return self.get_mut(&id);
+        return &self.blocks[*block_id as usize];
     }
 
     #[track_caller]
@@ -190,8 +219,8 @@ impl Blocks {
         }
     }
 
-    pub fn clone_ids(&self) -> HashMap<String, BlockId> {
-        return self.ids.clone();
+    pub fn filenames(&self) -> Vec<String> {
+        return self.filenames.clone();
     }
 }
 
@@ -203,7 +232,7 @@ enum BlockDropJson {
     Chance(Vec<(f64, Self)>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum BlockDrop {
     Single(ItemId),
     Multiple {
@@ -264,6 +293,8 @@ impl BlockDrop {
 
 #[derive(Debug, Deserialize)]
 struct BlockConfigJson {
+    /// Name of the block
+    name: String,
     /// The friction/drag.
     friction: Friction,
     /// How long it takes to break the block without a tool
@@ -349,8 +380,10 @@ impl BlockConfigJson {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockConfig {
+    /// Name of the block
+    pub name: String,
     /// The friction or drag.
     pub friction: Friction,
     /// How long it takes to break the block without a tool, None if unbreakable.
@@ -380,7 +413,7 @@ pub enum BlockFace {
     Bottom,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Friction {
     /// Friction for solid blocks.

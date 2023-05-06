@@ -3,8 +3,6 @@ use fmc_networking_derive::{ClientBound, NetworkMessage, ServerBound};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::BlockId;
-
 /// Configutation of server sent to clients.
 #[derive(Resource, NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerConfig {
@@ -12,10 +10,8 @@ pub struct ServerConfig {
     //pub render_distance: u32,
     /// Clients need to determine if they have the correct assets downloaded.
     pub assets_hash: Vec<u8>,
-    /// Map from block name to id on the server.
-    /// Chunks sent to the client only contain ids to save space.
-    /// Used to associate assets to ids.
-    pub block_ids: HashMap<String, BlockId>,
+    /// Vec of block filenames ordered by their id.
+    pub block_ids: Vec<String>,
     /// Map from model name to id on the server.
     pub model_ids: HashMap<String, u32>,
     /// Map from item name to id on the server.

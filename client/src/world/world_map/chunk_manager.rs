@@ -2,10 +2,10 @@ use crate::{
     constants::*,
     game_state::GameState,
     player::Player,
-    rendering::chunk::{ChunkMeshEvent, ChunkMeshTask},
+    rendering::chunk::MeshedChunkMarker,
     settings, utils,
     world::{
-        blocks::Blocks,
+        blocks::{Block, Blocks},
         world_map::{
             chunk::{Chunk, ChunkMarker, VisibleSides},
             WorldMap,
@@ -171,18 +171,19 @@ fn proximity_chunk_loading(
 // see chunks being loaded in and out. Lock the far plane normal vector to {x,0,z}.
 // update: Bevy's frustum no longer uses far planes, what is going on?
 fn frustum_chunk_loading(
+    mut commands: Commands,
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     camera_query: Query<(&Frustum, &GlobalTransform), With<Camera>>,
     settings: Res<settings::Settings>,
     pause: Res<Pause>,
-    mut chunk_mesh_events: EventWriter<ChunkMeshEvent>,
     mut chunk_request_events: EventWriter<ChunkRequestEvent>,
     mut chunk_query: Query<
         (
+            Entity,
             &VisibleSides,
-            Option<&mut ComputedVisibility>,
-            Option<&ChunkMeshTask>,
+            Option<&mut Visibility>,
+            Option<&MeshedChunkMarker>,
         ),
         With<ChunkMarker>,
     >,
@@ -192,11 +193,11 @@ fn frustum_chunk_loading(
     }
 
     // Reset the visibility of all chunks
-    //chunk_query.for_each_mut(|(_, visibility, _)| {
-    //    if let Some(mut visibility) = visibility {
-    //        *visibility = Visibility::Hidden;
-    //    }
-    //});
+    chunk_query.for_each_mut(|(_, _, visibility, _)| {
+        if let Some(mut visibility) = visibility {
+            *visibility = Visibility::Hidden;
+        }
+    });
 
     let (frustum, camera_position) = camera_query.single();
 
@@ -269,16 +270,13 @@ fn frustum_chunk_loading(
             if let Some(chunk) = world_map.get_chunk($pos) {
                 if let Some(chunk_entity) = chunk.entity {
                     unsafe {
-                        if let Ok((visible_sides, visibility, mesh_task)) =
+                        if let Ok((entity, visible_sides, visibility, is_meshed_chunk)) =
                             chunk_query.get_unchecked(chunk_entity)
                         {
                             if let Some(mut visibility) = visibility {
-                                //*visibility = Visibility::Inherited;
-                            } else if mesh_task.is_none() {
-                                chunk_mesh_events.send(ChunkMeshEvent {
-                                    position: *$pos,
-                                    should_create: true,
-                                });
+                                *visibility = Visibility::Inherited;
+                            } else if is_meshed_chunk.is_none() {
+                                commands.entity(entity).insert(MeshedChunkMarker);
                             }
                             Some(Some(visible_sides))
                         } else {
@@ -287,7 +285,7 @@ fn frustum_chunk_loading(
                         }
                     }
                 } else {
-                    // No entity means it is a uniform chunk that is transparent.
+                    // No entity means it is an air chunk.
                     Some(None)
                 }
             } else {
@@ -436,9 +434,12 @@ fn handle_chunk_responses(
             // bool, and when the chunk is converted to a normal chunk it can be set to false.
             // With this, no uniform chunk would have no entity = speedup for frustum. Now, only
             // chunks that are transparent(air) have no entity.
-            if chunk.blocks.len() == 1 && Blocks::get()[&chunk.blocks[0]].is_transparent() {
-                //*chunk_count += 1;
-                //dbg!(&chunk_count);
+            if chunk.blocks.len() == 1
+                && match &blocks[&chunk.blocks[0]] {
+                    Block::Cube(b) if b.quads.len() == 0 => true,
+                    _ => false,
+                }
+            {
                 world_map.insert(
                     chunk.position,
                     Chunk::new_air(chunk.blocks.clone(), chunk.block_state.clone()),
@@ -469,9 +470,10 @@ fn handle_chunk_responses(
 // TODO: This doesn't feel like it belongs in this file.
 // Handles block udates sent from the server.
 fn handle_block_updates(
+    mut commands: Commands,
+    origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     net: Res<NetworkClient>,
-    mut chunk_mesh_events: EventWriter<ChunkMeshEvent>,
     mut visible_sides_events: EventWriter<VisibleSidesEvent>,
     mut block_updates_events: EventReader<NetworkData<messages::BlockUpdates>>,
 ) {
@@ -485,11 +487,17 @@ fn handle_block_updates(
 
         if chunk.is_uniform() {
             chunk.convert_uniform_to_full();
+            let entity = commands
+                .spawn(TransformBundle::from(Transform::from_translation(
+                    (event.chunk_position - origin.0).as_vec3(),
+                )))
+                .insert(MovesWithOrigin)
+                .insert(ChunkMarker)
+                .id();
+            chunk.entity = Some(entity);
         }
 
         let blocks = Blocks::get();
-        // TODO: This will send multiple mesh events if there are multiple changes along an
-        // edge. Causes some unnecessary work collecting blocks for rendering.
         for (index, block) in event.blocks.iter() {
             if !blocks.contains(*block) {
                 net.disconnect(
@@ -519,48 +527,8 @@ fn handle_block_updates(
                 chunk.remove_block_state(index);
             }
 
-            let position = utils::block_index_to_position(*index);
-            if position.x == 15 {
-                chunk_mesh_events.send(ChunkMeshEvent {
-                    position: event.chunk_position + IVec3::new(CHUNK_SIZE as i32, 0, 0),
-                    should_create: false,
-                });
-            } else if position.x == 0 {
-                chunk_mesh_events.send(ChunkMeshEvent {
-                    position: event.chunk_position - IVec3::new(CHUNK_SIZE as i32, 0, 0),
-                    should_create: false,
-                });
-            }
-
-            if position.y == 15 {
-                chunk_mesh_events.send(ChunkMeshEvent {
-                    position: event.chunk_position + IVec3::new(0, CHUNK_SIZE as i32, 0),
-                    should_create: false,
-                });
-            } else if position.y == 0 {
-                chunk_mesh_events.send(ChunkMeshEvent {
-                    position: event.chunk_position - IVec3::new(0, CHUNK_SIZE as i32, 0),
-                    should_create: false,
-                });
-            }
-
-            if position.z == 15 {
-                chunk_mesh_events.send(ChunkMeshEvent {
-                    position: event.chunk_position + IVec3::new(0, 0, CHUNK_SIZE as i32),
-                    should_create: false,
-                });
-            } else if position.z == 0 {
-                chunk_mesh_events.send(ChunkMeshEvent {
-                    position: event.chunk_position - IVec3::new(0, 0, CHUNK_SIZE as i32),
-                    should_create: false,
-                });
-            }
-
-            chunk_mesh_events.send(ChunkMeshEvent {
-                position: event.chunk_position,
-                should_create: false,
-            });
-            visible_sides_events.send(VisibleSidesEvent(event.chunk_position));
         }
+
+        visible_sides_events.send(VisibleSidesEvent(event.chunk_position));
     }
 }

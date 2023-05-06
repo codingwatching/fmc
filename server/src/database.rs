@@ -473,7 +473,7 @@ impl Database {
 
     /// Add new block ids to the database. The ids will be constant and cannot change.
     pub fn save_block_ids(&self) {
-        let mut block_names = Vec::new();
+        let mut block_names: Vec<String> = Vec::new();
 
         let directory = std::fs::read_dir(crate::world::blocks::BLOCK_CONFIG_PATH).expect(
             "Could not read files from block configuration directory, make sure it is present.\n",
@@ -488,27 +488,37 @@ impl Database {
                 ),
             };
 
-            if !file_path.is_dir() {
-                block_names.push(
-                    file_path
-                        .file_stem()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_lowercase(),
-                );
+            if file_path.is_dir() {
+                continue;
             }
+
+            let file = std::fs::File::open(&file_path).unwrap();
+            let config: serde_json::Value = match serde_json::from_reader(file) {
+                Ok(c) => c,
+                Err(e) => panic!(
+                    "Failed to read block config at path: {}\nError: {}",
+                    file_path.display(),
+                    e
+                ),
+            };
+
+            let block_name = match config.get("name").and_then(|name| name.as_str()) {
+                Some(n) => n,
+                _ => continue
+            };
+
+            block_names.push(block_name.to_owned());
         }
 
         let mut conn = self.get_connection();
         let tx = conn.transaction().unwrap();
 
         let mut stmt = tx
-            .prepare("INSERT INTO block_ids (name) VALUES (?)")
+            .prepare("INSERT INTO block_ids (id, name) VALUES (?, ?)")
             .unwrap();
 
-        for name in block_names {
-            stmt.execute(rusqlite::params![name]).unwrap();
+        for (id, name) in block_names.into_iter().enumerate() {
+            stmt.execute(rusqlite::params![id, name]).unwrap();
         }
 
         stmt.finalize().unwrap();

@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     ops::Index,
-    sync::{RwLock, RwLockReadGuard},
+    path::PathBuf,
 };
 
 use bevy::prelude::*;
@@ -13,9 +13,7 @@ use crate::{
     rendering::materials::{self, BlockMaterial},
 };
 
-// TODO: I'm not convinced this should be global, with the rwlock it's maybe trying too hard. It is
-// very noisy passing it around though.
-pub static BLOCKS: once_cell::sync::OnceCell<RwLock<Blocks>> = once_cell::sync::OnceCell::new();
+pub static mut BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::new();
 
 const MODEL_PATH: &str = "server_assets/textures/models/";
 
@@ -103,42 +101,27 @@ pub fn load_blocks(
     material_handles: Res<assets::Materials>,
     materials: Res<Assets<BlockMaterial>>,
 ) {
-    let mut blocks = HashMap::new();
-    let mut block_ids = server_config.block_ids.clone();
+    if server_config.block_ids.len() > u16::MAX as usize {
+        net.disconnect(&format!(
+            "Misconfigured resource pack, too many blocks, {} is the limit, but {} were supplied.",
+            BlockId::MAX,
+            server_config.block_ids.len()
+        ));
+        return;
+    }
 
-    let directory = match std::fs::read_dir(BLOCK_CONFIG_PATH) {
-        Ok(dir) => dir,
-        Err(e) => {
-            net.disconnect(&format!(
-                "Misconfigured resource pack, failed to read block configuration directory '{}'\n Error: {}",
-                BLOCK_CONFIG_PATH, e)
-            );
-            return;
-        }
-    };
+    let mut block_ids = HashMap::with_capacity(server_config.block_ids.len());
+    let mut blocks = Vec::with_capacity(server_config.block_ids.len());
 
-    for dir_entry in directory {
-        let file_path = match dir_entry {
-            Ok(d) => d.path(),
-            Err(e) => {
-                net.disconnect(&format!(
-                    "Misconfigured resource pack, failed to read the file path of a block config\n\
-                    Error: {}",
-                    e
-                ));
-                return;
-            }
-        };
+    let mut file_path = PathBuf::from(BLOCK_CONFIG_PATH);
+    file_path.push("temp");
 
-        if file_path.is_dir() {
-            continue;
-        }
+    for (id, filename) in server_config.block_ids.iter().enumerate() {
+        file_path.set_file_name(filename);
+        file_path.set_extension("json");
 
         let block_config = match BlockConfig::from_file(&file_path) {
-            Ok(c) => match c {
-                Some(c) => c,
-                None => continue, // parent config
-            },
+            Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
                     "Misconfigured resource pack, failed to read block config at {}\nError: {}",
@@ -149,7 +132,7 @@ pub fn load_blocks(
             }
         };
 
-        let (name, block) = match block_config {
+        let block = match block_config {
             BlockConfig::Cube {
                 name,
                 faces,
@@ -159,6 +142,7 @@ pub fn load_blocks(
                 friction,
                 material,
                 interactable,
+                light_attenuation,
             } => {
                 let material_handle = if let Some(m) = material_handles.get(&material) {
                     m.clone().typed()
@@ -224,6 +208,15 @@ pub fn load_blocks(
                             } else {
                                 None
                             },
+                            light_face: match i {
+                                0 => BlockFace::Top,
+                                1 => BlockFace::Front,
+                                2 => BlockFace::Left,
+                                3 => BlockFace::Right,
+                                4 => BlockFace::Back,
+                                5 => BlockFace::Bottom,
+                                _ => unreachable!(),
+                            },
                         };
 
                         mesh_primitives.push(square);
@@ -261,28 +254,52 @@ pub fn load_blocks(
                             .to_array(),
                         ];
 
+                        let normal = Vec3::from(normals[0]);
+                        let normal_max =
+                            normal.abs().cmpeq(Vec3::splat(normal.abs().max_element()));
+                        let light_face = if normal_max.x {
+                            if normal.x.is_sign_positive() {
+                                BlockFace::Right
+                            } else {
+                                BlockFace::Left
+                            }
+                        } else if normal_max.y {
+                            if normal.y.is_sign_positive() {
+                                BlockFace::Top
+                            } else {
+                                BlockFace::Bottom
+                            }
+                        } else if normal_max.z {
+                            if normal.z.is_sign_positive() {
+                                BlockFace::Front
+                            } else {
+                                BlockFace::Back
+                            }
+                        } else {
+                            unreachable!();
+                        };
+
                         mesh_primitives.push(QuadPrimitive {
                             vertices: quad.vertices,
                             normals,
                             texture_array_id,
                             cull_face: quad.cull_face,
+                            light_face,
                         });
                     }
                 }
 
-                (
-                    name.to_owned(),
-                    Block::Cube(Cube {
-                        name,
-                        material_handle,
-                        quads: mesh_primitives,
-                        friction,
-                        cull,
-                        cull_only_if_same_block,
-                        interactable,
-                        transparent,
-                    }),
-                )
+                Block::Cube(Cube {
+                    name,
+                    material_handle,
+                    quads: mesh_primitives,
+                    friction,
+                    cull,
+                    cull_only_if_same_block,
+                    interactable,
+                    transparent,
+                    light_attenuation: light_attenuation.unwrap_or(1).min(16),
+                })
             }
             BlockConfig::Model {
                 name,
@@ -330,62 +347,60 @@ pub fn load_blocks(
                     return;
                 }
 
-                (
-                    name.to_owned(),
-                    Block::Model(BlockModel {
-                        name,
-                        center: center_model,
-                        side: side_model,
-                        friction,
-                        cull_faces,
-                        interactable,
-                    }),
-                )
+                Block::Model(BlockModel {
+                    name,
+                    center: center_model,
+                    side: side_model,
+                    friction,
+                    cull_faces,
+                    interactable,
+                })
             }
         };
 
-        if let Some(id) = block_ids.remove(&name) {
-            blocks.insert(id, block);
-        }
+        block_ids.insert(block.name().to_owned(), id as BlockId);
+        blocks.push(block);
     }
 
-    if block_ids.len() > 0 {
-        let remaining = block_ids.into_keys().collect::<String>();
-        net.disconnect(&format!(
-            "Misconfigured resource pack, Missing block configs for blocks with names: {}",
-            &remaining
-        ));
-        return;
-    }
-
-    match BLOCKS.get() {
-        Some(b) => *b.write().unwrap() = Blocks { inner: blocks },
-        None => BLOCKS.set(RwLock::new(Blocks { inner: blocks })).unwrap(),
+    unsafe {
+        BLOCKS.take();
+        BLOCKS.set(Blocks { blocks, block_ids }).unwrap();
     }
 }
 
-// TODO: Wrap into Blocks(_Blocks), this way it can have 2 get functions. One for the OnceCell and
+// TODO: Wrap into Blocks(_Blocks)? This way it can have 2 get functions. One for the OnceCell and
 // one for getting blocks. Just implement deref for blocks. [index] for blocks looks really
 // awkward.
-// TODO: Convert inner to vec for faster lookup, needs offset or dummy Block at 0 for air, maybe
-// have an actual config for it.
 /// The configurations for all the blocks.
 #[derive(Debug, Default)]
 pub struct Blocks {
-    pub inner: HashMap<BlockId, Block>,
+    blocks: Vec<Block>,
+    // Map from block name to block id
+    block_ids: HashMap<String, BlockId>,
 }
 
 impl Blocks {
-    pub fn get() -> RwLockReadGuard<'static, Self> {
-        return BLOCKS
-            .get()
-            .expect("The blocks have not been loaded yet, make sure this is only used after.")
-            .read()
-            .unwrap();
+    #[track_caller]
+    pub fn get() -> &'static Self {
+        unsafe {
+            return BLOCKS
+                .get()
+                .expect("The blocks have not been loaded yet, make sure this is only used after.");
+        }
+    }
+
+    /// Use when reading blocks directly from server connection. It is unknown if it is a valid
+    /// block.
+    pub fn get_config(&self, block_id: &BlockId) -> Option<&Block> {
+        return self.blocks.get(*block_id as usize);
+    }
+
+    pub fn get_id(&self, name: &str) -> Option<&BlockId> {
+        return self.block_ids.get(name);
     }
 
     pub fn contains(&self, block_id: BlockId) -> bool {
-        return block_id as usize <= self.inner.len() && block_id != 0;
+        return block_id as usize <= self.blocks.len();
     }
 }
 
@@ -393,7 +408,7 @@ impl Index<&BlockId> for Blocks {
     type Output = Block;
 
     fn index(&self, index: &BlockId) -> &Self::Output {
-        return &self.inner[index];
+        return &self.blocks[*index as usize];
     }
 }
 
@@ -418,6 +433,8 @@ pub struct Cube {
     pub interactable: bool,
     /// Marker for if the block is transparent, read from the block's material
     pub transparent: bool,
+    /// If transparent, should this decrease the vertical sunlight level.
+    pub light_attenuation: u8,
 }
 
 // TODO: This was made before the Models collection was made. This could hold model ids instead of
@@ -479,7 +496,7 @@ impl Block {
     pub fn is_transparent(&self) -> bool {
         match self {
             Block::Cube(c) => c.transparent,
-            Block::Model(_) => false,
+            Block::Model(_) => true,
         }
     }
 
@@ -487,6 +504,20 @@ impl Block {
         match self {
             Block::Cube(cube) => &cube.friction,
             Block::Model(model) => &model.friction,
+        }
+    }
+
+    pub fn light_attenuation(&self) -> u8 {
+        match self {
+            Block::Cube(c) => c.light_attenuation,
+            Block::Model(_) => 1,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Block::Cube(c) => &c.name,
+            Block::Model(m) => &m.name,
         }
     }
 }
@@ -516,6 +547,8 @@ enum BlockConfig {
         /// If the block is interactable
         #[serde(default)]
         interactable: bool,
+        /// How many levels light should decrease when passing through this block.
+        light_attenuation: Option<u8>,
     },
     Model {
         /// Name of the block, must be unique
@@ -536,15 +569,8 @@ enum BlockConfig {
 }
 
 impl BlockConfig {
-    fn from_file(path: &std::path::Path) -> Result<Option<Self>, Box<dyn std::error::Error>> {
+    fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let config = Self::read_as_json(path)?;
-
-        // Ignore block configs that don't have an associated name. These are templates to be used
-        // as parents for actual blocks.
-        // XXX: Will probably cause confusion if someone adds a block and forgets the name.
-        if !config["name"].is_string() {
-            return Ok(None);
-        }
 
         return serde_json::from_value(config)
             .map_err(|error| Box::new(error) as Box<dyn std::error::Error>);
@@ -599,6 +625,8 @@ pub struct QuadPrimitive {
     pub texture_array_id: u32,
     /// Which adjacent block face culls this quad from rendering.
     pub cull_face: Option<BlockFace>,
+    /// Which blockface this quad will take it's lighting from.
+    pub light_face: BlockFace,
 }
 
 #[derive(Deserialize)]
@@ -652,9 +680,6 @@ pub enum BlockFace {
     Back,
 }
 
-// TODO: When the friction is fluid the collidable config has to be false, and vice versa. This has
-// to be enforced while reading the config or else it will cause confusion when it causes weird
-// error messages.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Friction {

@@ -18,8 +18,11 @@ use crate::{
     world::{
         blocks::{Block, BlockFace, Blocks, QuadPrimitive},
         world_map::{Chunk, ChunkMarker, ChunkRequestEvent, WorldMap},
+        Origin,
     },
 };
+
+use super::lighting::{Light, LightChunk, LightMap};
 
 const TRIANGLES: [u32; 6] = [0, 1, 2, 2, 1, 3];
 
@@ -39,14 +42,11 @@ impl Plugin for ChunkPlugin {
 pub struct ChunkMeshEvent {
     /// Position of the chunk.
     pub position: IVec3,
-    /// Flag for when the chunk should not have a mesh created unless one already
-    /// exists.
-    pub should_create: bool,
 }
 
-/// Marker struct for entities that are meshes of chunks.
+/// Added to chunks that should be rendered.
 #[derive(Component)]
-pub struct ChunkMeshMarker;
+pub struct MeshedChunkMarker;
 
 #[derive(Component)]
 pub struct ChunkMeshTask(
@@ -58,19 +58,26 @@ pub struct ChunkMeshTask(
 
 /// Launches new mesh tasks when chunks change.
 fn mesh_system(
+    origin: Res<Origin>,
     mut commands: Commands,
     world_map: Res<WorldMap>,
+    light_map: Res<LightMap>,
     mut chunk_request_events: EventWriter<ChunkRequestEvent>,
     mut mesh_events: EventReader<ChunkMeshEvent>,
-    mesh_task_query: Query<(With<ChunkMarker>, With<Visibility>)>,
+    meshable_chunks: Query<With<MeshedChunkMarker>>,
+    new_meshed_chunks: Query<&GlobalTransform, Added<MeshedChunkMarker>>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
-    for event in mesh_events.iter() {
-        match world_map.get_chunk(&event.position) {
+    for chunk_position in mesh_events.iter().map(|event| event.position).chain(
+        new_meshed_chunks
+            .iter()
+            .map(|global| global.compute_transform().translation.as_ivec3() + origin.0),
+    ) {
+        match world_map.get_chunk(&chunk_position) {
             Some(chunk) => {
-                if event.should_create || mesh_task_query.get(chunk.entity.unwrap()).is_ok() {
-                    let expanded_chunk = match world_map.get_expanded_chunk(event.position) {
+                if chunk.entity.is_some() && meshable_chunks.get(chunk.entity.unwrap()).is_ok() {
+                    let expanded_chunk = match world_map.get_expanded_chunk(chunk_position) {
                         Ok(e) => e,
                         Err(needed) => {
                             chunk_request_events.send_batch(needed);
@@ -78,7 +85,12 @@ fn mesh_system(
                         }
                     };
 
-                    let task = thread_pool.spawn(build_mesh(expanded_chunk));
+                    let expanded_light_chunk = match light_map.get_expanded_chunk(chunk_position) {
+                        Some(e) => e,
+                        None => continue,
+                    };
+
+                    let task = thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk));
                     commands
                         .entity(chunk.entity.unwrap())
                         .insert(ChunkMeshTask(task));
@@ -114,10 +126,9 @@ fn handle_mesh_tasks(
                             material: material_handle.clone(),
                             ..Default::default()
                         })
-                        .insert(ChunkMeshMarker)
                         // This is a marker for bevy's internal frustum culling, we do our own for
                         // chunk meshes.
-                        //.insert(NoFrustumCulling)
+                        .insert(NoFrustumCulling)
                         .id(),
                 );
             }
@@ -131,7 +142,7 @@ fn handle_mesh_tasks(
                             transform,
                             ..default()
                         })
-                        //.insert(NoFrustumCulling)
+                        .insert(NoFrustumCulling)
                         .id(),
                 );
             }
@@ -154,7 +165,7 @@ struct MeshBuilder {
     //pub triangles: Vec<u32>,
     //pub normals: Vec<[f32; 3]>,
     //pub uvs: Vec<u32>,
-    pub uvs: Vec<[f32; 2]>,
+    pub uvs: Vec<u32>,
     pub texture_indices: Vec<i32>,
     pub face_count: u32,
 }
@@ -165,8 +176,8 @@ impl MeshBuilder {
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.vertices);
         //mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         //mesh.insert_attribute(materials::BLOCK_ATTRIBUTE_UV, self.uvs);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
-        mesh.insert_attribute(materials::BLOCK_ATTRIBUTE_UV, self.texture_indices);
+        //mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
+        mesh.insert_attribute(materials::ATTRIBUTE_PACKED_BITS_0, self.uvs);
 
         mesh.compute_flat_normals();
         //mesh.generate_tangents().unwrap();
@@ -175,7 +186,7 @@ impl MeshBuilder {
         return mesh;
     }
 
-    fn add_face(&mut self, position: [f32; 3], quad: &QuadPrimitive) {
+    fn add_face(&mut self, position: [f32; 3], quad: &QuadPrimitive, light: Light) {
         //for (i, vertex) in quad.vertices.iter().enumerate() {
         //    self.vertices
         //        .push([vertex[0] + position[0], vertex[1] + position[1], vertex[2] + position[2]]);
@@ -218,22 +229,27 @@ impl MeshBuilder {
         //        .map(|x| x + 4 * self.face_count)
         //);
 
-        const UVS: [[f32; 2]; 6] = [
-            [0.0, 1.0],
-            [0.0, 0.0],
-            [1.0, 1.0],
-            [1.0, 1.0],
-            [0.0, 0.0],
-            [1.0, 0.0],
-        ];
+        //const UVS: [[f32; 2]; 6] = [
+        //    [0.0, 1.0],
+        //    [0.0, 0.0],
+        //    [1.0, 1.0],
+        //    [1.0, 1.0],
+        //    [0.0, 0.0],
+        //    [1.0, 0.0],
+        //];
 
         // TODO: This packing was premature.
         for i in 0..6 {
             //self.normals.push(quad.normal);
-            // Pack bits, first 2 bits are uv, last 19 bits are texture_index
-            //self.uvs.push((i << 29) | quad.texture_array_id)
-            self.uvs.push(UVS[i]);
-            self.texture_indices.push(quad.texture_array_id as i32);
+            // Pack bits, from right to left:
+            // 19 bits, texture index
+            // 3 bits, uv (can be reduced to 2)
+            // 8 bits, light (4 for sunlight, 4 for artificial)
+            // 3 bits, normals
+            self.uvs
+                .push(quad.texture_array_id | (i << 19) | (light.0 as u32) << 22)
+            //self.uvs.push(UVS[i]);
+            //self.texture_indices.push(quad.texture_array_id as i32);
         }
         self.face_count += 1;
     }
@@ -244,7 +260,8 @@ impl MeshBuilder {
 // separate blocks that are cubes and those which aren't. Cubes only have 6 normals so they can be
 // packed in 3 bits.
 async fn build_mesh(
-    expanded_chunk: ExpandedChunk,
+    chunk: ExpandedChunk,
+    light_chunk: ExpandedLightChunk,
 ) -> (
     // all blocks of same material combined into same mesh
     Vec<(Handle<materials::BlockMaterial>, Mesh)>,
@@ -259,7 +276,7 @@ async fn build_mesh(
     for x in 1..CHUNK_SIZE + 1 {
         for y in 1..CHUNK_SIZE + 1 {
             for z in 1..CHUNK_SIZE + 1 {
-                let block_id = expanded_chunk[[x, y, z]];
+                let block_id = chunk[[x, y, z]];
 
                 let block_config = &blocks[&block_id];
 
@@ -279,12 +296,12 @@ async fn build_mesh(
                                 let adjacent_block_id = match cull_face {
                                     // Mesh gets culled by front face, so we get the block behind,
                                     // back, get front etc.
-                                    BlockFace::Front => expanded_chunk[[x, y, z + 1]],
-                                    BlockFace::Back => expanded_chunk[[x, y, z - 1]],
-                                    BlockFace::Bottom => expanded_chunk[[x, y + 1, z]],
-                                    BlockFace::Top => expanded_chunk[[x, y - 1, z]],
-                                    BlockFace::Left => expanded_chunk[[x + 1, y, z]],
-                                    BlockFace::Right => expanded_chunk[[x - 1, y, z]],
+                                    BlockFace::Front => chunk[[x, y, z + 1]],
+                                    BlockFace::Back => chunk[[x, y, z - 1]],
+                                    BlockFace::Bottom => chunk[[x, y + 1, z]],
+                                    BlockFace::Top => chunk[[x, y - 1, z]],
+                                    BlockFace::Left => chunk[[x + 1, y, z]],
+                                    BlockFace::Right => chunk[[x - 1, y, z]],
                                 };
 
                                 let adjacent_block_config = &blocks[&adjacent_block_id];
@@ -298,12 +315,24 @@ async fn build_mesh(
                                 }
                             }
 
-                            builder
-                                .add_face([x as f32 - 1.0, y as f32 - 1.0, z as f32 - 1.0], quad);
+                            let light = match quad.light_face {
+                                BlockFace::Top => light_chunk[[x, y + 1, z]],
+                                BlockFace::Bottom => light_chunk[[x, y - 1, z]],
+                                BlockFace::Right => light_chunk[[x + 1, y, z]],
+                                BlockFace::Left => light_chunk[[x - 1, y, z]],
+                                BlockFace::Front => light_chunk[[x, y, z - 1]],
+                                BlockFace::Back => light_chunk[[x, y, z + 1]],
+                            };
+
+                            builder.add_face(
+                                [x as f32 - 1.0, y as f32 - 1.0, z as f32 - 1.0],
+                                quad,
+                                light,
+                            );
                         }
                     }
                     Block::Model(model) => {
-                        let rotation = match expanded_chunk.get_block_state(x, y, z) {
+                        let rotation = match chunk.get_block_state(x, y, z) {
                             Some(b) => b,
                             None => panic!(
                                 "Block state should have been validated at reception of the chunk."
@@ -384,6 +413,38 @@ impl ExpandedChunk {
 
 impl Index<[usize; 3]> for ExpandedChunk {
     type Output = BlockId;
+
+    fn index(&self, index: [usize; 3]) -> &Self::Output {
+        if index[0] == 0 {
+            return &self.left[index[1] - 1][index[2] - 1];
+        } else if index[0] == 17 {
+            return &self.right[index[1] - 1][index[2] - 1];
+        } else if index[1] == 0 {
+            return &self.bottom[index[0] - 1][index[2] - 1];
+        } else if index[1] == 17 {
+            return &self.top[index[0] - 1][index[2] - 1];
+        } else if index[2] == 0 {
+            return &self.back[index[0] - 1][index[1] - 1];
+        } else if index[2] == 17 {
+            return &self.front[index[0] - 1][index[1] - 1];
+        } else {
+            return &self.center[[index[0] - 1, index[1] - 1, index[2] - 1]];
+        }
+    }
+}
+
+pub struct ExpandedLightChunk {
+    pub center: LightChunk,
+    pub top: [[Light; CHUNK_SIZE]; CHUNK_SIZE],
+    pub bottom: [[Light; CHUNK_SIZE]; CHUNK_SIZE],
+    pub right: [[Light; CHUNK_SIZE]; CHUNK_SIZE],
+    pub left: [[Light; CHUNK_SIZE]; CHUNK_SIZE],
+    pub front: [[Light; CHUNK_SIZE]; CHUNK_SIZE],
+    pub back: [[Light; CHUNK_SIZE]; CHUNK_SIZE],
+}
+
+impl Index<[usize; 3]> for ExpandedLightChunk {
+    type Output = Light;
 
     fn index(&self, index: [usize; 3]) -> &Self::Output {
         if index[0] == 0 {

@@ -89,11 +89,10 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
             .into(),
             ..default()
         })
-        .insert(DepthPrepass)
         .insert(camera::PlayerCameraMarker)
         .insert(camera::CameraState::default())
-        // XXX: Remove in future if requirement for parent to have is removed. Needed for equipped
-        // item
+        // XXX: Remove in future if requirement for parent to have it is removed. Needed for
+        // equipped item
         .insert(VisibilityBundle::default())
         .add_child(hand_entity)
         .id();

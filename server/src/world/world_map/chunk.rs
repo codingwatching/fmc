@@ -15,7 +15,7 @@ pub enum ChunkType {
     /// The common chunk, all block positions are filled.
     Normal,
     /// Chunk has only been partially generated, meaning adjacent chunks have filled in some of the
-    /// chunk's positions with blocks through feature generation.
+    /// chunk's blocks through feature generation.
     Partial,
     /// Chunk that only contains one type of block
     Uniform(BlockId),
@@ -143,6 +143,10 @@ impl Chunk {
                     ChunkType::Partial => {
                         self.blocks.iter_mut().zip(other.blocks).for_each(
                             |(block, other_block)| {
+                                // TODO: Which should win? Currently if two trees spawn into the
+                                // same chunk, leaves can replace the trunk. I can't think of any
+                                // good heuristic. Maybe just do it on chunk direction? The chunk
+                                // that is coming from a side always loses to one that doesn't?
                                 if *block == air {
                                     *block = other_block;
                                 }
@@ -153,7 +157,11 @@ impl Chunk {
                             self.block_state.entry(position).or_insert(block_state);
                         }
                     }
-                    ChunkType::Uniform(_) => unreachable!(),
+                    ChunkType::Uniform(_) => {
+                        // TODO: This assumes the only uniform chunk that can be created is air, if
+                        // it's something else it's needs to be filled in.
+                        self.chunk_type = ChunkType::Normal;
+                    }
                 }
             }
             ChunkType::Uniform(block_id) => {

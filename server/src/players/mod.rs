@@ -150,19 +150,24 @@ fn respawn_players(
             for (i, block_chunk) in chunk.blocks.chunks_exact(CHUNK_SIZE).enumerate() {
                 let mut count = 0;
                 for (j, block) in block_chunk.iter().enumerate() {
-                    if count == 3 {
+                    //if count == 3 {
+                    if count == 2 {
                         let mut spawn_position =
                             chunk_position + utils::block_index_to_position(i * CHUNK_SIZE + j);
                         spawn_position.y -= 2;
                         break 'outer spawn_position;
-                    } else if count == 0 && *block != air {
-                        match blocks.get_config(&block).friction {
-                            Friction::Drag(_) => continue,
-                            _ => count += 1,
-                        };
-                    } else if count == 1 && *block == air {
+                    //} else if count == 0 && *block != air {
+                    } else if count == 3 && *block != air {
                         count += 1;
-                    } else if count == 2 && *block == air {
+                        //match blocks.get_config(&block).friction {
+                        //    Friction::Drag(_) => continue,
+                        //    _ => count += 1,
+                        //};
+                    //} else if count == 1 && *block == air {
+                    } else if count == 0 && *block == air {
+                        count += 1;
+                    //} else if count == 2 && *block == air {
+                    } else if count == 1 && *block == air {
                         count += 1;
                     } else {
                         count = 0;

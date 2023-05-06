@@ -4,9 +4,9 @@ use bevy::prelude::*;
 
 use crate::constants::*;
 
-// Forward is +z direction, inverse of camera at startup
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Direction {
+    // Forward is +z direction
     Forward,
     Back,
     Right,

@@ -8,7 +8,7 @@ use bevy::{
 };
 use fmc_networking::{messages, NetworkData};
 
-use crate::{assets::models::Models, game_state::GameState, player::Player, world::Origin};
+use crate::{assets::models::Models, game_state::GameState, player::Player, world::{Origin, MovesWithOrigin}};
 
 pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
@@ -109,6 +109,7 @@ fn handle_model_add_delete(
                 visibility,
                 ..default()
             })
+            .insert(MovesWithOrigin)
             .insert(ModelMarker)
             .id();
 

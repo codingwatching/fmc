@@ -6,7 +6,7 @@
 
 struct Vertex {
     @location(0) position: vec3<f32>,
-    @location(1) uv: vec2<f32>,
+    @location(1) uv: u32,
     @location(2) normal: vec3<f32>,
     // This is bit packed, first 2 bits are uv, last 19 are block texture index
     //@location(2) uv: u32,
@@ -20,7 +20,6 @@ struct Vertex {
     @location(5) joint_indices: vec4<u32>,
     @location(6) joint_weights: vec4<f32>,
 #endif
-    @location(7) texture_index: i32,
 };
 
 struct VertexOutput {
@@ -32,6 +31,7 @@ struct VertexOutput {
 #ifdef VERTEX_TANGENTS
     @location(4) world_tangent: vec4<f32>,
 #endif
+    @location(5) light: u32,
 };
 
 // Note: 0,0 is top left corner
@@ -54,24 +54,23 @@ const UVS: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
-    //let index: u32 = vertex.uv >> 29u;
-    //if (index == 0u) {
-    //    out.uv = UVS[0];
-    //} else if (index == 1u) {
-    //    out.uv = UVS[1];
-    //} else if (index == 2u) {
-    //    out.uv = UVS[2];
-    //} else if (index == 3u) {
-    //    out.uv = UVS[3];
-    //} else if (index == 4u) {
-    //    out.uv = UVS[4];
-    //} else if (index == 5u) {
-    //    out.uv = UVS[5];
-    //}
-    out.uv = vertex.uv;
+    out.light = (vertex.uv >> 22u) & 0xFFu;
+    out.texture_index = i32(vertex.uv & 0x0007FFFFu);
 
-    //out.texture_index = i32(vertex.uv & 0x0007FFFFu);
-    out.texture_index = vertex.texture_index;
+    let uv_index: u32 = (vertex.uv & 0x380000u) >> 19u;
+    if uv_index == 0u {
+        out.uv = UVS[0];
+    } else if uv_index == 1u {
+        out.uv = UVS[1];
+    } else if uv_index == 2u {
+        out.uv = UVS[2];
+    } else if uv_index == 3u {
+        out.uv = UVS[3];
+    } else if uv_index == 4u {
+        out.uv = UVS[4];
+    } else if uv_index == 5u {
+        out.uv = UVS[5];
+    }
 
     out.world_position = mesh_position_local_to_world(mesh.model, vec4<f32>(vertex.position, 1.0));
     out.clip_position = mesh_position_world_to_clip(out.world_position);

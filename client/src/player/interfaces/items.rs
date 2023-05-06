@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use fmc_networking::{messages::ServerConfig, BlockId, NetworkClient};
 use serde::{Deserialize, Serialize};
 
-use crate::{assets::models::Models, player::hand::ANIMATION_LEN};
+use crate::{assets::models::Models, player::hand::ANIMATION_LEN, world::blocks::Blocks};
 
 pub type ItemId = u32;
 
@@ -69,6 +69,7 @@ pub fn load_items(
     models: Res<Models>,
     mut animations: ResMut<Assets<AnimationClip>>,
 ) {
+    let blocks = Blocks::get();
     let mut configs = HashMap::new();
 
     for (filename, id) in server_config.item_ids.iter() {
@@ -109,7 +110,7 @@ pub fn load_items(
         };
 
         let block_id = match json_config.block {
-            Some(name) => match server_config.block_ids.get(&name) {
+            Some(name) => match blocks.get_id(&name) {
                 Some(block_id) => Some(*block_id),
                 None => {
                     net.disconnect(&format!(

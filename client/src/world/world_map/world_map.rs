@@ -99,20 +99,6 @@ impl WorldMap {
         }
     }
 
-    pub fn get_adjacent_chunk(&self, position: &IVec3, side: &Direction) -> Option<&Chunk> {
-        let mut position = position.clone();
-        match side {
-            Direction::Forward => position.z += CHUNK_SIZE as i32,
-            Direction::Back => position.z -= CHUNK_SIZE as i32,
-            Direction::Right => position.x += CHUNK_SIZE as i32,
-            Direction::Left => position.x -= CHUNK_SIZE as i32,
-            Direction::Up => position.y += CHUNK_SIZE as i32,
-            Direction::Down => position.y -= CHUNK_SIZE as i32,
-            Direction::None => panic!("None isn't a direction!"),
-        };
-        return self.get_chunk(&position);
-    }
-
     /// Find which block the transform is looking at, if any.
     pub fn raycast_to_block(
         &self,
@@ -151,7 +137,7 @@ impl WorldMap {
             if distance_next.x < distance_next.y && distance_next.x < distance_next.z {
                 block_pos.x += step.x;
                 distance_next.x += t_block.x;
-                // Have to do this for each branch, so it get's a little noisy.
+
                 if let Some(block_id) = self.get_block(&block_pos) {
                     // TODO: Function needs to take a flag for if it should pass through blocks
                     // with drag. Or maybe return both position of first drag block and first

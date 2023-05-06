@@ -7,7 +7,7 @@
     },
     "cull": false,
     "cull_only_if_same_block": true,
-    "interactable": false,
+    "light_attenuation": 1,
     "quads": [
         {
             "vertices": [

@@ -4,21 +4,12 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     render::{
-        color::Color,
-        mesh::{MeshVertexAttribute, MeshVertexBufferLayout},
-        render_asset::RenderAssets,
-        render_resource::*,
+        color::Color, mesh::MeshVertexBufferLayout, render_asset::RenderAssets, render_resource::*,
         texture::Image,
     },
 };
 
-pub const BLOCK_ATTRIBUTE_UV: MeshVertexAttribute =
-    //MeshVertexAttribute::new("Block_Vertex_Uv", 2, VertexFormat::Uint32);
-    MeshVertexAttribute::new(
-        "Block_Vertex_Texture_Index",
-        7245394058,
-        VertexFormat::Sint32,
-    );
+use super::ATTRIBUTE_PACKED_BITS_0;
 
 // TODO: For a 32x world meshes take up around 2gb of memory. Each vertex is a 3xf32, each normal
 // the same, and each uv 2xf32. This can be packed, there exists only 4 uvs, that is 2 bits. For a
@@ -338,9 +329,8 @@ impl Material for BlockMaterial {
     ) -> Result<(), SpecializedMeshPipelineError> {
         let vertex_layout = layout.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
-            Mesh::ATTRIBUTE_UV_0.at_shader_location(1),
+            ATTRIBUTE_PACKED_BITS_0.at_shader_location(1),
             Mesh::ATTRIBUTE_NORMAL.at_shader_location(2),
-            BLOCK_ATTRIBUTE_UV.at_shader_location(7),
         ])?;
 
         descriptor.vertex.buffers = vec![vertex_layout];
@@ -364,20 +354,20 @@ impl Material for BlockMaterial {
         return Ok(());
     }
 
-    fn prepass_vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/mesh_prepass.wgsl".into()
-    }
+    //fn prepass_vertex_shader() -> ShaderRef {
+    //    "src/rendering/shaders/mesh_prepass.wgsl".into()
+    //}
 
-    fn prepass_fragment_shader() -> ShaderRef {
-        "src/rendering/shaders/pbr_prepass.wgsl".into()
-    }
+    //fn prepass_fragment_shader() -> ShaderRef {
+    //    "src/rendering/shaders/pbr_prepass.wgsl".into()
+    //}
 
     fn vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/mesh.wgsl".into()
+        "src/rendering/shaders/block_mesh.wgsl".into()
     }
 
     fn fragment_shader() -> ShaderRef {
-        "src/rendering/shaders/pbr.wgsl".into()
+        "src/rendering/shaders/block.wgsl".into()
     }
 
     #[inline]

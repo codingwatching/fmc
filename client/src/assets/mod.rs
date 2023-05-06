@@ -40,15 +40,21 @@ impl Plugin for AssetPlugin {
         .add_systems(
             OnEnter(AssetState::Loading),
             (
+                // XXX: These 'after' relationships are only here to note which systems are required
+                // to be in the applied order, bevy ignores them.
                 block_textures::load_block_textures,
                 models::load_models,
                 crate::player::key_bindings::load_key_bindings,
                 apply_system_buffers,
-                crate::player::interfaces::load_items.after(models::load_models),
-                crate::player::interfaces::load_interfaces,
                 materials::load_materials.after(block_textures::load_block_textures),
                 apply_system_buffers,
                 crate::world::blocks::load_blocks.after(materials::load_materials),
+                apply_system_buffers,
+                crate::player::interfaces::load_items
+                    .after(models::load_models)
+                    .after(crate::world::blocks::load_blocks),
+                crate::player::interfaces::load_interfaces,
+                apply_system_buffers,
                 finish,
             )
                 .chain(),

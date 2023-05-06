@@ -251,20 +251,12 @@ impl Material for SkyMaterial {
         _layout: &MeshVertexBufferLayout,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        //descriptor.vertex.entry_point = "main".into();
-        //descriptor.fragment.as_mut().unwrap().entry_point = "main".into();
-
         // Flip to see the inside of the sphere
         descriptor.primitive.front_face = FrontFace::Cw;
         Ok(())
     }
 
-    //fn vertex_shader() -> ShaderRef {
-    //    "src/rendering/shaders/physical_sky.vert".into()
-    //}
-
     fn fragment_shader() -> ShaderRef {
         "src/rendering/shaders/physical_sky.wgsl".into()
-        //"src/rendering/shaders/physical_sky.frag".into()
     }
 }

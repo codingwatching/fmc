@@ -3,14 +3,12 @@ use bevy::prelude::*;
 use crate::{game_state::GameState, player::Player};
 
 pub mod blocks;
-pub mod sky;
 pub mod world_map;
 
 pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(world_map::WorldMapPlugin)
-            .add_plugin(sky::SkyPlugin);
+        app.add_plugin(world_map::WorldMapPlugin);
 
         app.insert_resource(Origin(IVec3::ZERO));
         app.add_systems(
