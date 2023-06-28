@@ -19,29 +19,37 @@ use crate::{
     },
 };
 
+// TODO: This needs to be run on fixed timestep. Tabbing out causes game to slow down, delta
+// seconds too large, clip beneath world. Maybe better to do iterations and check every block the
+// player will pass through. This way has guaranteed no tunneling.
+
 // sqrt(2 * gravity * wanted height(1.4)) + some for air resistance that I don't bother calculating
-const JUMP_VELOCITY: f32 = 9.5;
+const JUMP_VELOCITY: f32 = 9.0;
 const GRAVITY: Vec3 = Vec3::new(0.0, -32.0, 0.0);
+// TODO: I think this should be a thing only if you hold space. If you are skilled you can press
+// space again as soon as you land if you have released it in the meantime.
+// TODO: It feels nice when you jump up a block, but when jumping down it does nothing, feels like
+// bouncing. Maybe replace with a jump timer when you land so it's constant? I feel like it would
+// be better if you could jump faster when jumping downwards, but not as much as now.
+//
 // This is needed so that whenever you land early you can't just instantly jump again.
 // v_t = v_0 * at => (v_t - v_0) / a = t
-const JUMP_TIME: f32 = JUMP_VELOCITY * 1.5 / -GRAVITY.y;
+const JUMP_TIME: f32 = JUMP_VELOCITY * 1.7 / -GRAVITY.y;
 
 pub struct MovementPlugin;
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                toggle_flight,
-                change_player_velocity,
-                simulate_player_physics.after(change_player_velocity),
+        app.add_systems(Update, toggle_flight.run_if(in_state(GameState::Playing)))
+            .add_systems(
+                FixedUpdate,
+                (change_player_acceleration, simulate_player_physics)
+                    .chain()
+                    .run_if(in_state(GameState::Playing)),
             )
-                .run_if(in_state(GameState::Playing)),
-        )
-        // TODO: This is another one of the things the server just sends on connection.
-        // Workaround by just having it run all the time, but once the server can be notified
-        // that the client is actually ready to receive it should be moved above with the rest.
-        .add_systems(Update, handle_position_updates_from_server);
+            // TODO: This is another one of the things the server just sends on connection.
+            // Workaround by just having it run all the time, but once the server can be notified
+            // that the client is actually ready to receive it should be moved above with the rest.
+            .add_systems(Update, handle_position_updates_from_server);
     }
 }
 
@@ -84,7 +92,7 @@ fn toggle_flight(
                 < 250
             {
                 let mut player = query.single_mut();
-                player.flying = !player.flying;
+                player.is_flying = !player.is_flying;
                 player.velocity = Vec3::ZERO;
             } else {
                 timer.last = std::time::Instant::now();
@@ -95,7 +103,7 @@ fn toggle_flight(
 
 // TODO: This blends moving and flying movement, they should be split in separate systems
 /// Handles keyboard input and movement
-fn change_player_velocity(
+fn change_player_acceleration(
     keys: Res<Input<KeyCode>>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut player_query: Query<&mut Player>,
@@ -109,29 +117,37 @@ fn change_player_velocity(
 
     let camera_forward = camera_transform.forward();
     let forward = Vec3::new(camera_forward.x, 0., camera_forward.z);
-    let right = Vec3::new(-camera_forward.z, 0., camera_forward.x);
+    let sideways = Vec3::new(-camera_forward.z, 0., camera_forward.x);
 
-    let mut horizontal_velocity = Vec3::ZERO;
-    let mut vertical_velocity = Vec3::ZERO;
+    if player.is_flying {
+        player.velocity.y = 0.0;
+    }
+
+    let mut horizontal_acceleration = Vec3::ZERO;
+    let mut vertical_acceleration = Vec3::ZERO;
     for key in keys.get_pressed() {
         if window.cursor.grab_mode == CursorGrabMode::Locked {
             match key {
-                KeyCode::W => horizontal_velocity += forward,
-                KeyCode::S => horizontal_velocity -= forward,
-                KeyCode::A => horizontal_velocity -= right,
-                KeyCode::D => horizontal_velocity += right,
+                KeyCode::W => horizontal_acceleration += forward,
+                KeyCode::S => horizontal_acceleration -= forward,
+                KeyCode::A => horizontal_acceleration -= sideways,
+                KeyCode::D => horizontal_acceleration += sideways,
                 KeyCode::Space => {
-                    if player.is_grounded.y && last_jump.elapsed().as_secs_f32() > JUMP_TIME
-                        || player.flying
-                        || player.swimming
+                    if player.is_flying {
+                        player.velocity.y = JUMP_VELOCITY;
+                    } else if player.is_swimming {
+                        vertical_acceleration.y = 20.0
+                    } else if player.is_grounded.y && last_jump.elapsed().as_secs_f32() > JUMP_TIME
                     {
                         last_jump.last = std::time::Instant::now();
-                        vertical_velocity += Vec3::Y
+                        player.velocity.y = JUMP_VELOCITY;
                     }
                 }
                 KeyCode::LShift => {
-                    if player.flying || player.swimming {
-                        vertical_velocity -= Vec3::Y
+                    if player.is_flying {
+                        player.velocity.y = -JUMP_VELOCITY;
+                    } else if player.is_swimming {
+                        vertical_acceleration.y = -30.0
                     }
                 }
 
@@ -140,39 +156,42 @@ fn change_player_velocity(
         }
     }
 
-    if horizontal_velocity != Vec3::ZERO {
-        horizontal_velocity = horizontal_velocity.normalize();
+    if horizontal_acceleration != Vec3::ZERO {
+        horizontal_acceleration = horizontal_acceleration.normalize();
     }
 
-    if player.flying && keys.pressed(KeyCode::LControl) {
-        horizontal_velocity *= 10.0;
+    let mut acceleration = horizontal_acceleration + vertical_acceleration;
+
+    if player.is_flying && keys.pressed(KeyCode::LControl) {
+        acceleration *= 10.0;
     }
 
-    if player.flying {
-        horizontal_velocity *= 11.0;
+    if player.is_flying {
+        acceleration *= 140.0;
+    } else if player.is_swimming {
+        if acceleration.y == 0.0 {
+            acceleration.y = -10.0;
+        }
+        acceleration.x *= 40.0;
+        acceleration.z *= 40.0;
     } else if player.is_grounded.y {
-        horizontal_velocity *= 4.3;
+        acceleration *= 100.0;
+    } else if player.velocity.x.abs() > 2.0
+        || player.velocity.z.abs() > 2.0
+        || player.velocity.y < -10.0
+    {
+        // Move fast in air if you're already in motion
+        acceleration *= 50.0;
     } else {
-        horizontal_velocity *= 4.3;
+        // Move slow in air in jumping from a standstill
+        acceleration *= 20.0;
     }
 
-    vertical_velocity.y = vertical_velocity.y * JUMP_VELOCITY;
-
-    let mut velocity = horizontal_velocity + vertical_velocity;
-
-    // Only change the player velocity if it is less than the new velocity.
-    // i.e. You should only be able to add to the velocity
-    if !player.flying {
-        velocity = Vec3::select(
-            player.velocity.abs().cmpgt(velocity.abs()),
-            player.velocity,
-            velocity,
-        );
+    if !player.is_flying && !player.is_swimming {
+        acceleration += GRAVITY;
     }
 
-    if !velocity.is_nan() {
-        player.velocity = velocity;
-    }
+    player.acceleration = acceleration;
 }
 
 // TODO: This needs to be timestepped. When you unfocus the window it slows down tick rate, makes
@@ -181,12 +200,13 @@ fn change_player_velocity(
 fn simulate_player_physics(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
-    time: Res<Time>,
+    fixed_time: Res<FixedTime>,
     net: Res<NetworkClient>,
     mut player: Query<(&mut Player, &mut Transform, &Aabb)>,
     mut last_position_sent_to_server: Local<Vec3>,
 ) {
     let (mut player, mut transform, player_aabb) = player.single_mut();
+    let delta_time = fixed_time.period.as_secs_f32();
 
     if player.velocity.x != 0.0 {
         player.is_grounded.x = false;
@@ -198,122 +218,152 @@ fn simulate_player_physics(
         player.is_grounded.z = false;
     }
 
-    if !player.flying {
-        player.velocity += GRAVITY * time.delta_seconds();
-    }
+    let was_swimming = player.is_swimming;
+    player.is_swimming = false;
 
-    // TODO: Maybe until Fixed time step run criteria it can do delta_seconds/ms_per_update
-    // iterations
-    let pos_after_move = transform.translation + player.velocity * time.delta_seconds();
+    let accel = player.acceleration;
+    player.velocity += accel * delta_time;
 
-    let player_aabb = Aabb {
-        center: player_aabb.center + Vec3A::from(pos_after_move),
-        half_extents: player_aabb.half_extents,
-    };
-
-    // Check for collisions for all blocks within the player's aabb.
-    let mut collisions = Vec::new();
-    let start = player_aabb.min().floor().as_ivec3() + origin.0;
-    let stop = player_aabb.max().floor().as_ivec3() + origin.0;
-    for x in start.x..=stop.x {
-        for y in start.y..=stop.y {
-            for z in start.z..=stop.z {
-                let block_pos = IVec3::new(x, y, z);
-
-                let block_id = match world_map.get_block(&block_pos) {
-                    Some(id) => id,
-                    // Disconnect? Should always have your surroundings loaded.
-                    None => continue,
-                };
-
-                let block_aabb = Aabb {
-                    center: (block_pos - origin.0).as_vec3a() + 0.5,
-                    half_extents: Vec3A::new(0.5, 0.5, 0.5),
-                };
-
-                let overlap = player_aabb.half_extents + block_aabb.half_extents
-                    - (player_aabb.center - block_aabb.center).abs();
-
-                if overlap.cmpgt(Vec3A::ZERO).all() {
-                    collisions.push((Vec3::from(overlap), block_id));
-                }
-            }
-        }
-    }
-
-    let velocity = player.velocity;
     let mut friction = Vec3::ZERO;
-    let mut move_back = Vec3::ZERO;
-    let delta_time = Vec3::splat(time.delta_seconds());
+    for velocity in [
+        Vec3::new(0.0, player.velocity.y, 0.0),
+        Vec3::new(player.velocity.x, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, player.velocity.z),
+    ] {
+        let pos_after_move = transform.translation + velocity * delta_time;
 
-    let blocks = Blocks::get();
+        let player_aabb = Aabb {
+            center: player_aabb.center + Vec3A::from(pos_after_move),
+            half_extents: player_aabb.half_extents,
+        };
 
-    for (collision, block_id) in collisions {
-        let backwards_time = collision / velocity.abs();
-        // Small epsilon to delta time because precision is off for unknown reason.
-        // TODO: This delta causes a lot of trouble, too high and you clip where you shouldn't, too
-        // low you glitch through floor. Move to f64 probably.
-        let valid_axes = backwards_time.cmplt(delta_time + 0.00001);
-        let slowest_resolution_axis =
-            Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element();
+        // Check for collisions for all blocks within the player's aabb.
+        let mut collisions = Vec::new();
+        let start = player_aabb.min().floor().as_ivec3() + origin.0;
+        let stop = player_aabb.max().floor().as_ivec3() + origin.0;
+        for x in start.x..=stop.x {
+            for y in start.y..=stop.y {
+                for z in start.z..=stop.z {
+                    let block_pos = IVec3::new(x, y, z);
 
-        match blocks[&block_id].friction() {
-            Friction::Static {
-                front,
-                back,
-                right,
-                left,
-                top,
-                bottom,
-            } => {
-                if slowest_resolution_axis == backwards_time.x {
-                    move_back.x =
-                        backwards_time.x * -velocity.x + (-velocity.x).signum() * f32::EPSILON;
-                    player.velocity.x = 0.0;
-                    player.is_grounded.x = true;
+                    let block_id = match world_map.get_block(&block_pos) {
+                        Some(id) => id,
+                        // Disconnect? Should always have your surroundings loaded.
+                        None => continue,
+                    };
 
-                    if velocity.x.is_sign_positive() {
-                        friction = friction.max(Vec3::splat(*left));
-                    } else {
-                        friction = friction.max(Vec3::splat(*right));
-                    }
-                } else if slowest_resolution_axis == backwards_time.y {
-                    move_back.y =
-                        backwards_time.y * -velocity.y + (-velocity.y).signum() * f32::EPSILON;
-                    player.velocity.y = 0.0;
-                    player.is_grounded.y = true;
+                    let block_aabb = Aabb {
+                        center: (block_pos - origin.0).as_vec3a() + 0.5,
+                        half_extents: Vec3A::new(0.5, 0.5, 0.5),
+                    };
 
-                    if velocity.y.is_sign_positive() {
-                        friction = friction.max(Vec3::splat(*bottom));
-                    } else {
-                        friction = friction.max(Vec3::splat(*top));
-                    }
-                } else if slowest_resolution_axis == backwards_time.z {
-                    move_back.z =
-                        backwards_time.z * -velocity.z + (-velocity.z).signum() * f32::EPSILON;
-                    player.velocity.z = 0.0;
-                    player.is_grounded.z = true;
+                    let distance = player_aabb.center - block_aabb.center;
+                    let overlap =
+                        player_aabb.half_extents + block_aabb.half_extents - distance.abs();
 
-                    if velocity.z.is_sign_positive() {
-                        friction = friction.max(Vec3::splat(*back));
-                    } else {
-                        friction = friction.max(Vec3::splat(*front));
+                    if overlap.cmpgt(Vec3A::ZERO).all() {
+                        // Keep sign to differentiate which side of the block was collided with.
+                        collisions.push((Vec3::from(overlap.copysign(distance)), block_id));
                     }
                 }
             }
-            Friction::Drag(drag) => {
-                friction = friction.max(*drag);
+        }
+
+        let mut move_back = Vec3::ZERO;
+        let delta_time = Vec3::splat(delta_time);
+
+        let blocks = Blocks::get();
+
+        // TODO: Most of this is leftover from converting from another system that didn't work as
+        // as planned.
+        for (collision, block_id) in collisions.clone() {
+            let backwards_time = collision / -velocity;
+            let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
+                & backwards_time.cmpgt(Vec3::splat(0.0));
+            let resolution_axis = Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element();
+
+            match blocks[&block_id].friction() {
+                Friction::Static {
+                    front,
+                    back,
+                    right,
+                    left,
+                    top,
+                    bottom,
+                } => {
+                    if resolution_axis == backwards_time.y {
+                        move_back.y = collision.y + collision.y / 100.0;
+                        player.is_grounded.y = true;
+                        player.velocity.y = 0.0;
+
+                        if velocity.y.is_sign_positive() {
+                            friction = friction.max(Vec3::splat(*bottom));
+                        } else {
+                            friction = friction.max(Vec3::splat(*top));
+                        }
+                    } else if resolution_axis == backwards_time.x {
+                        move_back.x = collision.x + collision.x / 100.0;
+                        player.is_grounded.x = true;
+                        player.velocity.x = 0.0;
+
+                        if velocity.x.is_sign_positive() {
+                            friction = friction.max(Vec3::splat(*left));
+                        } else {
+                            friction = friction.max(Vec3::splat(*right));
+                        }
+                    } else if resolution_axis == backwards_time.z {
+                        move_back.z = collision.z + collision.z / 100.0;
+                        player.is_grounded.z = true;
+                        player.velocity.z = 0.0;
+
+                        if velocity.z.is_sign_positive() {
+                            friction = friction.max(Vec3::splat(*back));
+                        } else {
+                            friction = friction.max(Vec3::splat(*front));
+                        }
+                    } else {
+                        // When velocity is really small there's numerical precision problems. Since a
+                        // resolution is guaranteed. Move it back by whatever the smallest resolution
+                        // direction is.
+                        let valid_axes = Vec3::select(
+                            backwards_time.cmpgt(Vec3::ZERO)
+                                & backwards_time.cmplt(delta_time * 2.0),
+                            backwards_time,
+                            Vec3::NAN,
+                        );
+                        if valid_axes.x.is_finite()
+                            || valid_axes.y.is_finite()
+                            || valid_axes.z.is_finite()
+                        {
+                            let valid_axes = Vec3::select(
+                                valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
+                                valid_axes,
+                                Vec3::ZERO,
+                            );
+                            move_back += (valid_axes + valid_axes / 100.0) * -velocity;
+                        }
+                    }
+                }
+                Friction::Drag(drag) => {
+                    if !player.is_swimming {
+                        player.is_swimming = drag.y > 0.4;
+                    }
+                    friction = friction.max(*drag);
+                }
             }
         }
+
+        transform.translation = pos_after_move + move_back;
     }
 
-    // TODO: This is just some random value that is larger than air. Thinking maybe blocks should
-    // have a climbable property instead of relying on "density".
-    player.swimming = !player.is_grounded.y && friction.y > 0.05;
+    if was_swimming && !player.is_swimming {
+        player.velocity.y += 1.5;
+    }
 
-    transform.translation = pos_after_move + move_back;
-    // TODO: Pow(20) is a way to scale. I think it is not linear and I think maybe it should be, idk too tired.
-    player.velocity = player.velocity * (1.0 - friction).powf(20.0).powf(time.delta_seconds());
+    // TODO: The result of this varies with exectuion speed.
+    // XXX: Pow(5) is just to scale it further towards zero when friction is high. To avoid having
+    // to type out 0.99999 just to get a fast stop.
+    player.velocity = player.velocity * (1.0 - friction).powf(4.0).powf(delta_time);
 
     // Avoid sending constant position updates to the server.
     if (*last_position_sent_to_server - transform.translation)

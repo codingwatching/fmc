@@ -52,84 +52,86 @@ fn simulate_aabb_physics(
         const GRAVITY: DVec3 = DVec3::new(0.0, -28.0, 0.0);
         velocity.0 += GRAVITY * time.delta_seconds_f64();
 
-        // TODO: Maybe until Fixed time step run criteria it can do delta_seconds/ms_per_update
-        // iterations
-        let pos_after_move = transform.translation + velocity.0 * time.delta_seconds_f64();
+        for directional_velocity in [
+            DVec3::new(0.0, velocity.y, 0.0),
+            DVec3::new(velocity.x, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, velocity.z),
+        ] {
+            let pos_after_move = transform.translation + directional_velocity * time.delta_seconds_f64();
 
-        let aabb = Aabb {
-            center: aabb.center + pos_after_move,
-            half_extents: aabb.half_extents,
-        };
+            let aabb = Aabb {
+                center: aabb.center + pos_after_move,
+                half_extents: aabb.half_extents,
+            };
 
-        let blocks = Blocks::get();
+            let blocks = Blocks::get();
 
-        // Check for collisions for all blocks within the aabb.
-        let mut collisions = Vec::new();
-        let start = aabb.min().floor().as_ivec3();
-        let stop = aabb.max().floor().as_ivec3();
-        for x in start.x..=stop.x {
-            for y in start.y..=stop.y {
-                for z in start.z..=stop.z {
-                    let block_pos = IVec3::new(x, y, z);
-                    // TODO: This looks up chunk through hashmap each time, is too bad?
-                    let block_id = match world_map.get_block(block_pos) {
-                        Some(id) => id,
-                        // If entity is player disconnect? They should always have their
-                        // surroundings loaded.
-                        None => continue,
-                    };
+            // Check for collisions for all blocks within the aabb.
+            let mut collisions = Vec::new();
+            let start = aabb.min().floor().as_ivec3();
+            let stop = aabb.max().floor().as_ivec3();
+            for x in start.x..=stop.x {
+                for y in start.y..=stop.y {
+                    for z in start.z..=stop.z {
+                        let block_pos = IVec3::new(x, y, z);
+                        // TODO: This looks up chunk through hashmap each time, is too bad?
+                        let block_id = match world_map.get_block(block_pos) {
+                            Some(id) => id,
+                            // If entity is player disconnect? They should always have their
+                            // surroundings loaded.
+                            None => continue,
+                        };
 
-                    // TODO: Take into account drag
-                    match blocks.get_config(&block_id).friction {
-                        Friction::Drag(_) => continue,
-                        _ => (),
-                    }
+                        // TODO: Take into account drag
+                        match blocks.get_config(&block_id).friction {
+                            Friction::Drag(_) => continue,
+                            _ => (),
+                        }
 
-                    let block_aabb = Aabb {
-                        center: block_pos.as_dvec3() + 0.5,
-                        half_extents: DVec3::new(0.5, 0.5, 0.5),
-                    };
+                        let block_aabb = Aabb {
+                            center: block_pos.as_dvec3() + 0.5,
+                            half_extents: DVec3::new(0.5, 0.5, 0.5),
+                        };
 
-                    let overlap = aabb.half_extents + block_aabb.half_extents
-                        - (aabb.center - block_aabb.center).abs();
+                        let overlap = aabb.half_extents + block_aabb.half_extents
+                            - (aabb.center - block_aabb.center).abs();
 
-                    if overlap.cmpgt(DVec3::ZERO).all() {
-                        collisions.push((overlap, block_id));
+                        if overlap.cmpgt(DVec3::ZERO).all() {
+                            collisions.push((overlap, block_id));
+                        }
                     }
                 }
             }
-        }
 
-        let mut move_back = DVec3::ZERO;
-        let delta_time = DVec3::splat(time.delta_seconds_f64());
+            let mut move_back = DVec3::ZERO;
+            let delta_time = DVec3::splat(time.delta_seconds_f64());
 
-        // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
-        // axis it takes the longest time to resolve the conflict.
-        for (collision, _block_id) in collisions {
-            let backwards_time = collision / velocity.abs();
-            // Small epsilon to delta time because of precision.
-            let valid_axes = backwards_time.cmplt(delta_time + 0.0001);
-            let slowest_resolution_axis =
-                DVec3::select(valid_axes, backwards_time, DVec3::NAN).max_element();
+            // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
+            // axis it takes the longest time to resolve the conflict.
+            for (collision, _block_id) in collisions {
+                let backwards_time = collision / directional_velocity.abs();
+                // Small epsilon to delta time because of precision.
+                let valid_axes = backwards_time.cmplt(delta_time + 0.0001);
+                let slowest_resolution_axis =
+                    DVec3::select(valid_axes, backwards_time, DVec3::NAN).max_element();
 
-            const EPSILON: f64 = f64::EPSILON * 10.0;
-            if slowest_resolution_axis == backwards_time.x {
-                move_back.x = backwards_time.x * -velocity.x + (-velocity.x).signum() * EPSILON;
-                velocity.x = 0.0;
-            } else if slowest_resolution_axis == backwards_time.y {
-                move_back.y = backwards_time.y * -velocity.y + (-velocity.y).signum() * EPSILON;
-                //println!("resolved y: {}, {}", move_back.y, velocity.y);
-                if velocity.y.signum() == GRAVITY.y.signum() {
-                    velocity.0 = DVec3::ZERO;
-                } else {
-                    velocity.y = 0.0;
+                if slowest_resolution_axis == backwards_time.x {
+                    move_back.x = collision.x + collision.x / 100.0;
+                    velocity.x = 0.0;
+                } else if slowest_resolution_axis == backwards_time.y {
+                    move_back.y = collision.y + collision.y / 100.0;
+                    if directional_velocity.y.signum() == GRAVITY.y.signum() {
+                        velocity.0 = DVec3::ZERO;
+                    } else {
+                        velocity.y = 0.0;
+                    }
+                } else if slowest_resolution_axis == backwards_time.z {
+                    move_back.z = collision.z + collision.z / 100.0;
+                    velocity.z = 0.0;
                 }
-            } else if slowest_resolution_axis == backwards_time.z {
-                move_back.z = backwards_time.z * -velocity.z + (-velocity.z).signum() * EPSILON;
-                velocity.z = 0.0;
             }
-        }
 
         transform.translation = pos_after_move + move_back;
+        }
     }
 }
