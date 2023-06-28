@@ -1,5 +1,4 @@
-// Copied from https://github.com/sburris0/bevy_flycam/blob/master/src/lib.rs
-use bevy::{core_pipeline::prepass::DepthPrepass, prelude::*, render::primitives::Aabb};
+use bevy::{prelude::*, render::primitives::Aabb};
 use fmc_networking::{messages, NetworkData};
 
 use crate::{
@@ -38,10 +37,12 @@ impl Plugin for PlayerPlugin {
 // does everything. This is needed for other types of movement too, like boats.
 #[derive(Component, Default)]
 pub struct Player {
-    // Current velocity of the player
+    // Current velocity
     pub velocity: Vec3,
-    pub flying: bool,
-    pub swimming: bool,
+    // Current acceleration
+    pub acceleration: Vec3,
+    pub is_flying: bool,
+    pub is_swimming: bool,
     // If the player is against a block. (in any direction)
     pub is_grounded: BVec3,
     // Vertical angle of the camera.
@@ -53,7 +54,7 @@ pub struct Player {
 impl Player {
     pub fn new() -> Self {
         return Self {
-            flying: true,
+            is_flying: true,
             ..Default::default()
         };
     }
@@ -78,12 +79,13 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
         .spawn(Camera3dBundle {
             transform: Transform::from_xyz(
                 DEFAULT_PLAYER_WIDTH / 2.0,
-                DEFAULT_PLAYER_HEIGHT,
+                DEFAULT_PLAYER_HEIGHT - 0.2,
                 DEFAULT_PLAYER_WIDTH / 2.0,
             ),
             projection: PerspectiveProjection {
-                // TODO: Don't remember why this was necessary, I think it limits the frustum
                 far: settings.render_distance as f32 * CHUNK_SIZE as f32,
+                // TODO: Increase fov when the frustum loading is fixed to not leave gaps.
+                //fov: std::f32::consts::PI / 3.0,
                 ..default()
             }
             .into(),
