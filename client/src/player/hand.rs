@@ -200,12 +200,15 @@ fn play_switch_animation(
         if switch_animation.elapsed + time.delta_seconds() > DURATION / 2.0 {
             *scene = switch_animation.scene_handle.clone();
         }
-    } else if switch_animation.elapsed < DURATION {
+    } else if switch_animation.elapsed <= DURATION {
         let mut new_transform = switch_animation.new_transform;
         new_transform.translation.y -=
             (DURATION - switch_animation.elapsed) * switch_animation.new_offset;
         *transform = new_transform;
+    } else if switch_animation.new_transform != *transform {
+        *transform = switch_animation.new_transform;
     }
+
     switch_animation.elapsed += time.delta_seconds();
 }
 
