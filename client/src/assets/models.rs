@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
-use bevy::prelude::*;
+use bevy::{gltf::Gltf, prelude::*};
 
 use fmc_networking::{messages::ServerConfig, NetworkClient};
 
@@ -23,11 +23,15 @@ impl Models {
     pub fn get_id_by_filename(&self, filename: &str) -> Option<u32> {
         return self.reverse.get(filename).cloned();
     }
+
+    pub fn iter(&self) -> std::collections::hash_map::Values<u32, Model> {
+        return self.inner.values();
+    }
 }
 
 // TODO: Idk why I made this struct, remove if it isn't expanded upon
 pub struct Model {
-    pub handle: Handle<Scene>,
+    pub handle: Handle<Gltf>,
 }
 
 // TODO: If AssetServer implements some kind of synchronous load or verification in the future,
@@ -56,7 +60,7 @@ pub(super) fn load_models(
 
     // We first load all the models, they can be in different formats so it's simpler to extract
     // the names beforehand.
-    let mut handles: HashMap<String, Handle<Scene>> = HashMap::new();
+    let mut handles: HashMap<String, Handle<Gltf>> = HashMap::new();
     for dir_entry in directory {
         let file_path = match dir_entry {
             Ok(d) => d.path(),
@@ -75,9 +79,7 @@ pub(super) fn load_models(
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        // XXX: AssetServer won't take Path's with '#label' for some reason
-        let model_handle =
-            asset_server.load(&(file_path.to_string_lossy().into_owned() + "#Scene0"));
+        let model_handle = asset_server.load(file_path);
 
         handles.insert(model_name, model_handle);
     }

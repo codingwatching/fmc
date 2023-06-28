@@ -1,14 +1,19 @@
 use std::collections::HashMap;
 
 use bevy::{
-    math::Vec3A,
+    gltf::Gltf,
     pbr::NotShadowCaster,
     prelude::*,
     render::{mesh::Indices, primitives::Aabb},
 };
 use fmc_networking::{messages, NetworkData};
 
-use crate::{assets::models::Models, game_state::GameState, player::Player, world::{Origin, MovesWithOrigin}};
+use crate::{
+    assets::models::Models,
+    game_state::GameState,
+    player::Player,
+    world::{MovesWithOrigin, Origin},
+};
 
 pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
@@ -35,9 +40,10 @@ struct ModelEntities(HashMap<u32, Entity>);
 
 fn handle_model_add_delete(
     mut commands: Commands,
-    mut model_entities: ResMut<ModelEntities>,
-    models: Res<Models>,
     origin: Res<Origin>,
+    models: Res<Models>,
+    gltf_assets: Res<Assets<Gltf>>,
+    mut model_entities: ResMut<ModelEntities>,
     mut deleted_models: EventReader<NetworkData<messages::DeleteModel>>,
     mut new_models: EventReader<NetworkData<messages::NewModel>>,
     player_aabb: Query<(&Aabb, &Transform), With<Player>>,
@@ -98,9 +104,11 @@ fn handle_model_add_delete(
             Visibility::Visible
         };
 
+        let gltf = gltf_assets.get(&model.handle).unwrap();
+
         let entity = commands
             .spawn(SceneBundle {
-                scene: model.handle.clone(),
+                scene: gltf.scenes[0].clone(),
                 transform: Transform {
                     translation: (new_model.position - origin.as_dvec3()).as_vec3(),
                     rotation: new_model.rotation,
@@ -206,6 +214,7 @@ fn update_transforms(
 fn update_model_asset(
     model_entities: Res<ModelEntities>,
     models: Res<Models>,
+    gltf_assets: Res<Assets<Gltf>>,
     mut asset_updates: EventReader<NetworkData<messages::ModelUpdateAsset>>,
     mut model_query: Query<&mut Handle<Scene>, With<ModelMarker>>,
 ) {
@@ -214,7 +223,7 @@ fn update_model_asset(
             let mut handle = model_query.get_mut(*entity).unwrap();
 
             *handle = if let Some(model) = models.get(&asset_update.asset) {
-                model.handle.clone()
+                gltf_assets.get(&model.handle).unwrap().scenes[0].clone()
             } else {
                 // Disconnect?
                 todo!();

@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::prelude::*;
+use bevy::{gltf::Gltf, prelude::*};
 
 use fmc_networking::{messages::ServerConfig, BlockId, NetworkClient};
 use serde::{Deserialize, Serialize};
 
-use crate::{assets::models::Models, player::hand::ANIMATION_LEN, world::blocks::Blocks};
+use crate::{assets::models::Models, world::blocks::Blocks};
 
 pub type ItemId = u32;
 
@@ -18,8 +18,6 @@ pub struct ItemConfig {
     pub model_id: u32,
     /// The max amount of an item stack of this type
     pub stack_size: u32,
-    /// Animation used when holding the item.
-    pub equip_animation: Handle<AnimationClip>,
     /// Names used to categorize the item, e.g "helmet". Used to restrict item placement in ui's.
     pub categories: Option<HashSet<String>>,
     /// Block that is placed when the item is used on a surface.
@@ -29,11 +27,6 @@ pub struct ItemConfig {
 #[derive(Deserialize)]
 struct Model {
     name: String,
-    /// Equipped models are placed in a predetermined position. This here is a position relative to
-    /// that position.
-    position: Option<Vec3>,
-    rotation: Option<f32>,
-    scale: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -67,7 +60,7 @@ pub fn load_items(
     server_config: Res<ServerConfig>,
     net: Res<NetworkClient>,
     models: Res<Models>,
-    mut animations: ResMut<Assets<AnimationClip>>,
+    gltf_assets: Res<Assets<Gltf>>,
 ) {
     let blocks = Blocks::get();
     let mut configs = HashMap::new();
@@ -109,6 +102,18 @@ pub fn load_items(
             }
         };
 
+        let model = models.get(&model_id).unwrap();
+        let gltf = gltf_assets.get(&model.handle).unwrap();
+
+        if &json_config.name == "Stick" && gltf.named_animations.get("left_click").is_none() {
+            net.disconnect(&format!(
+                "Misconfigured resource pack: missing animation 'left_click' for model '{}'\
+                    , needed for item '{}'",
+                &json_config.equip_model.name, &json_config.name,
+            ));
+            return;
+        }
+
         let block_id = match json_config.block {
             Some(name) => match blocks.get_id(&name) {
                 Some(block_id) => Some(*block_id),
@@ -124,70 +129,11 @@ pub fn load_items(
             None => None,
         };
 
-        let mut animation = AnimationClip::default();
-
-        let animation_name = Name::new("player_hand");
-
-        let rotation_x = -1.570796;
-        let rotation_y = json_config
-            .equip_model
-            .rotation
-            .unwrap_or(std::f32::consts::PI / 2.0);
-        let rotation_z = -1.570796;
-
-        // TODO: This looks crude. Needs transform animation and should have a broad curve when
-        // swinging and a short reconstitution where it's drawn back in a straight line to the
-        // beginning.
-        animation.add_curve_to_path(
-            EntityPath {
-                parts: vec![animation_name.clone()],
-            },
-            VariableCurve {
-                keyframe_timestamps: vec![0.0, ANIMATION_LEN / 2.0, ANIMATION_LEN],
-                keyframes: Keyframes::Rotation(vec![
-                    Quat::from_rotation_y(rotation_y),
-                    Quat::from_rotation_x(rotation_z)
-                        * Quat::from_rotation_y(rotation_y)
-                        * Quat::from_rotation_x(rotation_x),
-                    Quat::from_rotation_y(rotation_y),
-                ]),
-            },
-        );
-
-        let position = json_config.equip_model.position.unwrap_or(Vec3::ZERO);
-        animation.add_curve_to_path(
-            EntityPath {
-                parts: vec![animation_name.clone()],
-            },
-            VariableCurve {
-                keyframe_timestamps: vec![0.0, ANIMATION_LEN / 2.0, ANIMATION_LEN],
-                keyframes: Keyframes::Translation(vec![
-                    Vec3::new(0.125, -0.1, -0.3) + position,
-                    Vec3::new(0.0, -0.2, -0.3),
-                    Vec3::new(0.125, -0.1, -0.3) + position,
-                ]),
-            },
-        );
-
-        let scale = Vec3::splat(json_config.equip_model.scale.unwrap_or(0.01));
-        animation.add_curve_to_path(
-            EntityPath {
-                parts: vec![animation_name.clone()],
-            },
-            VariableCurve {
-                keyframe_timestamps: vec![0.0, ANIMATION_LEN],
-                keyframes: Keyframes::Scale(vec![scale, scale]),
-            },
-        );
-
-        let animation_handle = animations.add(animation);
-
         let config = ItemConfig {
             name: json_config.name,
             image_path: "server_assets/textures/items/".to_owned() + &json_config.image,
             model_id,
             stack_size: json_config.stack_size,
-            equip_animation: animation_handle,
             categories: json_config.categories,
             block: block_id,
         };
