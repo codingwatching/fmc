@@ -12,7 +12,7 @@ use crate::{
     players::{PlayerCamera, Players},
     utils,
     world::{
-        blocks::{BlockFace, Blocks},
+        blocks::{BlockFace, Blocks, Friction},
         items::{DroppedItem, Item, ItemStack, ItemStorage, Items},
         //blocks::Blocks,
         models::{Model, ModelBundle, ModelVisibility, Models},
@@ -253,7 +253,14 @@ pub fn place_blocks(
 
             equipped_item.subtract(1);
 
-            if chunk[*index] == blocks.get_id("air") {
+            let block_config = match chunk.chunk_type {
+                crate::world::world_map::chunk::ChunkType::Uniform(block_id) => {
+                    blocks.get_config(&block_id)
+                },
+                _ => blocks.get_config(&chunk[*index])
+            };
+
+            if matches!(block_config.friction, Friction::Drag(_)) {
                 block_update_writer.send(BlockUpdate::Change(
                     event.chunk_position + utils::block_index_to_position(*index),
                     *block_id,
