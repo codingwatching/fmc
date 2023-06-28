@@ -85,6 +85,7 @@ var texture_array: texture_2d_array<f32>;
 @group(1) @binding(12)
 var texture_array_sampler: sampler;
 
+// for debug
 fn get_light(light: u32) -> f32 {
     // TODO: This would be nice as a constant array, but dynamic indexing is not supported by naga.
     if light == 0u {
@@ -141,23 +142,29 @@ fn fragment(
     var output_color: vec4<f32> = material.base_color;
 
     // For some reason this refuses to take a u32 as the index
-    let texture_index: i32 = texture_index + i32(globals.time) % i32(material.animation_frames);
+    let fps = 10.0;
+    let texture_index: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
     output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index);
 
     let sunlight = (light >> 4u) & 0xFu;
     let artificial_light = light & 0xFu;
-    let light_uint = max(sunlight, artificial_light);
-    let light = get_light(light_uint);
-    if sunlight > artificial_light {
-        output_color = vec4(output_color.rgb * clamp(light * lights.ambient_color.r, 0.03, 1.0), output_color.a);
+    let light = pow(0.8, f32(15u - max(sunlight, artificial_light)));
+    //let light = get_light(sunlight);
+    if sunlight >= artificial_light {
+        output_color = vec4(output_color.rgb * clamp(light * lights.ambient_color.a, 0.03, 1.0), output_color.a);
     } else {
         output_color = vec4(output_color.rgb * light, output_color.a);
     }
-    //output_color = vec4(output_color.rgb * f32(sunlight) / 15.0, output_color.a);
 
-    //if sunlight > artificial_light {
-    //    output_color = vec4(output_color.rgb * clamp(lights.ambient_color.r, 0.04, 1.0), output_color.a);
-    //}
+    if abs(world_normal.z) == 1.0 {
+        output_color = vec4(output_color.rgb * 0.8, output_color.a);
+    } else if abs(world_normal.x) == 1.0 {
+        output_color = vec4(output_color.rgb * 0.5, output_color.a);
+    } else if world_normal.y == -1.0 {
+        output_color = vec4(output_color.rgb * 0.3, output_color.a);
+    }
+
+    output_color = alpha_discard(material, output_color);
 
     //if ((material.flags & STANDARD_MATERIAL_FLAGS_IS_WATER) != 0u) {
     //    let z_depth_ndc = prepass_depth(frag_coord, sample_index);
@@ -167,95 +174,95 @@ fn fragment(
     //    let alpha = min(exp(-diff * 0.08 - 1.0), 1.0);
     //    output_color.a = alpha;
     //}
-#ifdef VERTEX_COLORS
-    output_color = output_color * color;
-#endif
-#ifdef VERTEX_UVS
-    if ((material.flags & STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) != 0u) {
-        output_color = output_color * textureSample(base_color_texture, base_color_sampler, uv);
-    }
-#endif
-
-    // NOTE: Unlit bit not set means == 0 is true, so the true case is if lit
-    if ((material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) != 0u) {
-        // Prepare a 'processed' StandardMaterial by sampling all textures to resolve
-        // the material members
-        var pbr_input: PbrInput;
-
-        pbr_input.material.base_color = output_color;
-        pbr_input.material.reflectance = material.reflectance;
-        pbr_input.material.flags = material.flags;
-        pbr_input.material.alpha_cutoff = material.alpha_cutoff;
-
-        // TODO use .a for exposure compensation in HDR
-        var emissive: vec4<f32> = material.emissive;
-#ifdef VERTEX_UVS
-        if ((material.flags & STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT) != 0u) {
-            emissive = vec4<f32>(emissive.rgb * textureSample(emissive_texture, emissive_sampler, uv).rgb, 1.0);
-        }
-#endif
-        pbr_input.material.emissive = emissive;
-
-        var metallic: f32 = material.metallic;
-        var perceptual_roughness: f32 = material.perceptual_roughness;
-#ifdef VERTEX_UVS
-        if ((material.flags & STANDARD_MATERIAL_FLAGS_METALLIC_ROUGHNESS_TEXTURE_BIT) != 0u) {
-            let metallic_roughness = textureSample(metallic_roughness_texture, metallic_roughness_sampler, uv);
-            // Sampling from GLTF standard channels for now
-            metallic = metallic * metallic_roughness.b;
-            perceptual_roughness = perceptual_roughness * metallic_roughness.g;
-        }
-#endif
-        pbr_input.material.metallic = metallic;
-        pbr_input.material.perceptual_roughness = perceptual_roughness;
-
-        var occlusion: f32 = 1.0;
-#ifdef VERTEX_UVS
-        if ((material.flags & STANDARD_MATERIAL_FLAGS_OCCLUSION_TEXTURE_BIT) != 0u) {
-            occlusion = textureSample(occlusion_texture, occlusion_sampler, uv).r;
-        }
-#endif
-        pbr_input.frag_coord = frag_coord;
-        pbr_input.world_position = world_position;
-
-#ifdef LOAD_PREPASS_NORMALS
-        pbr_input.world_normal = prepass_normal(frag_coord, 0u);
-#else // LOAD_PREPASS_NORMALS
-        pbr_input.world_normal = prepare_world_normal(
-            world_normal,
-            (material.flags & STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT) != 0u,
-            is_front,
-        );
-#endif // LOAD_PREPASS_NORMALS
-
-        pbr_input.is_orthographic = view.projection[3].w == 1.0;
-
-        pbr_input.N = apply_normal_mapping(
-            material.flags,
-            pbr_input.world_normal,
-#ifdef VERTEX_TANGENTS
-#ifdef STANDARDMATERIAL_NORMAL_MAP
-            world_tangent,
-#endif
-#endif
-#ifdef VERTEX_UVS
-            uv,
-#endif
-        );
-        pbr_input.V = calculate_view(world_position, pbr_input.is_orthographic);
-        pbr_input.occlusion = occlusion;
-
-        pbr_input.flags = mesh.flags;
-
-        output_color = pbr(pbr_input);
-    } else {
-        output_color = alpha_discard(material, output_color);
-    }
-
-    if (fog.mode != FOG_MODE_OFF && (material.flags & STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
-        output_color = apply_fog(output_color, world_position.xyz, view.world_position.xyz);
-    }
-
+//#ifdef VERTEX_COLORS
+//    output_color = output_color * color;
+//#endif
+//#ifdef VERTEX_UVS
+//    if ((material.flags & STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) != 0u) {
+//        output_color = output_color * textureSample(base_color_texture, base_color_sampler, uv);
+//    }
+//#endif
+//
+//    // NOTE: Unlit bit not set means == 0 is true, so the true case is if lit
+//    if ((material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) != 1u) {
+//        // Prepare a 'processed' StandardMaterial by sampling all textures to resolve
+//        // the material members
+//        var pbr_input: PbrInput;
+//
+//        pbr_input.material.base_color = output_color;
+//        pbr_input.material.reflectance = material.reflectance;
+//        pbr_input.material.flags = material.flags;
+//        pbr_input.material.alpha_cutoff = material.alpha_cutoff;
+//
+//        // TODO use .a for exposure compensation in HDR
+//        var emissive: vec4<f32> = material.emissive;
+//#ifdef VERTEX_UVS
+//        if ((material.flags & STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT) != 0u) {
+//            emissive = vec4<f32>(emissive.rgb * textureSample(emissive_texture, emissive_sampler, uv).rgb, 1.0);
+//        }
+//#endif
+//        pbr_input.material.emissive = emissive;
+//
+//        var metallic: f32 = material.metallic;
+//        var perceptual_roughness: f32 = material.perceptual_roughness;
+//#ifdef VERTEX_UVS
+//        if ((material.flags & STANDARD_MATERIAL_FLAGS_METALLIC_ROUGHNESS_TEXTURE_BIT) != 0u) {
+//            let metallic_roughness = textureSample(metallic_roughness_texture, metallic_roughness_sampler, uv);
+//            // Sampling from GLTF standard channels for now
+//            metallic = metallic * metallic_roughness.b;
+//            perceptual_roughness = perceptual_roughness * metallic_roughness.g;
+//        }
+//#endif
+//        pbr_input.material.metallic = metallic;
+//        pbr_input.material.perceptual_roughness = perceptual_roughness;
+//
+//        var occlusion: f32 = 1.0;
+//#ifdef VERTEX_UVS
+//        if ((material.flags & STANDARD_MATERIAL_FLAGS_OCCLUSION_TEXTURE_BIT) != 0u) {
+//            occlusion = textureSample(occlusion_texture, occlusion_sampler, uv).r;
+//        }
+//#endif
+//        pbr_input.frag_coord = frag_coord;
+//        pbr_input.world_position = world_position;
+//
+//#ifdef LOAD_PREPASS_NORMALS
+//        pbr_input.world_normal = prepass_normal(frag_coord, 0u);
+//#else // LOAD_PREPASS_NORMALS
+//        pbr_input.world_normal = prepare_world_normal(
+//            world_normal,
+//            (material.flags & STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT) != 0u,
+//            is_front,
+//        );
+//#endif // LOAD_PREPASS_NORMALS
+//
+//        pbr_input.is_orthographic = view.projection[3].w == 1.0;
+//
+//        pbr_input.N = apply_normal_mapping(
+//            material.flags,
+//            pbr_input.world_normal,
+//#ifdef VERTEX_TANGENTS
+//#ifdef STANDARDMATERIAL_NORMAL_MAP
+//            world_tangent,
+//#endif
+//#endif
+//#ifdef VERTEX_UVS
+//            uv,
+//#endif
+//        );
+//        pbr_input.V = calculate_view(world_position, pbr_input.is_orthographic);
+//        pbr_input.occlusion = occlusion;
+//
+//        pbr_input.flags = mesh.flags;
+//
+//        output_color = pbr(pbr_input);
+//    } else {
+//        output_color = alpha_discard(material, output_color);
+//    }
+//
+//    if (fog.mode != FOG_MODE_OFF && (material.flags & STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
+//        output_color = apply_fog(output_color, world_position.xyz, view.world_position.xyz);
+//    }
+//
 #ifdef TONEMAP_IN_SHADER
     output_color = tone_mapping(output_color);
 #ifdef DEBAND_DITHER

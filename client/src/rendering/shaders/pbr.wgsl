@@ -30,47 +30,6 @@ struct FragmentInput {
     @location(5) packed_bits: u32,
 };
 
-// Same as in block fragment shader, but one light level higher to have some contrast between
-// dropped items and the ground.
-fn get_light(light: u32) -> f32 {
-    // TODO: This would be nice as a constant array, but dynamic indexing is not supported by naga.
-    if light == 0u {
-        return 0.03;
-    } else if light == 1u {
-        return 0.04;
-    } else if light == 2u {
-        return 0.05;
-    } else if light == 3u {
-        return 0.07;
-    } else if light == 4u {
-        return 0.09;
-    } else if light == 5u {
-        return 0.11;
-    } else if light == 6u {
-        return 0.135;
-    } else if light == 7u {
-        return 0.17;
-    } else if light == 8u {
-        return 0.21;
-    } else if light == 9u {
-        return 0.26;
-    } else if light == 10u {
-        return 0.38;
-    } else if light == 11u {
-        return 0.41;
-    } else if light == 12u {
-        return 0.51;
-    } else if light == 13u {
-        return 0.64;
-    } else if light == 14u {
-        return 0.8;
-    } else if light == 15u {
-        return 1.0;
-    } else {
-        return 0.0;
-    }
-}
-
 @fragment
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     let is_orthographic = view.projection[3].w == 1.0;
@@ -102,10 +61,9 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     output_color = output_color * in.color;
 #endif
 
-    let sunlight = (in.packed_bits & 0xF0u) >> 4u;
+    let sunlight = (in.packed_bits >> 4u) & 0xFu;
     let artificial_light = in.packed_bits & 0xFu;
-    let light_uint = max(sunlight, artificial_light);
-    let light = get_light(light_uint);
+    let light = pow(0.82, f32(15u - max(sunlight, artificial_light)));
 
     if sunlight > artificial_light {
         output_color = vec4(output_color.rgb * clamp(light * lights.ambient_color.r, 0.05, 1.0), output_color.a);

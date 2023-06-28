@@ -1,14 +1,22 @@
 use bevy::{
+    math::Vec3A,
     pbr::{
         MaterialPipeline, MaterialPipelineKey, StandardMaterialFlags, StandardMaterialUniform,
-        MAX_DIRECTIONAL_LIGHTS, MAX_CASCADES_PER_LIGHT,
+        MAX_CASCADES_PER_LIGHT, MAX_DIRECTIONAL_LIGHTS,
     },
     prelude::*,
     reflect::TypeUuid,
-    render::{mesh::{MeshVertexBufferLayout, VertexAttributeValues}, render_asset::RenderAssets, render_resource::*}, math::Vec3A,
+    render::{
+        mesh::{MeshVertexBufferLayout, VertexAttributeValues},
+        render_asset::RenderAssets,
+        render_resource::*,
+    },
 };
 
-use crate::{rendering::lighting::{LightMap, Light}, world::Origin};
+use crate::{
+    rendering::lighting::{Light, LightMap},
+    world::Origin,
+};
 
 use super::ATTRIBUTE_PACKED_BITS_0;
 
@@ -17,7 +25,7 @@ impl Plugin for PbrMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(MaterialPlugin::<PbrMaterial>::default())
             // Some weird schedule ordering here to avoid flickering when replacing the meshes.
-            // Chosen at random until it worked. 
+            // Chosen at random until it worked.
             .add_systems(PostUpdate, replace_material_and_mesh)
             .add_systems(Last, update_light);
     }
@@ -48,10 +56,12 @@ fn update_light(
         // know if holds true.
         let mut new_light = Light(0);
         for (i, offset) in mesh_aabb.half_extents.to_array().into_iter().enumerate() {
-            let mut offset_vec  = Vec3::ZERO;
+            let mut offset_vec = Vec3::ZERO;
             offset_vec[i] = offset;
             for direction in [-1.0, 1.0] {
-                let position = (position + Vec3::from(mesh_aabb.center) + offset_vec * direction).floor().as_ivec3();
+                let position = (position + Vec3::from(mesh_aabb.center) + offset_vec * direction)
+                    .floor()
+                    .as_ivec3();
                 if let Some(light) = light_map.get_light(position) {
                     if light.sunlight() > new_light.sunlight() {
                         new_light.set_sunlight(light.sunlight());
@@ -66,7 +76,7 @@ fn update_light(
         if let Some(light_attr) = mesh.attribute(ATTRIBUTE_PACKED_BITS_0) {
             let light_attr = match light_attr {
                 VertexAttributeValues::Uint32(l) => l,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
             if let Some(old_light) = light_attr.get(0) {
                 if new_light == Light(*old_light as u8) {
@@ -77,9 +87,8 @@ fn update_light(
 
         let len = match mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
             VertexAttributeValues::Float32x3(positions) => positions.len(),
-            _ => unreachable!()
+            _ => unreachable!(),
         };
-
 
         let new_light = vec![new_light.0 as u32; len];
         mesh.insert_attribute(ATTRIBUTE_PACKED_BITS_0, new_light);
@@ -91,7 +100,10 @@ fn update_light(
 // each as well as replacing the material it uses.
 fn replace_material_and_mesh(
     mut commands: Commands,
-    material_query: Query<(Entity, &Handle<StandardMaterial>, &Handle<Mesh>), Added<Handle<StandardMaterial>>>,
+    material_query: Query<
+        (Entity, &Handle<StandardMaterial>, &Handle<Mesh>),
+        Added<Handle<StandardMaterial>>,
+    >,
     standard_materials: Res<Assets<StandardMaterial>>,
     mut pbr_materials: ResMut<Assets<PbrMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,

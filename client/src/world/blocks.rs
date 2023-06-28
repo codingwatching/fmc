@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    ops::Index,
-    path::PathBuf,
-};
+use std::{collections::HashMap, ops::Index, path::PathBuf};
 
 use bevy::prelude::*;
 use fmc_networking::{messages, BlockId, NetworkClient};
@@ -298,7 +294,7 @@ pub fn load_blocks(
                     cull_only_if_same_block,
                     interactable,
                     transparent,
-                    light_attenuation: light_attenuation.unwrap_or(1).min(16),
+                    light_attenuation: light_attenuation.unwrap_or(15).min(15),
                 })
             }
             BlockConfig::Model {

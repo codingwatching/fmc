@@ -9,6 +9,8 @@ use fmc_networking::{messages, NetworkData};
 
 use crate::{game_state::GameState, player::Player, rendering::materials};
 
+const BRIGHTNESS: f32 = 1.0;
+
 pub struct SkyPlugin;
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
@@ -48,7 +50,7 @@ fn setup(
 
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 1.5,
+        brightness: BRIGHTNESS,
     });
 
     commands.entity(player_id).push_children(&[sky_entity]);
@@ -66,7 +68,7 @@ fn pass_time(
         return;
     };
 
-    ambient_light.brightness = angle.sin() * 1.5;
+    ambient_light.brightness = angle.sin() * BRIGHTNESS;
 
     let position = Vec3::new(angle.cos(), angle.sin(), 0.0);
     let handle = sky_material_query.single();
