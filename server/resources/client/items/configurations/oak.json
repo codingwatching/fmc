@@ -4,7 +4,6 @@
     "block": "oak",
     "equip_model": {
         "name": "oak",
-        "position": [-0.075, 0.04, 0.2],
         "scale": 0.025
     },
     "stack_size": 64

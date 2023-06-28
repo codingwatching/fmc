@@ -7,7 +7,7 @@
             "back": 0,
             "right": 0,
             "left": 0,
-            "top": 1,
+            "top": 0.99,
             "bottom": 0
         }
     },

@@ -3,7 +3,7 @@
     "name": "air",
     "material": "water",
     "friction": {
-        "drag": [0.85, 0.02, 0.85]
+        "drag": [0.90, 0.02, 0.90]
     },
     "cull": false,
     "light_attenuation": 0
