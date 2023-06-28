@@ -21,7 +21,7 @@ impl Settings {
         Self {
             render_distance: 16,
             volume: 100,
-            sensitivity: 0.00012,
+            sensitivity: 0.00005,
             flight_speed: 50.0,
         }
     }
