@@ -1,7 +1,7 @@
 use sha1::Digest;
 use std::io::prelude::*;
 
-use bevy::prelude::*;
+use bevy::{gltf::Gltf, prelude::*};
 use fmc_networking::{messages, NetworkData};
 
 mod block_textures;
@@ -19,40 +19,55 @@ pub enum AssetState {
     Downloading,
     Loading,
     #[default]
-    Waiting,
+    Inactive,
 }
 
+// Some loading actions are separated by states to allow bevy's internal systems to sync the
+// needed values.
+#[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
+enum LoadingState {
+    One,
+    Two,
+    #[default]
+    Inactive,
+}
+
+// TODO: Almost all of this is workarounds for assets having to be loaded async. Bevy 0.11 will
+// come with changed to the asset system, so reevaluate then.
 pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_state::<AssetState>();
+        app.add_state::<AssetState>().add_state::<LoadingState>();
 
         app.add_systems(
             Update,
-            start_asset_loading.run_if(in_state(AssetState::Waiting)),
+            start_asset_loading.run_if(in_state(AssetState::Inactive)),
         )
         .add_systems(
             Update,
             handle_assets_response.run_if(in_state(AssetState::Downloading)),
         )
-        // TODO: Everything between apply_system_buffers can happen in parallel, but I don't
-        // know how to do it, I don't grasp the new scheduling system yet.
+        .add_systems(OnEnter(AssetState::Loading), start_loading)
         .add_systems(
-            OnEnter(AssetState::Loading),
+            OnEnter(LoadingState::One),
             (
-                // XXX: These 'after' relationships are only here to note which systems are required
-                // to be in the applied order, bevy ignores them.
                 block_textures::load_block_textures,
                 models::load_models,
                 crate::player::key_bindings::load_key_bindings,
+            ),
+        )
+        .add_systems(
+            Update,
+            test_finished_load_state_one.run_if(in_state(LoadingState::One)),
+        )
+        .add_systems(
+            OnEnter(LoadingState::Two),
+            (
+                materials::load_materials,
                 apply_system_buffers,
-                materials::load_materials.after(block_textures::load_block_textures),
+                crate::world::blocks::load_blocks,
                 apply_system_buffers,
-                crate::world::blocks::load_blocks.after(materials::load_materials),
-                apply_system_buffers,
-                crate::player::interfaces::load_items
-                    .after(models::load_models)
-                    .after(crate::world::blocks::load_blocks),
+                crate::player::interfaces::load_items,
                 crate::player::interfaces::load_interfaces,
                 apply_system_buffers,
                 finish,
@@ -62,8 +77,36 @@ impl Plugin for AssetPlugin {
     }
 }
 
-fn finish(mut asset_state: ResMut<NextState<AssetState>>) {
-    asset_state.set(AssetState::Waiting);
+fn test_finished_load_state_one(
+    net: Res<fmc_networking::NetworkClient>,
+    models: Res<models::Models>,
+    asset_server: Res<AssetServer>,
+    mut loading_state: ResMut<NextState<LoadingState>>,
+) {
+    match asset_server.get_group_load_state(models.iter().map(|model| model.handle.id())) {
+        bevy::asset::LoadState::Failed => {
+            net.disconnect(&format!(
+                "Misconfigured resource pack: Failed to load a model, check console for error."
+            ));
+            loading_state.set(LoadingState::Inactive);
+        }
+        bevy::asset::LoadState::Loaded => {
+            loading_state.set(LoadingState::Two);
+        }
+        _ => (),
+    }
+}
+
+fn start_loading(mut loading_state: ResMut<NextState<LoadingState>>) {
+    loading_state.set(LoadingState::One);
+}
+
+fn finish(
+    mut asset_state: ResMut<NextState<AssetState>>,
+    mut loading_state: ResMut<NextState<LoadingState>>,
+) {
+    asset_state.set(AssetState::Inactive);
+    loading_state.set(LoadingState::Inactive);
 }
 
 // TODO: The server can crash it by sending multiple server configs. The good solution would be
