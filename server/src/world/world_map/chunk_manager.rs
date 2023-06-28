@@ -177,8 +177,9 @@ fn handle_chunk_requests(
                 }
             }
 
-            // TODO: Many tasks for the same chunk can be launched. For well behaved clients it
-            // (probably) is no problem.
+            // XXX: Many tasks for the same chunk can be launched. For well behaved clients it
+            // is no problem. Chunk requests as a concept will be removed in the future.
+            //
             // Load from disk, or generate if it hasn't been generated.
             let task = thread_pool.spawn(Chunk::load(
                 chunk_pos,

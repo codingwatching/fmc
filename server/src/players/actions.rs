@@ -192,16 +192,17 @@ pub fn handle_left_clicks(
     }
 
     // Remove break progress after not being hit for 0.5 seconds.
-    being_broken.drain_filter(|_, breaking_block| {
+    being_broken.retain(|_, breaking_block| {
         let remove_timout = (now - breaking_block.prev_hit).as_secs_f32() > 0.5;
         let remove_broken = breaking_block.progress.as_secs_f32() >= 1.0;
 
         if remove_timout || remove_broken {
             commands.entity(breaking_block.model_entity).despawn();
+            return false;
+        } else {
             return true;
         }
 
-        return false;
     });
 }
 

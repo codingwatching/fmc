@@ -61,7 +61,7 @@ impl PlayerBundle {
             camera: PlayerCamera(F64Transform {
                 // XXX: This is hardcoded until a system for changing the player orientation is
                 // set up. Also hardcoded in From<PlayerSave>
-                translation: DVec3::new(0.3, 1.8, 0.3),
+                translation: DVec3::new(0.3, 1.75, 0.3),
                 ..default()
             }),
             inventory: ItemStorage(vec![ItemStack::default(); 36]),

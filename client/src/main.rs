@@ -1,4 +1,4 @@
-#![feature(hash_drain_filter)]
+#![feature(hash_extract_if)]
 
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
@@ -22,13 +22,13 @@ mod world;
 fn main() {
     App::new()
         //.insert_resource(Msaa { samples: 4 })
+        .insert_resource(FixedTime::new_from_secs(1.0 / 144.0))
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin {
                     watch_for_changes: true,
                     asset_folder: "".to_string(),
                 })
-                // This is for pixel graphics
                 .set(ImagePlugin::default_nearest()),
         )
         //.add_plugin(LogDiagnosticsPlugin::default())

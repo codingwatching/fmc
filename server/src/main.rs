@@ -1,5 +1,3 @@
-#![feature(hash_drain_filter)]
-
 use bevy::{
     app::{RunMode, ScheduleRunnerSettings},
     prelude::*,

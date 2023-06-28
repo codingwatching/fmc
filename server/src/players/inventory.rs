@@ -399,10 +399,10 @@ fn update_inventory_interface(
         >,
     )>,
 ) {
-    // XXX: It's important that this happens in the same system as place/take. This way when we get
-    // a take/place event from the client we only respond with an interface update if the action it
-    // took was illegal. If the action is legal it will not trigger change detection, and thus this loop
-    // will not send the interface update.
+    // XXX: It's important that this happens in the same system as place/take events. This way when
+    // we get a take/place event from the client we only respond with an interface update if the
+    // action it took was illegal. If the action is legal it will not trigger change detection, and
+    // thus this loop will not send the interface update.
     for (mut changed_inventory, mut equipment, mut crafting_table, connection_id) in
         inventory_query.p1().iter_mut()
     {

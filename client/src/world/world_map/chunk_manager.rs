@@ -92,7 +92,7 @@ fn chunk_unloading(
 
     let removed: HashMap<IVec3, Chunk> = world_map
         .chunks
-        .drain_filter(|chunk_pos, chunk| {
+        .extract_if(|chunk_pos, chunk| {
             if (chunk_pos.x - origin.x).abs() / CHUNK_SIZE as i32 > max_distance
                 || (chunk_pos.y - origin.y).abs() / CHUNK_SIZE as i32 > max_distance
                 || (chunk_pos.z - origin.z).abs() / CHUNK_SIZE as i32 > max_distance
@@ -170,6 +170,10 @@ fn proximity_chunk_loading(
 // TODO: The far plane of the frustum is not always vertical, so if you look up and down you can
 // see chunks being loaded in and out. Lock the far plane normal vector to {x,0,z}.
 // update: Bevy's frustum no longer uses far planes, what is going on?
+// TODO: Any fov above some 90 degrees will mess this up. This is because of how it traverses the
+// chunk tree. Needs rewrite where it stores the directions it has taken with the chunk, this way
+// it does not need to decide a forward vector from the get go, just store [forward,
+// first_branch_dir, second_branch_dir] where forward is each direction from the root.
 fn frustum_chunk_loading(
     mut commands: Commands,
     origin: Res<Origin>,
@@ -295,7 +299,7 @@ fn frustum_chunk_loading(
         }};
     }
 
-    // The player chunk serves as the seed
+    // The player chunk serves as the tree root.
     let player_chunk_pos = utils::world_position_to_chunk_pos(
         camera_position.translation().floor().as_ivec3() + origin.0,
     );
@@ -526,7 +530,6 @@ fn handle_block_updates(
             } else {
                 chunk.remove_block_state(index);
             }
-
         }
 
         visible_sides_events.send(VisibleSidesEvent(event.chunk_position));
