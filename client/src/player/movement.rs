@@ -42,7 +42,7 @@ impl Plugin for MovementPlugin {
         app.add_systems(Update, toggle_flight.run_if(in_state(GameState::Playing)))
             .add_systems(
                 FixedUpdate,
-                (change_player_acceleration, simulate_player_physics)
+                (change_player_acceleration, simulate_player_physics, swimming)
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             )
@@ -218,9 +218,6 @@ fn simulate_player_physics(
         player.is_grounded.z = false;
     }
 
-    let was_swimming = player.is_swimming;
-    player.is_swimming = false;
-
     let accel = player.acceleration;
     player.velocity += accel * delta_time;
 
@@ -274,7 +271,7 @@ fn simulate_player_physics(
 
         let blocks = Blocks::get();
 
-        // TODO: Most of this is leftover from converting from another system that didn't work as
+        // TODO: Some of this is leftover from converting from another system that didn't work as
         // as planned.
         for (collision, block_id) in collisions.clone() {
             let backwards_time = collision / -velocity;
@@ -345,19 +342,12 @@ fn simulate_player_physics(
                     }
                 }
                 Friction::Drag(drag) => {
-                    if !player.is_swimming {
-                        player.is_swimming = drag.y > 0.4;
-                    }
                     friction = friction.max(*drag);
                 }
             }
         }
 
         transform.translation = pos_after_move + move_back;
-    }
-
-    if was_swimming && !player.is_swimming {
-        player.velocity.y += 1.5;
     }
 
     // TODO: The result of this varies with exectuion speed.
@@ -375,5 +365,69 @@ fn simulate_player_physics(
         net.send_message(messages::PlayerPosition {
             position: transform.translation.as_dvec3() + origin.as_dvec3(),
         });
+    }
+}
+
+fn swimming(
+    origin: Res<Origin>,
+    world_map: Res<WorldMap>,
+    mut player: Query<(&mut Player, &Transform, &Aabb)>,
+) {
+    let (mut player, transform, player_aabb) = player.single_mut();
+
+    let was_swimming = player.is_swimming;
+    player.is_swimming = false;
+
+    let player_aabb = Aabb {
+        center: player_aabb.center + Vec3A::from(transform.translation),
+        half_extents: player_aabb.half_extents,
+    };
+
+    let mut collisions = Vec::new();
+    let start = player_aabb.min().floor().as_ivec3() + origin.0;
+    let stop = player_aabb.max().floor().as_ivec3() + origin.0;
+    for x in start.x..=stop.x {
+        for y in start.y..=stop.y {
+            for z in start.z..=stop.z {
+                let block_pos = IVec3::new(x, y, z);
+
+                let block_id = match world_map.get_block(&block_pos) {
+                    Some(id) => id,
+                    // Disconnect? Should always have your surroundings loaded.
+                    None => continue,
+                };
+
+                let block_aabb = Aabb {
+                    center: (block_pos - origin.0).as_vec3a() + 0.5,
+                    half_extents: Vec3A::new(0.5, 0.5, 0.5),
+                };
+
+                let distance = player_aabb.center - block_aabb.center;
+                let overlap =
+                    player_aabb.half_extents + block_aabb.half_extents - distance.abs();
+
+                if overlap.cmpgt(Vec3A::ZERO).all() {
+                    collisions.push(block_id);
+                }
+            }
+        }
+    }
+
+    let blocks = Blocks::get();
+
+    for block_id in collisions.clone() {
+        match blocks[&block_id].friction() {
+            Friction::Static { .. } => (),
+            Friction::Drag(drag) => {
+                if !player.is_swimming {
+                    player.is_swimming = drag.y > 0.4;
+                }
+            }
+        }
+    }
+
+    // Give a little boost when exiting water so that the bob stays constant.
+    if was_swimming && !player.is_swimming {
+        player.velocity.y += 1.5;
     }
 }

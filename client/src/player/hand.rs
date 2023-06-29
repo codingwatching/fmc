@@ -183,10 +183,12 @@ fn equip_item(
     }
 }
 
+// TODO: See how bevy does animation and find how to remove this 'finished' variable.
 fn play_switch_animation(
     time: Res<Time>,
     mut switch_animation: ResMut<SwitchAnimation>,
     mut hand_query: Query<(&mut Transform, &mut Handle<Scene>), With<HandMarker>>,
+    mut finished: Local<bool>,
 ) {
     const DURATION: f32 = 0.3;
 
@@ -200,13 +202,18 @@ fn play_switch_animation(
         if switch_animation.elapsed + time.delta_seconds() > DURATION / 2.0 {
             *scene = switch_animation.scene_handle.clone();
         }
+
+        *finished = false;
     } else if switch_animation.elapsed <= DURATION {
         let mut new_transform = switch_animation.new_transform;
         new_transform.translation.y -=
             (DURATION - switch_animation.elapsed) * switch_animation.new_offset;
         *transform = new_transform;
-    } else if switch_animation.new_transform != *transform {
+
+        *finished = false;
+    } else if !*finished && switch_animation.new_transform != *transform {
         *transform = switch_animation.new_transform;
+        *finished = true;
     }
 
     switch_animation.elapsed += time.delta_seconds();

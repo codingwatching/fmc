@@ -9,7 +9,6 @@ use fmc_networking::{messages, NetworkData};
 use crate::{
     constants::CHUNK_SIZE,
     game_state::GameState,
-    player::Player,
     utils,
     world::{
         blocks::Blocks,
@@ -19,8 +18,6 @@ use crate::{
 };
 
 use super::chunk::{ChunkMeshEvent, ExpandedLightChunk};
-
-// TODO: When removing a block I noticed once the light value wasn't updated, intermittent.
 
 pub struct LightingPlugin;
 impl Plugin for LightingPlugin {
@@ -275,13 +272,22 @@ struct LightPropagation {
 struct LightUpdateQueues(HashMap<IVec3, VecDeque<LightPropagation>>);
 
 fn queue_block_updates(
+    light_map: Res<LightMap>,
     mut block_updates: EventReader<NetworkData<messages::BlockUpdates>>,
-    mut relight_events: EventWriter<RelightEvent>,
+    // Reuse FailedLightingEvent since it's the exact same operation, I can't think of a good name
+    // for it.
+    mut failed_lighting_events: EventWriter<FailedLightingEvent>,
 ) {
     for block_update in block_updates.iter() {
-        relight_events.send(RelightEvent {
-            chunk_position: block_update.chunk_position,
-        });
+        let mut chunk_position = block_update.chunk_position;
+        while let Some(light_chunk) = light_map.chunks.get(&chunk_position) {
+            if matches!(light_chunk, LightChunk::Uniform(light) if light.sunlight() == 0) {
+                break;
+            }
+            
+            failed_lighting_events.send(FailedLightingEvent { chunk_position });
+            chunk_position = ChunkFace::Bottom.offset_position(chunk_position);
+        }
     }
 }
 
@@ -299,14 +305,18 @@ fn queue_chunk_updates(
 }
 
 fn handle_failed(
+    mut light_map: ResMut<LightMap>,
     mut failed_lighting_events: EventReader<FailedLightingEvent>,
     mut relight_events: EventWriter<RelightEvent>
 ) {
     for failed in failed_lighting_events.iter() {
-        for x in [-1, 0, 1] {
-            for y in [-1, 0, 1] {
-                for z in [-1, 0, 1] {
-                    relight_events.send(RelightEvent { chunk_position: failed.chunk_position + IVec3 { x, y, z } });
+        for x in [1, 0, -1] {
+            for y in [1, 0, -1] {
+                for z in [1, 0, -1] {
+                    let chunk_position = failed.chunk_position + IVec3 { x, y, z };
+                    if light_map.chunks.remove(&chunk_position).is_some() {
+                        relight_events.send(RelightEvent { chunk_position });
+                    }
                 }
             }
         }
@@ -329,7 +339,7 @@ fn relight_chunks(
                 Some(c) => c,
                 None => continue,
             };
-            if block_config.is_transparent() && block_config.light_attenuation() == 0 {
+            if block_config.light_attenuation() == 0 {
                 LightChunk::Uniform(Light::new(15, 0))
             } else {
                 LightChunk::Uniform(Light::new(0, 0))
@@ -490,15 +500,17 @@ fn relight_chunks(
             // are now not sunlight.
             let mut failed = false;
             let mut below_position = ChunkFace::Bottom.offset_position(relight_event.chunk_position);
-            while let Some(below_light_chunk) = light_map.chunks.get_mut(&below_position) {
+            while let Some(below_light_chunk) = light_map.chunks.get(&below_position) {
                 if !failed && matches!(below_light_chunk, LightChunk::Normal(_)) {
+                    break;
+                } else if matches!(below_light_chunk, LightChunk::Uniform(light) if light.sunlight() == 0) {
                     break;
                 } else {
                     failed = true;
                 }
 
                 failed_lighting_events.send(FailedLightingEvent { chunk_position: below_position });
-                below_position = below_position - IVec3::Y;
+                below_position = ChunkFace::Bottom.offset_position(below_position);
             }
         }
 

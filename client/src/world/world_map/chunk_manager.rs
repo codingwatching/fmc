@@ -167,7 +167,7 @@ fn proximity_chunk_loading(
 // it was too hard to imagine how it would work. Went with simpler version to save time. Maybe
 // implement this or maybe ray tracing can solve it. Meanwhile, it will take up a huge chunk of the
 // frame time.
-// TODO: The far plane of the frustum is not always vertical, so if you look up and down you can
+// TODO: The far plane of the frustum is not vertical, so if you look up and down you can
 // see chunks being loaded in and out. Lock the far plane normal vector to {x,0,z}.
 // update: Bevy's frustum no longer uses far planes, what is going on?
 // TODO: Any fov above some 90 degrees will mess this up. This is because of how it traverses the

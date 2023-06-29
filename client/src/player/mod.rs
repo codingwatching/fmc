@@ -84,8 +84,7 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
             ),
             projection: PerspectiveProjection {
                 far: settings.render_distance as f32 * CHUNK_SIZE as f32,
-                // TODO: Increase fov when the frustum loading is fixed to not leave gaps.
-                //fov: std::f32::consts::PI / 3.0,
+                fov: std::f32::consts::PI / 3.0,
                 ..default()
             }
             .into(),
