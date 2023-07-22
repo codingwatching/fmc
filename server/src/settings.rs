@@ -10,6 +10,8 @@ pub struct ServerSettings {
     pub seed: u64,
     /// Should pvp be enabled
     pub pvp: bool,
+    /// The max render distance the server will provide for.
+    pub render_distance: u32,
 }
 
 impl Default for ServerSettings {
@@ -18,12 +20,13 @@ impl Default for ServerSettings {
             database_path: "world.sqlite".to_owned(),
             seed: 0,
             pvp: false,
+            render_distance: 16,
         }
     }
 }
 
 impl ServerSettings {
-    pub fn read() -> Self {
+    pub fn load() -> Self {
         let mut server_settings = ServerSettings::default();
 
         let path = "./server_settings.txt";

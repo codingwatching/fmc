@@ -16,7 +16,7 @@ derive_more = "0.99.16"
 downcast-rs = "1.2.0"
 serde = { version = "1.0.130", features = ["derive"] }
 thiserror = "1.0.29"
-tokio = { version = "1.11.0", features = ["net", "io-util", "sync", "rt-multi-thread"] }
+tokio = { version = "1.11.0", features = ["net", "io-util", "sync", "rt-multi-thread", "time"] }
 typetag = "0.1.7"
 serde_json = { path = "../json"}
 fmc_networking_derive = { path = "./fmc_networking_derive" }

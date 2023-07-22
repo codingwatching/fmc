@@ -51,10 +51,6 @@ impl<T> SyncChannel<T> {
 }
 
 /// A [`ConnectionId`] denotes a single connection
-///
-/// Use [`ConnectionId::is_server`] whether it is a connection to a server
-/// or another. In most client/server applications this is not required as there
-/// is no ambiguity.
 #[derive(Component, Hash, PartialEq, Eq, Clone, Copy, Display, Debug)]
 #[display(fmt = "Connection from {} with ID={}", addr, uuid)]
 pub struct ConnectionId {
@@ -105,8 +101,11 @@ impl std::fmt::Debug for NetworkPacket {
 /// A network event originating from a [`NetworkServer`]
 #[derive(Debug)]
 pub enum ServerNetworkEvent {
-    /// A new client has connected, id and player name
-    Connected(ConnectionId, String),
+    /// A client has connected
+    Connected {
+        connection: ConnectionId,
+        username: String,
+    },
     /// A client has disconnected
     Disconnected(ConnectionId),
     /// An error occured while trying to do a network operation
@@ -146,8 +145,8 @@ impl<T> NetworkData<T> {
 
 #[derive(Clone, Debug)]
 #[allow(missing_copy_implementations)]
-/// Settings to configure the network, both client and server
 #[derive(Resource)]
+/// Settings to configure the network, both client and server
 pub struct NetworkSettings {
     /// Maximum packet size in bytes. If a client ever exceeds this size, they will be disconnected
     /// The default is set to 10MiB
@@ -176,6 +175,8 @@ impl Plugin for ServerPlugin {
             // PostUpdate -> Disconnect/Connect clients
             .add_systems(PostUpdate, server::handle_connections)
             .add_systems(PostUpdate, server::handle_disconnections)
+            .listen_for_server_message::<messages::ClientFinishedLoading>()
+            .listen_for_server_message::<messages::RenderDistance>()
             .listen_for_server_message::<messages::ChunkRequest>()
             .listen_for_server_message::<messages::UnsubscribeFromChunks>()
             .listen_for_server_message::<messages::PlayerCameraRotation>()
@@ -183,7 +184,6 @@ impl Plugin for ServerPlugin {
             .listen_for_server_message::<messages::LeftClick>()
             .listen_for_server_message::<messages::RightClick>()
             .listen_for_server_message::<messages::BlockUpdates>()
-            .listen_for_server_message::<messages::InitialInterfaceUpdateRequest>()
             .listen_for_server_message::<messages::InterfaceTakeItem>()
             .listen_for_server_message::<messages::InterfacePlaceItem>()
             .listen_for_server_message::<messages::InterfaceEquipItem>()

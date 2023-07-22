@@ -36,16 +36,6 @@ pub struct ItemStack {
     pub description: Option<String>,
 }
 
-// TODO: Want this removed. The server can't just send the data because the client needs time to
-// process the assets after connection. Without processing the assets(which contains the
-// interfaces) the client won't know where to put it. The client instead sends this when it is
-// finished. It would be much cleaner if it was just implicit. The solution would be for network
-// events to not be coupled to bevy events. Bevy events get cleared each update cycle, but all
-// network events should be processed by the client, the clearing should happen when consumed.
-/// Request an update of all enterable interfaces.
-#[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone)]
-pub struct InitialInterfaceUpdateRequest;
-
 /// Update the content of an interface.
 #[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone)]
 pub struct InterfaceItemBoxUpdate {

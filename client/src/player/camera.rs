@@ -6,21 +6,85 @@ use bevy::{
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
 
-use crate::settings::Settings;
+use crate::{constants::CHUNK_SIZE, settings::Settings};
+
+pub struct CameraPlugin;
+impl Plugin for CameraPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            (
+                camera_rotation,
+                update_render_distance.run_if(resource_changed::<Settings>()),
+            ),
+        );
+    }
+}
+
+#[derive(Bundle)]
+pub struct CameraBundle {
+    #[bundle]
+    camera_3d: Camera3dBundle,
+    state: CameraState,
+    marker: PlayerCameraMarker,
+    // XXX: Remove in future if requirement for parent to have it is removed. Needed for
+    // equipped item
+    visibility: VisibilityBundle,
+}
+
+impl Default for CameraBundle {
+    fn default() -> Self {
+        Self {
+            camera_3d: Camera3dBundle {
+                // TODO: This should be defined by server
+                transform: Transform::from_xyz(
+                    super::DEFAULT_PLAYER_WIDTH / 2.0,
+                    super::DEFAULT_PLAYER_HEIGHT - 0.2,
+                    super::DEFAULT_PLAYER_WIDTH / 2.0,
+                ),
+                projection: PerspectiveProjection {
+                    fov: std::f32::consts::PI / 3.0,
+                    ..default()
+                }
+                .into(),
+                ..default()
+            },
+            state: CameraState::default(),
+            marker: PlayerCameraMarker::default(),
+            visibility: VisibilityBundle::default(),
+        }
+    }
+}
 
 #[derive(Component, Default)]
-pub(super) struct CameraState {
+pub struct CameraState {
     /// Vertical angle
     pub pitch: f32,
     /// Horizontal angle
     pub yaw: f32,
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct PlayerCameraMarker;
 
+fn update_render_distance(
+    settings: Res<Settings>,
+    mut projection_query: Query<&mut Projection, With<PlayerCameraMarker>>,
+) {
+    // TODO: This is Mut<Projection> so it complains, idk how to do it properly
+    let mut projection = projection_query.single_mut();
+    let perspective_projection = match &mut *projection {
+        Projection::Perspective(p) => p,
+        _ => unreachable!(),
+    };
+
+    let new_far = settings.render_distance as f32 * CHUNK_SIZE as f32;
+    if new_far != perspective_projection.far {
+        perspective_projection.far = new_far;
+    }
+}
 /// Handles looking around if cursor is locked
-pub(super) fn camera_rotation(
+fn camera_rotation(
     window: Query<&Window, With<PrimaryWindow>>,
     settings: Res<Settings>,
     net: Res<NetworkClient>,
@@ -60,7 +124,7 @@ pub(super) fn camera_rotation(
 }
 
 // Forced camera rotation by the server.
-pub(super) fn handle_camera_rotation_from_server(
+pub fn handle_camera_rotation_from_server(
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
     mut camera_q: Query<&mut Transform, With<Camera>>,
 ) {

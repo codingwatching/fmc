@@ -22,13 +22,13 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(movement::MovementPlugin)
             .add_plugin(interfaces::InterfacePlugin)
+            .add_plugin(camera::CameraPlugin)
             .add_plugin(hand::HandPlugin)
             .add_plugin(key_bindings::KeyBindingsPlugin)
             .add_systems(Startup, setup_player)
             .add_systems(
                 Update,
-                (camera::camera_rotation, handle_player_config)
-                    .run_if(in_state(GameState::Playing)),
+                handle_player_config.run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -45,10 +45,6 @@ pub struct Player {
     pub is_swimming: bool,
     // If the player is against a block. (in any direction)
     pub is_grounded: BVec3,
-    // Vertical angle of the camera.
-    pub pitch: f32,
-    /// Horizonal angle of the camera.
-    pub yaw: f32,
 }
 
 impl Player {
@@ -60,7 +56,7 @@ impl Player {
     }
 }
 
-fn setup_player(mut commands: Commands, settings: Res<Settings>) {
+fn setup_player(mut commands: Commands) {
     let player = Player::new();
     // TODO: The server should be able to define this so that you can play as different sized
     // things.
@@ -73,36 +69,17 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
         ),
     );
 
-    let hand_entity = hand::hand_setup(&mut commands);
-
     let camera_entity = commands
-        .spawn(Camera3dBundle {
-            transform: Transform::from_xyz(
-                DEFAULT_PLAYER_WIDTH / 2.0,
-                DEFAULT_PLAYER_HEIGHT - 0.2,
-                DEFAULT_PLAYER_WIDTH / 2.0,
-            ),
-            projection: PerspectiveProjection {
-                far: settings.render_distance as f32 * CHUNK_SIZE as f32,
-                fov: std::f32::consts::PI / 3.0,
-                ..default()
-            }
-            .into(),
-            ..default()
+        .spawn(camera::CameraBundle::default())
+        .with_children(|parent| {
+            parent.spawn(hand::HandBundle::default());
         })
-        .insert(camera::PlayerCameraMarker)
-        .insert(camera::CameraState::default())
-        // XXX: Remove in future if requirement for parent to have it is removed. Needed for
-        // equipped item
-        .insert(VisibilityBundle::default())
-        .add_child(hand_entity)
         .id();
 
     let player_entity = commands
         .spawn(player)
         // XXX: I did not want this, but it is required for visibility by the visibility
-        // propagation system. Requirement will be removed later by bevy I think. Version 0.8 when
-        // I type this.
+        // propagation system.
         .insert(VisibilityBundle::default())
         .insert(TransformBundle {
             local: Transform::from_translation(Vec3::NAN),

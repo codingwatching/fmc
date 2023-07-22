@@ -11,7 +11,7 @@ use crate::{
         blocks::Blocks,
         items::ItemId,
         models::Model,
-        world_map::chunk::{Chunk, ChunkType},
+        world_map::chunk::{Chunk, ChunkStatus},
         WorldProperties,
     },
 };
@@ -202,63 +202,63 @@ impl Database {
 
     // TODO: rusqlite doesn't drop stuff correctly so there's all kinds of errors when you don't
     // localize statements.
-    fn _load_chunk(connection: rusqlite::Connection, position: &IVec3) -> (Chunk, usize) {
-        let mut block_stmt = connection
-            .prepare(
-                r#"
-            select 
-                x, y, z, block_id, block_state
-            from 
-                blocks
-            where 
-                (x between ? and ?) 
-            and
-                (y between ? and ?)
-            and
-                (z between ? and ?)
-            order by
-                rowid asc"#,
-            )
-            .unwrap();
+    //fn _load_chunk(connection: rusqlite::Connection, position: &IVec3) -> (Chunk, usize) {
+    //    let mut block_stmt = connection
+    //        .prepare(
+    //            r#"
+    //        select
+    //            x, y, z, block_id, block_state
+    //        from
+    //            blocks
+    //        where
+    //            (x between ? and ?)
+    //        and
+    //            (y between ? and ?)
+    //        and
+    //            (z between ? and ?)
+    //        order by
+    //            rowid asc"#,
+    //        )
+    //        .unwrap();
 
-        const OFFSET: i32 = CHUNK_SIZE as i32 - 1;
-        let mut rows = block_stmt
-            .query([
-                &position.x,
-                &(position.x + OFFSET),
-                &position.y,
-                &(position.y + OFFSET),
-                &position.z,
-                &(position.z + OFFSET),
-            ])
-            .unwrap();
+    //    const OFFSET: i32 = CHUNK_SIZE as i32 - 1;
+    //    let mut rows = block_stmt
+    //        .query([
+    //            &position.x,
+    //            &(position.x + OFFSET),
+    //            &position.y,
+    //            &(position.y + OFFSET),
+    //            &position.z,
+    //            &(position.z + OFFSET),
+    //        ])
+    //        .unwrap();
 
-        let mut chunk = Chunk::new(Blocks::get().get_id("air"));
-        let mut count = 0;
+    //    let mut chunk = Chunk::new(Blocks::get().get_id("air"));
+    //    let mut count = 0;
 
-        while let Some(row) = rows.next().unwrap() {
-            let index = (((row.get::<_, i32>(0).unwrap() & OFFSET) << 8)
-                & ((row.get::<_, i32>(1).unwrap() & OFFSET) << 4)
-                & (row.get::<_, i32>(2).unwrap() & OFFSET)) as usize;
+    //    while let Some(row) = rows.next().unwrap() {
+    //        let index = (((row.get::<_, i32>(0).unwrap() & OFFSET) << 8)
+    //            & ((row.get::<_, i32>(1).unwrap() & OFFSET) << 4)
+    //            & (row.get::<_, i32>(2).unwrap() & OFFSET)) as usize;
 
-            chunk.blocks[index] = row.get::<_, BlockId>(3).unwrap();
+    //        chunk.blocks[index] = row.get::<_, BlockId>(3).unwrap();
 
-            // TODO: rusqlite supports FromSql for serde_json::Value, but since serde_json has been
-            // forked.
-            if let Ok(block_state_ref) = row.get_ref(4) {
-                match block_state_ref {
-                    rusqlite::types::ValueRef::Blob(bytes) => chunk
-                        .block_state
-                        .insert(index, bincode::deserialize(bytes).unwrap()),
-                    _ => panic!("Block state stored as non-blob"),
-                };
-            }
+    //        // TODO: rusqlite supports FromSql for serde_json::Value, but since serde_json has been
+    //        // forked.
+    //        if let Ok(block_state_ref) = row.get_ref(4) {
+    //            match block_state_ref {
+    //                rusqlite::types::ValueRef::Blob(bytes) => chunk
+    //                    .block_state
+    //                    .insert(index, bincode::deserialize(bytes).unwrap()),
+    //                _ => panic!("Block state stored as non-blob"),
+    //            };
+    //        }
 
-            count += 1;
-        }
+    //        count += 1;
+    //    }
 
-        return (chunk, count);
-    }
+    //    return (chunk, count);
+    //}
 
     // The blocks table stores three types of chunks
     // 1. both block_state and blocks are NULL, it's an air chunk
@@ -307,7 +307,10 @@ impl Database {
     //    }
     //}
 
-    pub async fn load_chunk(&self, position: &IVec3) -> HashMap<usize, (BlockId, Option<u16>)> {
+    pub async fn load_chunk_blocks(
+        &self,
+        position: &IVec3,
+    ) -> HashMap<usize, (BlockId, Option<u16>)> {
         let conn = self.get_connection();
 
         let mut block_stmt = conn
@@ -354,95 +357,94 @@ impl Database {
         return blocks;
     }
 
-    pub async fn save_chunk(&self, position: &IVec3, chunk: &Chunk) {
-        let mut connection = self.get_connection();
-        let transaction = connection.transaction().unwrap();
-        // The conflict is so that this chunk's air blocks doesn't overwrite any previously written
-        // blocks. These come from partial chunks, and should only be overwritten if we have
-        // something to place in its stead.
-        let mut stmt = transaction
-            .prepare_cached(
-                r#"
-            insert into
-                blocks (x,y,z,block_id,block_state)
-            values
-                (?,?,?,?,?)
-            on conflict(x,y,z) do update set
-                (block_id, block_state) = (excluded.block_id, excluded.block_state)
-            where
-                excluded.block_id is not 0"#,
-            )
-            .unwrap();
+    //pub async fn save_chunk(&self, position: &IVec3, chunk: &Chunk) {
+    //    let mut connection = self.get_connection();
+    //    let transaction = connection.transaction().unwrap();
+    //    // The conflict is so that this chunk's air blocks doesn't overwrite any previously written
+    //    // blocks. These come from partial chunks, and should only be overwritten if we have
+    //    // something to place in its stead.
+    //    let mut stmt = transaction
+    //        .prepare_cached(
+    //            r#"
+    //        insert into
+    //            blocks (x,y,z,block_id,block_state)
+    //        values
+    //            (?,?,?,?,?)
+    //        on conflict(x,y,z) do update set
+    //            (block_id, block_state) = (excluded.block_id, excluded.block_state)
+    //        where
+    //            excluded.block_id is not 0"#,
+    //        )
+    //        .unwrap();
 
-        const OFFSET: i32 = CHUNK_SIZE as i32 - 1;
-        match chunk.chunk_type {
-            ChunkType::Normal => {
-                for (i, block_id) in chunk.blocks.iter().enumerate() {
-                    let x = (i as i32 & OFFSET << 8) >> 8;
-                    let y = (i as i32 & OFFSET << 4) >> 4;
-                    let z = i as i32 & OFFSET;
-                    stmt.execute(rusqlite::params![
-                        position.x + x,
-                        position.y + y,
-                        position.z + z,
-                        block_id,
-                        chunk
-                            .block_state
-                            .get(&i)
-                            .map(|state| bincode::serialize(state).ok())
-                    ])
-                    .unwrap();
-                }
-            }
-            ChunkType::Partial => {
-                for (i, block_id) in chunk.blocks.iter().enumerate() {
-                    if *block_id == 0 {
-                        continue;
-                    }
+    //    const OFFSET: i32 = CHUNK_SIZE as i32 - 1;
+    //    match chunk {
+    //        Chunk::Normal { blocks, block_state } => {
+    //            for (i, block_id) in blocks.iter().enumerate() {
+    //                let x = (i as i32 & OFFSET << 8) >> 8;
+    //                let y = (i as i32 & OFFSET << 4) >> 4;
+    //                let z = i as i32 & OFFSET;
+    //                stmt.execute(rusqlite::params![
+    //                    position.x + x,
+    //                    position.y + y,
+    //                    position.z + z,
+    //                    block_id,
+    //                    block_state
+    //                        .get(&i)
+    //                        .map(|state| bincode::serialize(state).ok())
+    //                ])
+    //                .unwrap();
+    //            }
+    //        }
+    //        Chunk::Partial => {
+    //            for (i, block_id) in chunk.blocks.iter().enumerate() {
+    //                if *block_id == 0 {
+    //                    continue;
+    //                }
 
-                    let x = (i as i32 & OFFSET << 8) >> 8;
-                    let y = (i as i32 & OFFSET << 4) >> 4;
-                    let z = i as i32 & OFFSET;
-                    stmt.execute(rusqlite::params![
-                        position.x + x,
-                        position.y + y,
-                        position.z + z,
-                        block_id,
-                        chunk
-                            .block_state
-                            .get(&i)
-                            .map(|state| bincode::serialize(state).ok())
-                    ])
-                    .unwrap();
-                }
-            }
-            ChunkType::Uniform(block_id) => {
-                let x = (0 & OFFSET << 8) >> 8;
-                let y = (0 & OFFSET << 4) >> 4;
-                let z = 0 & OFFSET;
-                stmt.execute(rusqlite::params![
-                    position.x + x,
-                    position.y + y,
-                    position.z + z,
-                    block_id,
-                    u16::MAX,
-                ])
-                .unwrap();
-            }
-        }
+    //                let x = (i as i32 & OFFSET << 8) >> 8;
+    //                let y = (i as i32 & OFFSET << 4) >> 4;
+    //                let z = i as i32 & OFFSET;
+    //                stmt.execute(rusqlite::params![
+    //                    position.x + x,
+    //                    position.y + y,
+    //                    position.z + z,
+    //                    block_id,
+    //                    chunk
+    //                        .block_state
+    //                        .get(&i)
+    //                        .map(|state| bincode::serialize(state).ok())
+    //                ])
+    //                .unwrap();
+    //            }
+    //        }
+    //        Chunk::Uniform(block_id) => {
+    //            let x = (0 & OFFSET << 8) >> 8;
+    //            let y = (0 & OFFSET << 4) >> 4;
+    //            let z = 0 & OFFSET;
+    //            stmt.execute(rusqlite::params![
+    //                position.x + x,
+    //                position.y + y,
+    //                position.z + z,
+    //                block_id,
+    //                u16::MAX,
+    //            ])
+    //            .unwrap();
+    //        }
+    //    }
 
-        // I have to idea why you have to do this. stmt.finalize() does not work.
-        drop(stmt);
-        transaction.commit().unwrap();
-    }
+    //    // I have to idea why you have to do this. stmt.finalize() does not work.
+    //    drop(stmt);
+    //    transaction.commit().unwrap();
+    //}
 
-    pub fn load_player(&self, name: &str) -> Option<PlayerSave> {
+    pub fn load_player(&self, username: &str) -> Option<PlayerSave> {
         let conn = self.get_connection();
 
         let mut stmt = conn
             .prepare("SELECT save FROM players WHERE name = ?")
             .unwrap();
-        let mut rows = if let Ok(rows) = stmt.query([name]) {
+        let mut rows = if let Ok(rows) = stmt.query([username]) {
             rows
         } else {
             return None;
@@ -504,7 +506,7 @@ impl Database {
 
             let block_name = match config.get("name").and_then(|name| name.as_str()) {
                 Some(n) => n,
-                _ => continue
+                _ => continue,
             };
 
             block_names.push(block_name.to_owned());

@@ -23,7 +23,7 @@ use fmc_networking::BlockId;
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::Deserialize;
 
-use crate::database::{Database, DatabaseArc};
+use crate::database::DatabaseArc;
 
 use super::items::ItemId;
 
@@ -37,16 +37,88 @@ static BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::ne
 pub struct BlockPlugin;
 impl Plugin for BlockPlugin {
     fn build(&self, app: &mut App) {
+        app.add_systems(PreStartup, load_blocks);
         // TODO: In the future it needs to be possible for mods to mutate Blocks before it is added
         // to the global. The least painful thing I've come up with is adding Blocks as a temporary
-        // resource and then at the end of startup move it. I didn't bother implementing this as
-        // bevy 0.1 is soon and that replaces the entire stage system. With how it is now it would
-        // be unnecessarily complicated.
-        let database = app.world.resource::<DatabaseArc>();
-        Blocks::load(database.as_ref());
+        // resource and then at the end of startup move it.
+        //let database = app.world.resource::<DatabaseArc>();
+        //Blocks::load(database.as_ref());
         //app.add_plugin(liquids::LiquidsPlugin);
         //.add_plugin(furnace::FurnacePlugin);
     }
+}
+
+// Reads blocks from resources/client/blocks/ and resources/server/mods/*/blocks and loads them
+// Each block will have a permanent id assigned to it that will persist through restarts.
+fn load_blocks(database: Res<DatabaseArc>) {
+    let mut blocks = Blocks {
+        blocks: Vec::new(),
+        ids: database.load_block_ids(),
+        filenames: Vec::new(),
+    };
+
+    let mut block_ids = blocks.ids.clone();
+    let item_ids = database.load_item_ids();
+    let mut maybe_blocks = vec![None; block_ids.len()];
+    let mut filenames = vec![String::default(); block_ids.len()];
+
+    let directory = std::fs::read_dir(crate::world::blocks::BLOCK_CONFIG_PATH).expect(
+        "Could not read files from block configuration directory, make sure it is present.\n",
+    );
+
+    for dir_entry in directory {
+        let file_path = match dir_entry {
+            Ok(d) => d.path(),
+            Err(e) => panic!(
+                "Failed to read the filename of a block config, Error: {}",
+                e
+            ),
+        };
+
+        if file_path.is_dir() {
+            continue;
+        }
+
+        let block_config_json = BlockConfigJson::from_file(&file_path);
+
+        let drop = match block_config_json.drop {
+            Some(drop) => match BlockDrop::from(&drop, &item_ids) {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    panic!(
+                        "Failed to read 'drop' field for block at: {}\nError: {e}",
+                        file_path.display()
+                    )
+                }
+            },
+            None => None,
+        };
+
+        if let Some(block_id) = block_ids.remove(&block_config_json.name) {
+            let block_config = BlockConfig {
+                name: block_config_json.name,
+                friction: block_config_json.friction,
+                hardness: block_config_json.hardness,
+                drop,
+            };
+
+            maybe_blocks[block_id as usize] = Some(Block::new(block_config));
+            filenames[block_id as usize] =
+                file_path.file_stem().unwrap().to_str().unwrap().to_owned();
+        }
+    }
+
+    if block_ids.len() > 0 {
+        panic!(
+            "Misconfigured resource pack, missing blocks: {:?}",
+            block_ids.values().collect::<Vec<_>>()
+        );
+    }
+
+    blocks.blocks = maybe_blocks.into_iter().flatten().collect();
+    blocks.filenames = filenames;
+
+    BLOCKS.set(blocks).ok();
 }
 
 // TODO: Call setup when a block of this type is loaded.
@@ -127,75 +199,7 @@ pub struct Blocks {
 }
 
 impl Blocks {
-    // Reads blocks from resources/client/blocks/ and resources/server/mods/*/blocks and loads them
-    // Each block will have a permanent id assigned to it that will persist through restarts.
-    // If a block that has previously been loaded into the world is removed from the assets, the server
-    // will fail to load.
-    fn load(database: &Database) {
-        let mut blocks = Blocks {
-            blocks: Vec::new(),
-            ids: database.load_block_ids(),
-            filenames: Vec::new(),
-        };
-
-        let mut block_ids = blocks.ids.clone();
-        let item_ids = database.load_item_ids();
-        let mut maybe_blocks = vec![None; block_ids.len()];
-        let mut filenames = vec![String::default(); block_ids.len()];
-
-
-        let directory = std::fs::read_dir(crate::world::blocks::BLOCK_CONFIG_PATH).expect(
-            "Could not read files from block configuration directory, make sure it is present.\n",
-        );
-
-        for dir_entry in directory {
-            let file_path = match dir_entry {
-                Ok(d) => d.path(),
-                Err(e) => panic!(
-                    "Failed to read the filename of a block config, Error: {}",
-                    e
-                ),
-            };
-
-            if file_path.is_dir() {
-                continue;
-            }
-
-            let block_config_json = BlockConfigJson::from_file(&file_path);
-
-            let drop = match block_config_json.drop {
-                Some(drop) => match BlockDrop::from(&drop, &item_ids) {
-                    Ok(d) => Some(d),
-                    Err(e) => {
-                        panic!("Failed to read 'drop' field for block at: {}\nError: {e}", file_path.display())
-                    }
-                },
-                None => None,
-            };
-
-            if let Some(block_id) = block_ids.remove(&block_config_json.name) {
-                let block_config = BlockConfig {
-                    name: block_config_json.name,
-                    friction: block_config_json.friction,
-                    hardness: block_config_json.hardness,
-                    drop,
-                };
-
-                maybe_blocks[block_id as usize] = Some(Block::new(block_config));
-                filenames[block_id as usize] = file_path.file_stem().unwrap().to_str().unwrap().to_owned();
-            }
-        }
-
-        if block_ids.len() > 0 {
-            panic!("Misconfigured resource pack, missing blocks: {:?}", block_ids.values().collect::<Vec<_>>());
-        }
-
-        blocks.blocks = maybe_blocks.into_iter().flatten().collect();
-        blocks.filenames = filenames;
-
-        BLOCKS.set(blocks).ok();
-    }
-
+    #[track_caller]
     pub fn get() -> &'static Self {
         BLOCKS.get().unwrap()
     }

@@ -11,40 +11,99 @@ use fmc_networking::BlockId;
 use super::terrain_generation::TerrainGenerator;
 
 #[derive(PartialEq, Eq, Debug)]
-pub enum ChunkType {
-    /// The common chunk, all block positions are filled.
-    Normal,
-    /// Chunk has only been partially generated, meaning adjacent chunks have filled in some of the
-    /// chunk's blocks through feature generation.
-    Partial,
-    /// Chunk that only contains one type of block
-    Uniform(BlockId),
+pub enum ChunkStatus {
+    // Fully generated, populated by different block types
+    Finished,
+    // A chunk that is either waiting for its neighbors to finish, or was generated only as a
+    // neighbor, to finish another.
+    Unfinished {
+        // Blocks that have been saved to the database.
+        saved_blocks: HashMap<usize, (BlockId, Option<u16>)>,
+        // TODO: It does 26x2 lookups to populate its own neighbors and the ones for its
+        // partial chunks. To speed up make it vectors. The positional offset of the chunks are really
+        // unneeded other than for knowing which chunk is the one immediately below, as that one
+        // takes priority. Simply insert it at the start of the vec and push the rest. Iterate
+        // through normally and it will take precedent.
+        //
+        // Blocks from neighboring chunks
+        neighbors: HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>>,
+    },
 }
 
+impl ChunkStatus {
+    #[track_caller]
+    pub fn neighbors(
+        &mut self,
+    ) -> Option<&mut HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>>> {
+        match self {
+            Self::Unfinished {
+                neighbors: partial_chunks,
+                ..
+            } => Some(partial_chunks),
+            Self::Finished => None
+        }
+    }
+
+    pub fn unwrap_saved_blocks(&mut self) -> &mut HashMap<usize, (BlockId, Option<u16>)> {
+        match self {
+            Self::Unfinished { saved_blocks, .. } => saved_blocks,
+            _ => panic!("Called 'Chunk::unwrap_saved_blocks()' on a finished chunk"),
+        }
+    }
+}
 // TODO: Is it necessary to pack the block state? It's sent to the clients so needs to be small.
 // Maybe arbitrary data is wanted. When making, thought orientation obviously needed, and nice to
 // change color of things like water or torch, but can't think of anything that is needed
 // otherwise. XXX: It's used by the database to mark uniform chunks by setting it to
-// u16::MAX(invalid state).
+// u16::MAX(an invalid state).
 pub struct Chunk {
-    pub chunk_type: ChunkType,
-    /// Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
-    /// (zero indexed) the formula x * CHUNK_SIZE^2 + z * CHUNK_SIZE + y is used.
+    pub status: ChunkStatus,
+    // The blocks that were generated from this chunk that stretched into other chunks.
+    pub partial_chunks: HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>>,
+    // Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
+    // (zero indexed) the formula x * CHUNK_SIZE^2 + z * CHUNK_SIZE + y is used.
     pub blocks: Vec<BlockId>,
-    //block_entities: HashMap<IVec3, Entity>
-    /// Block state containing optional information, see fmc_networking for bit layout
+    // Block state containing optional information, see fmc_networking for bit layout
     pub block_state: HashMap<usize, u16>,
 }
 
 impl Chunk {
-    pub fn new(block_id: BlockId) -> Self {
-        let blocks = vec![block_id; CHUNK_SIZE.pow(3)];
-        let block_state = HashMap::new();
+    pub fn new_regular(block_id: BlockId) -> Self {
         return Self {
-            chunk_type: ChunkType::Normal,
-            blocks,
-            block_state,
+            status: ChunkStatus::Unfinished {
+                saved_blocks: HashMap::new(),
+                neighbors: HashMap::new(),
+            },
+            partial_chunks: HashMap::new(),
+            blocks: vec![block_id; CHUNK_SIZE.pow(3)],
+            block_state: HashMap::new(),
         };
+    }
+
+    pub fn new_uniform(block_id: BlockId) -> Self {
+        return Self {
+            status: ChunkStatus::Unfinished {
+                saved_blocks: HashMap::new(),
+                neighbors: HashMap::new(),
+            },
+            partial_chunks: HashMap::new(),
+            blocks: vec![block_id; 1],
+            block_state: HashMap::new(),
+        };
+    }
+
+    pub fn get_block_state(&self, index: &usize) -> Option<u16> {
+        return self.block_state.get(index).copied();
+    }
+
+    pub fn is_uniform(&self) -> bool {
+        return self.blocks.len() == 1;
+    }
+
+    pub fn convert_uniform_to_regular(&mut self) {
+        assert!(self.blocks.len() == 1);
+        let block_id = self.blocks[0];
+        self.blocks = vec![block_id; CHUNK_SIZE.pow(3)];
     }
 
     // Load/Generate a chunk
@@ -52,124 +111,110 @@ impl Chunk {
         position: IVec3,
         terrain_generator: Arc<TerrainGenerator>,
         database: Arc<Database>,
-    ) -> (IVec3, Chunk, HashMap<IVec3, Chunk>) {
-        let mut partial_chunks: HashMap<IVec3, Chunk> = HashMap::new();
+    ) -> (IVec3, Chunk) {
+        let mut partial_chunks: HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>> =
+            HashMap::new();
+
+        for x in -1..=1 {
+            for y in -1..=1 {
+                for z in -1..=1 {
+                    let pos = IVec3::new(x, y, z) * CHUNK_SIZE as i32;
+                    if pos != IVec3::ZERO {
+                        partial_chunks.insert(pos, HashMap::new());
+                    }
+                }
+            }
+        }
 
         let air = Blocks::get().get_id("air");
 
-        let saved_blocks = database.load_chunk(&position).await;
+        let saved_blocks = database.load_chunk_blocks(&position).await;
 
         let (uniform, blocks) = terrain_generator.generate_chunk(position).await;
 
         if uniform && saved_blocks.len() == 0 {
             let block = *blocks.get(&position).unwrap();
-            let chunk = Chunk {
-                chunk_type: ChunkType::Uniform(block),
-                blocks: Vec::new(),
-                block_state: HashMap::new(),
-            };
+            let mut chunk = Chunk::new_uniform(block);
+            chunk.partial_chunks = partial_chunks;
 
-            return (position, chunk, partial_chunks);
+            return (position, chunk);
         }
 
-        let mut chunk = Chunk::new(air);
+        let mut chunk = Chunk::new_regular(air);
+        chunk.partial_chunks = partial_chunks;
 
         for (world_pos, block) in blocks {
-            let (chunk_pos, idx) =
+            let (chunk_pos, block_index) =
                 utils::world_position_to_chunk_position_and_block_index(world_pos);
-            if position == chunk_pos {
+            let chunk_offset = chunk_pos - position;
+
+            if chunk_offset == IVec3::ZERO {
                 if block == air {
-                    // Chunk might contain previously generated partial chunks so we only overwrite
-                    // when the generated block is not air.
                     continue;
                 }
-                chunk[idx] = block;
-            } else if let Some(partial) = partial_chunks.get_mut(&chunk_pos) {
-                partial[idx] = block;
+                chunk[block_index] = block;
             } else {
-                let mut partial = Chunk::new(air);
-                partial.chunk_type = ChunkType::Partial;
-                partial[idx] = block;
-                partial_chunks.insert(chunk_pos, partial);
+                chunk
+                    .partial_chunks
+                    .get_mut(&chunk_offset)
+                    .expect(&format!("{}", chunk_offset))
+                    .insert(block_index, (block, None));
             }
         }
 
-        for (idx, (block_id, block_state)) in saved_blocks.into_iter() {
-            chunk[idx] = block_id;
-            if let Some(block_state) = block_state {
-                chunk.block_state.insert(idx, block_state);
-            }
-        }
+        *chunk.status.unwrap_saved_blocks() = saved_blocks;
 
-        return (position, chunk, partial_chunks);
+        return (position, chunk);
     }
 
-    pub fn combine(&mut self, mut other: Chunk) {
+    pub fn set_block_state(&mut self, block_index: usize, state: u16) {
+        self.block_state.insert(block_index, state);
+    }
+
+    pub fn try_finish(&mut self) -> bool {
+        let neighbors = match self.status.neighbors() {
+            Some(n) => n,
+            None => return false
+        };
+
+        if !(neighbors.len() == 26) {
+            // The chunk is ready when all 26 neighbors have had a chance to generate blocks into
+            // it.
+            return false;
+        }
+
+        let status = std::mem::replace(&mut self.status, ChunkStatus::Finished);
+
+        let ChunkStatus::Unfinished { saved_blocks, mut neighbors } = status else { unreachable!() };
+        let below_blocks = neighbors.remove(&IVec3::new(0, -16, 0)).unwrap();
+
         let air = Blocks::get().get_id("air");
-
-        match self.chunk_type {
-            ChunkType::Normal => {
-                if other.chunk_type == ChunkType::Partial {
-                    self.blocks
-                        .iter_mut()
-                        .zip(other.blocks)
-                        .enumerate()
-                        .for_each(|(position, (block, partial_block))| {
-                            if *block == air && partial_block != air {
-                                *block = partial_block;
-                                if let Some(block_state) = other.block_state.remove(&position) {
-                                    self.block_state.insert(position, block_state);
-                                }
-                            }
-                        });
-                }
+        for (_, blocks) in [(IVec3::new(0, -16, 0), below_blocks)]
+            .into_iter()
+            .chain(neighbors.drain())
+        {
+            if blocks.len() > 0 && self.is_uniform() {
+                self.convert_uniform_to_regular();
             }
-            ChunkType::Partial => {
-                match other.chunk_type {
-                    ChunkType::Normal => {
-                        self.chunk_type = ChunkType::Normal;
-                        self.blocks.iter_mut().zip(other.blocks).for_each(
-                            |(block, other_block)| {
-                                if other_block != air {
-                                    *block = other_block;
-                                }
-                            },
-                        );
 
-                        for (position, state) in other.block_state.into_iter() {
-                            self.block_state.insert(position, state);
-                        }
-                    }
-                    ChunkType::Partial => {
-                        self.blocks.iter_mut().zip(other.blocks).for_each(
-                            |(block, other_block)| {
-                                // TODO: Which should win? Currently if two trees spawn into the
-                                // same chunk, leaves can replace the trunk. I can't think of any
-                                // good heuristic. Maybe just do it on chunk direction? The chunk
-                                // that is coming from a side always loses to one that doesn't?
-                                if *block == air {
-                                    *block = other_block;
-                                }
-                            },
-                        );
-
-                        for (position, block_state) in other.block_state {
-                            self.block_state.entry(position).or_insert(block_state);
-                        }
-                    }
-                    ChunkType::Uniform(_) => {
-                        // TODO: This assumes the only uniform chunk that can be created is air, if
-                        // it's something else it's needs to be filled in.
-                        self.chunk_type = ChunkType::Normal;
+            for (block_index, (block, block_state)) in blocks.into_iter() {
+                if &self[block_index] == &air {
+                    self[block_index] = block;
+                    if let Some(block_state) = block_state {
+                        self.set_block_state(block_index, block_state);
                     }
                 }
-            }
-            ChunkType::Uniform(block_id) => {
-                self.chunk_type = ChunkType::Normal;
-                self.blocks = vec![block_id; CHUNK_SIZE.pow(3)];
-                self.combine(other);
             }
         }
+
+        for (block_index, (block, block_state)) in saved_blocks {
+            self[block_index] = block;
+            if let Some(block_state) = block_state {
+                self.set_block_state(block_index, block_state);
+            }
+        }
+
+        return true;
     }
 }
 
@@ -178,13 +223,22 @@ impl Index<[usize; 3]> for Chunk {
     type Output = BlockId;
 
     fn index(&self, idx: [usize; 3]) -> &Self::Output {
-        return &self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
+        if self.is_uniform() {
+            return &self.blocks[0];
+        } else {
+            return &self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
+        }
     }
 }
 
 impl IndexMut<[usize; 3]> for Chunk {
     fn index_mut(&mut self, idx: [usize; 3]) -> &mut Self::Output {
-        return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
+        if self.is_uniform() {
+            // TODO: Probably convert chunk
+            panic!();
+        } else {
+            return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
+        }
     }
 }
 
@@ -192,12 +246,21 @@ impl Index<usize> for Chunk {
     type Output = BlockId;
 
     fn index(&self, idx: usize) -> &Self::Output {
-        return &self.blocks[idx];
+        if self.is_uniform() {
+            return &self.blocks[0];
+        } else {
+            return &self.blocks[idx];
+        }
     }
 }
 
 impl IndexMut<usize> for Chunk {
     fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
-        return &mut self.blocks[idx];
+        if self.is_uniform() {
+            // TODO: Probably convert chunk
+            panic!();
+        } else {
+            return &mut self.blocks[idx];
+        }
     }
 }

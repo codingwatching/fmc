@@ -19,13 +19,8 @@ use crate::{
     utils,
     world::{
         blocks::{Blocks, Friction},
-        models::Model,
-        world_map::{
-            chunk::{Chunk, ChunkType},
-            chunk_manager::ChunkSubscriptions,
-            terrain_generation::TerrainGeneratorArc,
-            WorldMap,
-        },
+        models::{Model, ModelBundle, ModelVisibility, Models},
+        world_map::{chunk::Chunk, terrain_generation::TerrainGeneratorArc},
         WorldProperties,
     },
 };
@@ -37,6 +32,9 @@ impl Plugin for PlayersPlugin {
             .add_event::<PlayerRespawnEvent>()
             .insert_resource(Players::default())
             .add_plugin(inventory::InventoryPlugin)
+            // This has to be preupdate to ensure that all player components are available by the
+            // time the first packet handlers might access them.
+            .add_systems(PreUpdate, add_players)
             .add_systems(
                 Update,
                 (
@@ -54,7 +52,7 @@ pub struct PlayerRespawnEvent(pub Entity);
 
 //pub struct PlayerDeathEvent(Entity);
 
-#[derive(Deref, DerefMut, Resource)]
+#[derive(Default, Deref, DerefMut, Resource)]
 pub struct Players(HashMap<ConnectionId, Entity>);
 
 impl Players {
@@ -70,10 +68,61 @@ impl Players {
     }
 }
 
-// Can't derive default for some reason
-impl Default for Players {
-    fn default() -> Self {
-        Self(HashMap::new())
+fn add_players(
+    mut commands: Commands,
+    net: Res<NetworkServer>,
+    players: Res<Players>,
+    database: Res<DatabaseArc>,
+    models: Res<Models>,
+    mut respawn_events: EventWriter<PlayerRespawnEvent>,
+    player_query: Query<(Entity, &ConnectionId, &PlayerName), Added<PlayerName>>,
+) {
+    for (player_entity, connection, username) in player_query.iter() {
+        let player_bundle = if let Some(saved_player) = database.load_player(username) {
+            PlayerBundle::from(saved_player)
+        } else {
+            respawn_events.send(PlayerRespawnEvent(player_entity));
+            PlayerBundle::default()
+        };
+
+        net.send_one(
+            *connection,
+            messages::PlayerConfiguration {
+                aabb_dimensions: player_bundle.aabb.half_extents.as_vec3() * 2.0,
+                camera_position: player_bundle.camera.translation.as_vec3(),
+            },
+        );
+
+        net.send_one(
+            *connection,
+            messages::PlayerPosition {
+                position: player_bundle.transform.translation,
+            },
+        );
+
+        net.send_one(
+            *connection,
+            messages::PlayerCameraRotation {
+                rotation: player_bundle.camera.rotation.as_f32(),
+            },
+        );
+
+        commands
+            .entity(player_entity)
+            .with_children(|parent| {
+                parent.spawn(ModelBundle {
+                    model: Model::new(models.get_id("player")),
+                    visibility: ModelVisibility::default(),
+                    global_transform: F64GlobalTransform::default(),
+                    transform: F64Transform {
+                        //translation: player_bundle.camera.translation - player_bundle.camera.translation.y,
+                        translation: DVec3::Z * 0.3 + DVec3::X * 0.3,
+                        rotation: player_bundle.camera.rotation,
+                        ..default()
+                    },
+                });
+            })
+            .insert(player_bundle);
     }
 }
 
@@ -138,12 +187,9 @@ fn respawn_players(
             ))
             .1;
 
-            match chunk.chunk_type {
-                ChunkType::Uniform(block) if block == air => {
-                    chunk_position.y -= CHUNK_SIZE as i32;
-                    continue;
-                }
-                _ => (),
+            if chunk.is_uniform() && chunk[0] == air {
+                chunk_position.y -= CHUNK_SIZE as i32;
+                continue;
             }
 
             // Find a spot that has a block with two air blocks above.
@@ -163,7 +209,7 @@ fn respawn_players(
                         //    Friction::Drag(_) => continue,
                         //    _ => count += 1,
                         //};
-                    //} else if count == 1 && *block == air {
+                        //} else if count == 1 && *block == air {
                     } else if count == 0 && *block == air {
                         count += 1;
                     //} else if count == 2 && *block == air {

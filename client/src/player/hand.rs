@@ -46,15 +46,19 @@ impl Plugin for HandPlugin {
     }
 }
 
+#[derive(Bundle, Default)]
+pub(super) struct HandBundle {
+    scene: SceneBundle,
+    animation_player: AnimationPlayer,
+    marker: HandMarker,
+}
+
 #[derive(Component)]
 struct EquippedItem;
 
-#[derive(Component)]
+#[derive(Component, Default)]
 struct HandMarker;
 
-// TODO: Animation can be defined at runtime through config files. Just have some parent file with
-// the animations defined for block items and generic items. And then if you want to make something
-// like a fishing rod, you define your own.
 pub fn hand_setup(commands: &mut Commands) -> Entity {
     let entity = commands
         .spawn(SceneBundle::default())

@@ -5,7 +5,7 @@ use sha1::Digest;
 pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, make_asset_tarball)
+        app.add_systems(PreStartup, make_asset_tarball)
             // Run this in PreStartup so ObjectIds are available for other startup systems.
             .add_systems(Update, handle_asset_requests);
 
@@ -66,6 +66,7 @@ fn make_asset_tarball(mut commands: Commands) {
     });
 }
 
+// TODO: Any client can dos the server through this. Cap to some small number of downloads per 24h?
 // TODO: Should have some way for the client to download assets from an external location to reduce
 // load on server.
 fn handle_asset_requests(

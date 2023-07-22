@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use fmc_networking::{messages, NetworkClient};
 
 use crate::assets::AssetState;
 
@@ -23,6 +24,7 @@ impl Plugin for GameStatePlugin {
 }
 
 // All assets are loaded, it can now start the main game loop
-fn finished_loading_start_game(mut state: ResMut<NextState<GameState>>) {
+fn finished_loading_start_game(net: Res<NetworkClient>, mut state: ResMut<NextState<GameState>>) {
+    net.send_message(messages::ClientFinishedLoading);
     state.set(GameState::Playing);
 }

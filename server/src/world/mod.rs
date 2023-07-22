@@ -24,42 +24,37 @@ impl Plugin for WorldPlugin {
             .add_plugin(models::ModelPlugin)
             .add_plugin(world_map::WorldMapPlugin)
             .add_plugin(sky::SkyPlugin)
-            .add_systems(Startup, load_world_properties);
+            .add_systems(PreStartup, load_world_properties)
+            .add_systems(
+                Update,
+                save_world_properties.run_if(resource_changed::<WorldProperties>()),
+            );
     }
 }
 
-fn load_world_properties(
-    mut commands: Commands,
-    database: Res<DatabaseArc>,
-    terrain_generator: Res<TerrainGeneratorArc>,
-) {
+fn load_world_properties(mut commands: Commands, database: Res<DatabaseArc>) {
     let properties = if let Some(properties) = database.load_world_properties() {
         properties
     } else {
-        let properties = WorldProperties {
-            // TODO: Change when implementing proper generation
-            spawn_point: SpawnPoint {
-                center: IVec3::new(0, terrain_generator.get_surface_height(0, 0), 0),
-                radius: 10,
-            },
-        };
-        database.save_world_properties(&properties);
-
-        properties
+        WorldProperties::default()
     };
 
     commands.insert_resource(properties);
 }
 
-#[derive(Serialize, Deserialize, Resource)]
+fn save_world_properties(database: Res<DatabaseArc>, properties: Res<WorldProperties>) {
+    database.save_world_properties(&properties);
+}
+
+#[derive(Default, Serialize, Deserialize, Resource)]
 pub struct WorldProperties {
+    // TODO: This must be set to a valid spawn point when first inserted, currently it is just
+    // ignored.
     pub spawn_point: SpawnPoint,
 }
 
-// TODO: This needs a system to find a new spawn point every time a player is respawned.
-/// Ressource used to set the spawn point for new players.
-/// Defaults to 0,y,0, where y is the height level of the overworld terrain.
-#[derive(Serialize, Deserialize)]
+/// The default spawn point, as opposed to the unique spawn point of a player.
+#[derive(Default, Serialize, Deserialize)]
 pub struct SpawnPoint {
     pub center: IVec3,
     pub radius: i32,

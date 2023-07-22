@@ -1,5 +1,3 @@
-#![feature(hash_extract_if)]
-
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
@@ -41,7 +39,7 @@ fn main() {
         .add_plugin(world::WorldPlugin)
         .add_plugin(ui::UiPlugin)
         .add_plugin(chat::ChatPlugin)
-        .insert_resource(settings::Settings::new())
+        .add_plugin(settings::SettingsPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, fix_keys_not_released_on_focus_loss)
         .run();

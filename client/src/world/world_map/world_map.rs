@@ -194,98 +194,58 @@ impl WorldMap {
 
     // Given a chunk position, returns the blocks in that chunk as well as the blocks one past the
     // edge on all sides.
-    pub fn get_expanded_chunk(
-        &self,
-        position: IVec3,
-    ) -> Result<ExpandedChunk, Vec<ChunkRequestEvent>> {
-        let mut failed = Vec::with_capacity(6);
-
-        let center_chunk = match self.get_chunk(&position) {
-            Some(t) => Some(t.clone()),
-            None => {
-                failed.push(ChunkRequestEvent(position));
-                None
-            }
-        };
+    pub fn get_expanded_chunk(&self, position: IVec3) -> ExpandedChunk {
+        let center = self.get_chunk(&position).unwrap().clone();
 
         let top_position = position + IVec3::new(0, CHUNK_SIZE as i32, 0);
-        let top_chunk = match self.get_chunk(&top_position) {
-            Some(t) => Some(t),
-            None => {
-                failed.push(ChunkRequestEvent(top_position));
-                None
-            }
-        };
+        let top_chunk = self.get_chunk(&top_position);
 
         let bottom_position = position - IVec3::new(0, CHUNK_SIZE as i32, 0);
-        let bottom_chunk = match self.get_chunk(&bottom_position) {
-            Some(t) => Some(t),
-            None => {
-                failed.push(ChunkRequestEvent(bottom_position));
-                None
-            }
-        };
+        let bottom_chunk = self.get_chunk(&bottom_position);
 
         let right_position = position + IVec3::new(CHUNK_SIZE as i32, 0, 0);
-        let right_chunk = match self.get_chunk(&right_position) {
-            Some(t) => Some(t),
-            None => {
-                failed.push(ChunkRequestEvent(right_position));
-                None
-            }
-        };
+        let right_chunk = self.get_chunk(&right_position);
 
         let left_position = position - IVec3::new(CHUNK_SIZE as i32, 0, 0);
-        let left_chunk = match self.get_chunk(&left_position) {
-            Some(t) => Some(t),
-            None => {
-                failed.push(ChunkRequestEvent(left_position));
-                None
-            }
-        };
+        let left_chunk = self.get_chunk(&left_position);
 
         let front_position = position + IVec3::new(0, 0, CHUNK_SIZE as i32);
-        let front_chunk = match self.get_chunk(&front_position) {
-            Some(t) => Some(t),
-            None => {
-                failed.push(ChunkRequestEvent(front_position));
-                None
-            }
-        };
+        let front_chunk = self.get_chunk(&front_position);
 
         let back_position = position - IVec3::new(0, 0, CHUNK_SIZE as i32);
-        let back_chunk = match self.get_chunk(&back_position) {
-            Some(t) => Some(t),
-            None => {
-                failed.push(ChunkRequestEvent(back_position));
-                None
-            }
-        };
+        let back_chunk = self.get_chunk(&back_position);
 
-        if failed.len() != 0 {
-            return Err(failed);
-        }
-
-        let center = center_chunk.unwrap();
-        let mut top: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut bottom: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut right: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut left: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut front: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut back: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
+        let mut top: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
+        let mut bottom: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
+        let mut right: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
+        let mut left: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
+        let mut front: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
+        let mut back: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
 
         for i in 0..CHUNK_SIZE {
             for j in 0..CHUNK_SIZE {
-                top[i][j] = top_chunk.unwrap()[[i, 0, j]];
-                bottom[i][j] = bottom_chunk.unwrap()[[i, CHUNK_SIZE - 1, j]];
-                right[i][j] = right_chunk.unwrap()[[0, i, j]];
-                left[i][j] = left_chunk.unwrap()[[CHUNK_SIZE - 1, i, j]];
-                back[i][j] = back_chunk.unwrap()[[i, j, CHUNK_SIZE - 1]];
-                front[i][j] = front_chunk.unwrap()[[i, j, 0]];
+                if let Some(top_chunk) = top_chunk {
+                    top[i][j] = Some(top_chunk[[i, 0, j]]);
+                }
+                if let Some(bottom_chunk) = bottom_chunk {
+                    bottom[i][j] = Some(bottom_chunk[[i, CHUNK_SIZE - 1, j]]);
+                }
+                if let Some(right_chunk) = right_chunk {
+                    right[i][j] = Some(right_chunk[[0, i, j]]);
+                }
+                if let Some(left_chunk) = left_chunk {
+                    left[i][j] = Some(left_chunk[[CHUNK_SIZE - 1, i, j]]);
+                }
+                if let Some(back_chunk) = back_chunk {
+                    back[i][j] = Some(back_chunk[[i, j, CHUNK_SIZE - 1]]);
+                }
+                if let Some(front_chunk) = front_chunk {
+                    front[i][j] = Some(front_chunk[[i, j, 0]]);
+                }
             }
         }
 
-        return Ok(ExpandedChunk {
+        return ExpandedChunk {
             center,
             top,
             bottom,
@@ -293,6 +253,6 @@ impl WorldMap {
             left,
             front,
             back,
-        });
+        };
     }
 }

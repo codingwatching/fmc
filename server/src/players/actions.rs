@@ -170,7 +170,7 @@ pub fn handle_left_clicks(
                 .spawn(ModelBundle {
                     model: Model::new(models.get_id("breaking_stage_1")),
                     // The model shouldn't show until some progress has been made
-                    visibility: ModelVisibility::new(false),
+                    visibility: ModelVisibility { is_visible: false },
                     global_transform: F64GlobalTransform::default(),
                     transform: F64Transform::from_translation(
                         block_pos.as_dvec3() + DVec3::splat(0.5),
@@ -202,7 +202,6 @@ pub fn handle_left_clicks(
         } else {
             return true;
         }
-
     });
 }
 
@@ -253,11 +252,10 @@ pub fn place_blocks(
 
             equipped_item.subtract(1);
 
-            let block_config = match chunk.chunk_type {
-                crate::world::world_map::chunk::ChunkType::Uniform(block_id) => {
-                    blocks.get_config(&block_id)
-                },
-                _ => blocks.get_config(&chunk[*index])
+            let block_config = if chunk.is_uniform() {
+                blocks.get_config(&chunk[0])
+            } else {
+                blocks.get_config(&chunk[*index])
             };
 
             if matches!(block_config.friction, Friction::Drag(_)) {

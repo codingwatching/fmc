@@ -2,7 +2,6 @@ use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
 use bevy::{prelude::*, utils::Uuid};
 use dashmap::DashMap;
-use derive_more::Display;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{tcp, TcpListener, TcpStream, ToSocketAddrs},
@@ -19,15 +18,11 @@ use tokio::{
 
 use crate::{
     error::ServerNetworkError,
-    messages::ClientIdentification,
     network_message::{ClientBound, NetworkMessage, ServerBound},
-    ConnectionId, NetworkData, NetworkPacket, NetworkSettings, ServerNetworkEvent, SyncChannel,
+    ConnectionId, NetworkData, NetworkPacket, NetworkSettings, ServerNetworkEvent, SyncChannel, messages::ClientIdentification,
 };
 
-#[derive(Display)]
-#[display(fmt = "Incoming Connection from {}", addr)]
-struct NewIncomingConnection {
-    addr: SocketAddr,
+struct NewConnection {
     socket: TcpStream,
     username: String,
 }
@@ -61,17 +56,15 @@ impl std::fmt::Debug for ClientConnection {
 /// using [`NetworkServer::listen`]
 #[derive(Resource)]
 pub struct NetworkServer {
-    runtime: Runtime,
+    runtime: Option<Runtime>,
     /// Map of network messages that should be sent as bevy events
     recv_message_map: Arc<DashMap<&'static str, Vec<(ConnectionId, Box<dyn NetworkMessage>)>>>,
     /// Map of served connections
     established_connections: Arc<DashMap<ConnectionId, ClientConnection>>,
     /// Connections that have been verified and should be added to the established_connections map.
-    new_connections: SyncChannel<NewIncomingConnection>,
+    new_connections: SyncChannel<NewConnection>,
     /// Connections that should be disconnected.
     disconnected_connections: SyncChannel<ConnectionId>,
-    /// Handle to task that listens for new connections.
-    listener_task: Option<JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for NetworkServer {
@@ -87,15 +80,11 @@ impl std::fmt::Debug for NetworkServer {
 impl NetworkServer {
     pub(crate) fn new() -> NetworkServer {
         NetworkServer {
-            runtime: tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("Could not build tokio runtime"),
+            runtime: None,
             recv_message_map: Arc::new(DashMap::new()),
             established_connections: Arc::new(DashMap::new()),
             new_connections: SyncChannel::new(),
             disconnected_connections: SyncChannel::new(),
-            listener_task: None,
         }
     }
 
@@ -106,10 +95,15 @@ impl NetworkServer {
     pub fn listen(
         &mut self,
         addr: impl ToSocketAddrs + Send + 'static,
-    ) -> Result<(), ServerNetworkError> {
+    ) {
         self.stop();
 
-        // Send connection after it's been verified.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("Could not build tokio runtime");
+
+        // Notify of new connection after it's been verified.
         let new_connections = self.new_connections.sender.clone();
 
         // Listen for new connections at the bind address
@@ -130,32 +124,23 @@ impl NetworkServer {
                         continue;
                     }
                 };
-                // TODO: Can choke if someone connects and doesn't identify, it will wait for a
-                // timeout before it tries to read the next connection.
-                let connection =
-                    if let Some((socket, username)) = identify_connection(socket, addr).await {
-                        NewIncomingConnection {
-                            addr,
-                            socket,
-                            username,
-                        }
-                    } else {
-                        // The connection failed to verify its identity
-                        continue;
-                    };
 
-                if let Err(err) = new_connections.send(connection) {
-                    error!("Cannot accept new connections, channel closed: {}", err);
-                    break;
+                match socket.set_nodelay(true) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        error!("Could not set nodelay for [{}]: {}", addr, e);
+                        continue;
+                    }
                 }
+
+                tokio::task::spawn(verify_connection(socket, new_connections.clone()));
             }
         };
 
         trace!("Started listening");
 
-        self.listener_task = Some(self.runtime.spawn(listen_loop));
-
-        return Ok(());
+        runtime.spawn(listen_loop);
+        self.runtime = Some(runtime);
     }
 
     /// Send a message to one client
@@ -226,20 +211,18 @@ impl NetworkServer {
     }
 
     /// Disconnect all clients and stop listening for new ones
-    ///
-    /// ## Notes
-    /// This operation is idempotent and will do nothing if you are not actively listening
     pub fn stop(&mut self) {
-        if let Some(conn) = self.listener_task.take() {
-            conn.abort();
-            for conn in self.established_connections.iter() {
-                let _ = self.disconnected_connections.sender.send(*conn.key());
-            }
-            self.established_connections.clear();
-            self.recv_message_map.clear();
-
-            self.new_connections.receiver.try_iter().for_each(|_| ());
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
         }
+
+        for conn in self.established_connections.iter() {
+            self.disconnected_connections.sender.send(*conn.key()).ok();
+        }
+
+        self.established_connections.clear();
+        self.recv_message_map.iter_mut().for_each(|mut messages| messages.clear());
+        self.new_connections.receiver.try_iter().for_each(|_| ());
     }
 
     /// Disconnect a client
@@ -251,63 +234,63 @@ impl NetworkServer {
     }
 }
 
-// TODO: Make it timeout if it has waited for too long (>0.3s or something).
-// TODO: Would be nice if it could verify connections in parallel so it didn't have to block new
-// connections.
-async fn identify_connection(
+// TODO: This is just a copy of 'recv_task' with all the things that errored removed. Look it over
+// and clean it up if necessary.
+async fn verify_connection(
     mut socket: TcpStream,
-    addr: SocketAddr,
-) -> Option<(TcpStream, String)> {
-    let length = match socket.read_u32().await {
-        Ok(len) => len as usize,
-        Err(err) => {
-            error!("Encountered error while reading length [{}]: {}", addr, err);
-            return None;
-        }
+    new_connections: crossbeam_channel::Sender<NewConnection>,
+) {
+    let length = match tokio::time::timeout(std::time::Duration::from_millis(500),socket.read_u32()).await {
+        Ok(Ok(len)) => len as usize,
+        _ => return,
     };
 
-    trace!("Received packet with length: {}", length);
-
-    let mut buffer: Vec<u8> = vec![0; length];
-
-    // 1mb, could be set to size of ClientIdentification idk
-    if length > 1024 * 1024 {
+    const MAX_LENGTH: usize = 100;
+    if length > MAX_LENGTH {
         error!(
             "Received too large packet from [{}]: {} > {}",
-            addr,
-            length,
-            1024 * 1024
+            socket.peer_addr().unwrap(), length, MAX_LENGTH
         );
-        return None;
+        return;
     }
+
+    let mut buffer = vec![0; length];
 
     match socket.read_exact(&mut buffer[..length]).await {
         Ok(_) => (),
         Err(err) => {
             error!(
-                "Encountered error while reading stream of length {} [{}]: {}",
-                length, addr, err
+                "Encountered error while reading stream of length {} from [{}]: {}",
+                length, socket.peer_addr().unwrap(), err
             );
-            return None;
+            return;
         }
     }
-
-    trace!("Read buffer of length {}", length);
 
     let packet: NetworkPacket = match bincode::deserialize(&buffer[..length]) {
         Ok(packet) => packet,
         Err(err) => {
-            error!("Failed to decode network packet from [{}]: {}", addr, err);
-            return None;
+            error!(
+                "Failed to decode network packet from [{}]: {}",
+                socket.peer_addr().unwrap(), err
+            );
+            return;
         }
     };
 
     let identity: ClientIdentification = match packet.data.downcast() {
         Ok(v) => *v,
-        Err(_) => return None,
+        Err(_) => return,
     };
 
-    return Some((socket, identity.name));
+    if let Err(err) = new_connections.send(NewConnection {
+        socket,
+        username: identity.name
+    }) {
+        error!("Cannot accept new connections, channel closed: {}", err);
+        return;
+    }
+
 }
 
 async fn recv_task(
@@ -447,45 +430,45 @@ pub(crate) fn handle_connections(
     network_settings: Res<NetworkSettings>,
     mut network_events: EventWriter<ServerNetworkEvent>,
 ) {
-    for conn in server.new_connections.receiver.try_iter() {
-        match conn.socket.set_nodelay(true) {
-            Ok(_) => (),
-            Err(e) => error!("Could not set nodelay for [{}]: {}", conn.addr, e),
-        }
+    for connection in server.new_connections.receiver.try_iter() {
+        let addr = connection.socket.peer_addr().unwrap();
 
-        let conn_id = ConnectionId {
+        let connection_id = ConnectionId {
             uuid: Uuid::new_v4(),
-            addr: conn.addr,
+            addr,
         };
 
-        let (read_socket, send_socket) = conn.socket.into_split();
+        let (read_socket, send_socket) = connection.socket.into_split();
 
-        // XXX: I changed this from an unbounded channel because of some memory issue I could't
+        // TODO: I changed this from an unbounded channel because of some memory issue I could't
         // diagnose.
         let (send_message, recv_message) = channel(10);
 
         server.established_connections.insert(
-            conn_id,
+            connection_id,
             ClientConnection {
-                id: conn_id,
-                receive_task: server.runtime.spawn(recv_task(
-                    conn_id,
+                id: connection_id,
+                receive_task: server.runtime.as_ref().unwrap().spawn(recv_task(
+                    connection_id,
                     server.recv_message_map.clone(),
                     network_settings.clone(),
                     read_socket,
                     server.disconnected_connections.sender.clone(),
                 )),
-                send_task: server.runtime.spawn(send_task(
+                send_task: server.runtime.as_ref().unwrap().spawn(send_task(
                     recv_message,
                     send_socket,
                     network_settings.clone(),
                 )),
                 send_message,
-                addr: conn.addr,
+                addr,
             },
         );
 
-        network_events.send(ServerNetworkEvent::Connected(conn_id, conn.username));
+        network_events.send(ServerNetworkEvent::Connected {
+            connection: connection_id,
+            username: connection.username,
+        });
     }
 }
 
@@ -498,14 +481,14 @@ pub(crate) fn handle_disconnections(
     mut network_events: EventWriter<ServerNetworkEvent>,
     mut to_disconnect: Local<Vec<ConnectionId>>,
 ) {
-    for conn_id in to_disconnect.drain(..) {
-        let connection = match server.established_connections.remove(&conn_id) {
+    for connection_id in to_disconnect.drain(..) {
+        let connection = match server.established_connections.remove(&connection_id) {
             Some(conn) => conn.1,
             None => continue,
         };
 
         connection.stop();
-        network_events.send(ServerNetworkEvent::Disconnected(conn_id));
+        network_events.send(ServerNetworkEvent::Disconnected(connection_id));
     }
 
     for disconnected_connection in server.disconnected_connections.receiver.try_iter() {

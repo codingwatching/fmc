@@ -52,12 +52,12 @@ pub struct PlayerBundle {
     marker: PlayerMarker,
 }
 
-impl PlayerBundle {
-    pub fn new() -> Self {
+impl Default for PlayerBundle {
+    fn default() -> Self {
         Self {
             global_transform: F64GlobalTransform::default(),
             // Put the player somewhere high while it is waiting to be spawned for the first time.
-            transform: F64Transform::from_xyz(0.0, 240.0, 0.0),
+            transform: F64Transform::from_xyz(0.0, 10000.0, 0.0),
             camera: PlayerCamera(F64Transform {
                 // XXX: This is hardcoded until a system for changing the player orientation is
                 // set up. Also hardcoded in From<PlayerSave>

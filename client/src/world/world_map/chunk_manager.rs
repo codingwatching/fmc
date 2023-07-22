@@ -53,7 +53,7 @@ impl Plugin for ChunkManagerPlugin {
                 // for non-existing entity. https://github.com/bevyengine/bevy/issues/3845 relevant
                 // issue
                 PostUpdate,
-                chunk_unloading.run_if(resource_changed::<Origin>()),
+                unload_chunks.run_if(resource_changed::<Origin>()),
             );
     }
 }
@@ -80,34 +80,25 @@ fn pause_system(mut pause: ResMut<Pause>, keyboard_input: Res<Input<KeyCode>>) {
 }
 
 // Removes chunks that are outside the render distance of the player.
-fn chunk_unloading(
-    net: Res<NetworkClient>,
+fn unload_chunks(
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     settings: Res<settings::Settings>,
     mut commands: Commands,
 ) {
-    // Keep chunks 5 past the render distance to allow for some leeway.
-    let max_distance = settings.render_distance as i32 + 5;
-
-    let removed: HashMap<IVec3, Chunk> = world_map
-        .chunks
-        .extract_if(|chunk_pos, chunk| {
-            if (chunk_pos.x - origin.x).abs() / CHUNK_SIZE as i32 > max_distance
-                || (chunk_pos.y - origin.y).abs() / CHUNK_SIZE as i32 > max_distance
-                || (chunk_pos.z - origin.z).abs() / CHUNK_SIZE as i32 > max_distance
-            {
-                if let Some(entity) = chunk.entity {
-                    commands.entity(entity).despawn_recursive();
-                }
-                true
-            } else {
-                false
+    world_map.chunks.retain(|chunk_pos, chunk| {
+        let distance = (*chunk_pos - origin.0).abs() / IVec3::splat(CHUNK_SIZE as i32);
+        if distance
+            .cmpgt(IVec3::splat(settings.render_distance as i32))
+            .any()
+        {
+            if let Some(entity) = chunk.entity {
+                commands.entity(entity).despawn_recursive();
             }
-        })
-        .collect();
-    net.send_message(messages::UnsubscribeFromChunks {
-        chunks: removed.into_keys().collect::<Vec<IVec3>>(),
+            false
+        } else {
+            true
+        }
     });
 }
 
@@ -157,9 +148,7 @@ fn proximity_chunk_loading(
 // would not need to be loaded when the player turns around, it would already have them. Chunk
 // loading would also only have to be done whenever the player crosses a chunk border. Cleaner as
 // well as chunk visibility and chunk loading would be completely separate, as it is now it looks
-// very messy. AND it would be inherent anti-cheat. AND rendering would bet better at it wouldn't
-// have to send partial chunks to the clients. AND this can be removed completely as it could be
-// converted to normal frustum culling + speed up as that is parallel.
+// very messy. AND it would be inherent anti-cheat.
 // TODO: When implementing this I wanted to create chunk columns where all vertically adjacent air
 // chunks belonged to the same column (with the first chunk with blocks below them as the column
 // base). This would reduce the search drastically when at the surface as you could check entire
@@ -227,7 +216,7 @@ fn frustum_chunk_loading(
     // Goes one chunk in the direction specified, checks if it's visible and inside the frustum
     // before it adds it to the queue.
     let mut traverse_direction =
-        |position: IVec3,
+        |mut chunk_position: IVec3,
          from_dir: &utils::Direction, // Direction to enter from
          to_dir: &utils::Direction,   // Direction to exit through
          visible_sides: Option<&VisibleSides>,
@@ -240,18 +229,20 @@ fn frustum_chunk_loading(
                 }
             }
 
-            let position = to_dir.shift_chunk_position(position);
+            chunk_position = to_dir.shift_chunk_position(chunk_position);
 
             // Only visit a chunk once, no matter which side you enter from
-            if already_visited.contains(&position) {
+            if already_visited.contains(&chunk_position) {
                 return;
             }
+
+            let distance = chunk_position - origin.0;
 
             // 0.867 is half the diagonal of a 1x1x1 cube, i.e the radius of the sphere around the
             // cube. It is scaled by the side length the chunk.
             if !frustum.intersects_sphere(
                 &Sphere {
-                    center: (position - origin.0).as_vec3a() + CHUNK_SIZE as f32 / 2.0,
+                    center: distance.as_vec3a() + CHUNK_SIZE as f32 / 2.0,
                     radius: 0.867 * CHUNK_SIZE as f32,
                 },
                 true,
@@ -259,8 +250,22 @@ fn frustum_chunk_loading(
                 return;
             }
 
-            already_visited.insert(position);
-            queue.push((position, to_dir.opposite()));
+            // TODO: Intersection with the far plane should have been done above, but the result is
+            // wrong allowing chunks that are up to 3 and maybe more chunks past the far plane.
+            // The plan is to remove the frustum from this calculation so I won't bother finding
+            // what's wrong.
+            if ((distance / IVec3::splat(CHUNK_SIZE as i32)).abs())
+                // -2 is to create a buffer to the unloading border. Otherwise difference in
+                // position on server and client will cause some chunks to be unlaoded prematurely.
+                // Chunk loading will eventually be handled by the server, this is a quickfix.
+                .cmpgt(IVec3::splat(settings.render_distance as i32 - 2))
+                .any()
+            {
+                return;
+            }
+
+            already_visited.insert(chunk_position);
+            queue.push((chunk_position, to_dir.opposite()));
         };
 
     // Reads a chunk from the chunk map. If it does not exist, it requests it.
@@ -393,6 +398,7 @@ fn frustum_chunk_loading(
 
 /// Sends chunk requests to the server.
 fn send_chunk_requests(
+    //origin: Res<Origin>,
     mut requested: ResMut<Requested>,
     mut request_events: EventReader<ChunkRequestEvent>,
     net: Res<NetworkClient>,
@@ -432,12 +438,6 @@ fn handle_chunk_responses(
                 }
             }
 
-            // TODO: I think there is opportunity here for handling the VisibleSides of uniform
-            // chunks. They are either fully transparent or fully opaque. This can be stored so it
-            // doesn't have to go through the Blocks when it needs to check. Just an extra
-            // bool, and when the chunk is converted to a normal chunk it can be set to false.
-            // With this, no uniform chunk would have no entity = speedup for frustum. Now, only
-            // chunks that are transparent(air) have no entity.
             if chunk.blocks.len() == 1
                 && match &blocks[&chunk.blocks[0]] {
                     Block::Cube(b) if b.quads.len() == 0 => true,
@@ -472,7 +472,6 @@ fn handle_chunk_responses(
 }
 
 // TODO: This doesn't feel like it belongs in this file.
-// Handles block udates sent from the server.
 fn handle_block_updates(
     mut commands: Commands,
     origin: Res<Origin>,

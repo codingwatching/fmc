@@ -1,4 +1,4 @@
-use bevy::{math::DVec3, prelude::*};
+use bevy::prelude::*;
 use fmc_networking::BlockId;
 
 use std::collections::{HashMap, HashSet};
@@ -17,7 +17,7 @@ pub mod crafting;
 
 use super::{
     models::{ModelId, ModelMap},
-    world_map::{BlockUpdate, ChangedBlockEvent},
+    world_map::BlockUpdate,
 };
 
 pub type ItemId = u32;
@@ -27,14 +27,75 @@ pub const ITEM_CONFIG_PATH: &str = "resources/client/items/configurations/";
 pub struct ItemPlugin;
 impl Plugin for ItemPlugin {
     fn build(&self, app: &mut App) {
-        let database = app.world.resource::<DatabaseArc>();
-        app.insert_resource(Items::load(database.as_ref()));
+        //let database = app.world.resource::<DatabaseArc>();
+        //app.insert_resource(Items::load(database.as_ref()));
 
-        app.add_plugin(crafting::CraftingPlugin).add_systems(
-            Update,
-            (pick_up_items, trigger_physics_update_on_block_change),
+        app.add_plugin(crafting::CraftingPlugin)
+            .add_systems(PreStartup, load_items)
+            .add_systems(
+                Update,
+                (pick_up_items, trigger_physics_update_on_block_change),
+            );
+    }
+}
+
+fn load_items(mut commands: Commands, database: Res<DatabaseArc>) {
+    let mut items = Items {
+        configs: HashMap::new(),
+        ids: database.load_item_ids(),
+    };
+
+    for (filename, id) in items.ids.iter() {
+        let file_path = ITEM_CONFIG_PATH.to_owned() + filename + ".json";
+
+        let file = match std::fs::File::open(&file_path) {
+            Ok(f) => f,
+            Err(e) => panic!(
+                "Failed to open item config at: {}\nError: {}",
+                &file_path, e
+            ),
+        };
+
+        let json: ItemConfigJson = match serde_json::from_reader(&file) {
+            Ok(c) => c,
+            Err(e) => panic!(
+                "Couldn't read item config from '{}'\nError: {}",
+                &file_path, e
+            ),
+        };
+
+        let blocks = database.load_block_ids();
+        let block = match blocks.get(&json.block) {
+            Some(block_id) => *block_id,
+            None => panic!(
+                "Failed to parse item config at: {}\nError: Missing block by the name: {}",
+                &file_path, &json.block
+            ),
+        };
+
+        let models = database.load_model_ids();
+        let model_id = match models.get(&json.equip_model.name) {
+            Some(id) => *id,
+            None => panic!(
+                "Failed to parse item config at: {}\nError: Missing model by the name: {}",
+                &file_path, &json.equip_model.name
+            ),
+        };
+
+        items.configs.insert(
+            *id,
+            ItemConfig {
+                name: json.name,
+                block,
+                model_id,
+                max_stack_size: json.stack_size,
+                categories: json.categories,
+                properties: json.properties,
+            },
         );
     }
+
+    commands.insert_resource(items);
 }
 
 pub struct ItemConfig {
@@ -82,65 +143,6 @@ impl Items {
     #[track_caller]
     pub fn get_config(&self, item_id: &ItemId) -> &ItemConfig {
         return self.configs.get(item_id).unwrap();
-    }
-
-    fn load(database: &Database) -> Self {
-        let mut items = Items {
-            configs: HashMap::new(),
-            ids: database.load_item_ids(),
-        };
-
-        for (filename, id) in items.ids.iter() {
-            let file_path = ITEM_CONFIG_PATH.to_owned() + filename + ".json";
-
-            let file = match std::fs::File::open(&file_path) {
-                Ok(f) => f,
-                Err(e) => panic!(
-                    "Failed to open item config at: {}\nError: {}",
-                    &file_path, e
-                ),
-            };
-
-            let json: ItemConfigJson = match serde_json::from_reader(&file) {
-                Ok(c) => c,
-                Err(e) => panic!(
-                    "Couldn't read item config from '{}'\nError: {}",
-                    &file_path, e
-                ),
-            };
-
-            let blocks = database.load_block_ids();
-            let block = match blocks.get(&json.block) {
-                Some(block_id) => *block_id,
-                None => panic!(
-                    "Failed to parse item config at: {}\nError: Missing block by the name: {}",
-                    &file_path, &json.block
-                ),
-            };
-
-            let models = database.load_model_ids();
-            let model_id = match models.get(&json.equip_model.name) {
-                Some(id) => *id,
-                None => panic!(
-                    "Failed to parse item config at: {}\nError: Missing model by the name: {}",
-                    &file_path, &json.equip_model.name
-                ),
-            };
-
-            items.configs.insert(
-                *id,
-                ItemConfig {
-                    name: json.name,
-                    block,
-                    model_id,
-                    max_stack_size: json.stack_size,
-                    categories: json.categories,
-                    properties: json.properties,
-                },
-            );
-        }
-
-        return items;
     }
 
     pub fn clone_ids(&self) -> HashMap<String, ItemId> {

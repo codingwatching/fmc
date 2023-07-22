@@ -62,7 +62,6 @@ fn mesh_system(
     mut commands: Commands,
     world_map: Res<WorldMap>,
     light_map: Res<LightMap>,
-    mut chunk_request_events: EventWriter<ChunkRequestEvent>,
     mut mesh_events: EventReader<ChunkMeshEvent>,
     meshable_chunks: Query<With<MeshedChunkMarker>>,
     new_meshed_chunks: Query<&GlobalTransform, Added<MeshedChunkMarker>>,
@@ -77,18 +76,8 @@ fn mesh_system(
         match world_map.get_chunk(&chunk_position) {
             Some(chunk) => {
                 if chunk.entity.is_some() && meshable_chunks.get(chunk.entity.unwrap()).is_ok() {
-                    let expanded_chunk = match world_map.get_expanded_chunk(chunk_position) {
-                        Ok(e) => e,
-                        Err(needed) => {
-                            chunk_request_events.send_batch(needed);
-                            continue;
-                        }
-                    };
-
-                    let expanded_light_chunk = match light_map.get_expanded_chunk(chunk_position) {
-                        Some(e) => e,
-                        None => continue,
-                    };
+                    let expanded_chunk = world_map.get_expanded_chunk(chunk_position);
+                    let expanded_light_chunk = light_map.get_expanded_chunk(chunk_position);
 
                     let task = thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk));
                     commands
@@ -106,6 +95,7 @@ fn mesh_system(
 // TODO: Some meshes are randomly offset by CHUNK_SIZE in any direction. I assume this is a bug
 // with how the origin is handled, some race condition or some such that has nothing to do with
 // rendering. The chunk probably arrives at the same tick origin is changed and gets messed up.
+//
 /// Meshes are computed async, this handles completed meshes
 fn handle_mesh_tasks(
     mut commands: Commands,
@@ -276,7 +266,7 @@ async fn build_mesh(
     for x in 1..CHUNK_SIZE + 1 {
         for y in 1..CHUNK_SIZE + 1 {
             for z in 1..CHUNK_SIZE + 1 {
-                let block_id = chunk[[x, y, z]];
+                let block_id = chunk.get_block(x, y, z).unwrap();
 
                 let block_config = &blocks[&block_id];
 
@@ -293,15 +283,18 @@ async fn build_mesh(
 
                         for quad in &cube.quads {
                             if let Some(cull_face) = quad.cull_face {
-                                let adjacent_block_id = match cull_face {
-                                    // Mesh gets culled by front face, so we get the block behind,
-                                    // back, get front etc.
-                                    BlockFace::Front => chunk[[x, y, z + 1]],
-                                    BlockFace::Back => chunk[[x, y, z - 1]],
-                                    BlockFace::Bottom => chunk[[x, y + 1, z]],
-                                    BlockFace::Top => chunk[[x, y - 1, z]],
-                                    BlockFace::Left => chunk[[x + 1, y, z]],
-                                    BlockFace::Right => chunk[[x - 1, y, z]],
+                                let adjacent_block = match cull_face {
+                                    BlockFace::Front => chunk.get_block(x, y, z + 1),
+                                    BlockFace::Back => chunk.get_block(x, y, z - 1),
+                                    BlockFace::Bottom => chunk.get_block(x, y + 1, z),
+                                    BlockFace::Top => chunk.get_block(x, y - 1, z),
+                                    BlockFace::Left => chunk.get_block(x + 1, y, z),
+                                    BlockFace::Right => chunk.get_block(x - 1, y, z),
+                                };
+
+                                let adjacent_block_id = match adjacent_block {
+                                    Some(block_id) => block_id,
+                                    None => continue,
                                 };
 
                                 let adjacent_block_config = &blocks[&adjacent_block_id];
@@ -397,39 +390,35 @@ async fn build_mesh(
 /// Larger chunk containing both the chunks and the immediate blocks around it.
 pub struct ExpandedChunk {
     pub center: Chunk,
-    pub top: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE],
-    pub bottom: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE],
-    pub right: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE],
-    pub left: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE],
-    pub front: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE],
-    pub back: [[BlockId; CHUNK_SIZE]; CHUNK_SIZE],
+    pub top: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
+    pub bottom: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
+    pub right: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
+    pub left: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
+    pub front: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
+    pub back: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
 }
 
 impl ExpandedChunk {
+    fn get_block(&self, x: usize, y: usize, z: usize) -> Option<BlockId> {
+        if x == 0 {
+            return self.left[y - 1][z - 1];
+        } else if x == 17 {
+            return self.right[y - 1][z - 1];
+        } else if y == 0 {
+            return self.bottom[x - 1][z - 1];
+        } else if y == 17 {
+            return self.top[x - 1][z - 1];
+        } else if z == 0 {
+            return self.back[x - 1][y - 1];
+        } else if z == 17 {
+            return self.front[x - 1][y - 1];
+        } else {
+            return Some(self.center[[x - 1, y - 1, z - 1]]);
+        }
+    }
+
     fn get_block_state(&self, x: usize, y: usize, z: usize) -> Option<u16> {
         return self.center.get_block_state(x - 1, y - 1, z - 1);
-    }
-}
-
-impl Index<[usize; 3]> for ExpandedChunk {
-    type Output = BlockId;
-
-    fn index(&self, index: [usize; 3]) -> &Self::Output {
-        if index[0] == 0 {
-            return &self.left[index[1] - 1][index[2] - 1];
-        } else if index[0] == 17 {
-            return &self.right[index[1] - 1][index[2] - 1];
-        } else if index[1] == 0 {
-            return &self.bottom[index[0] - 1][index[2] - 1];
-        } else if index[1] == 17 {
-            return &self.top[index[0] - 1][index[2] - 1];
-        } else if index[2] == 0 {
-            return &self.back[index[0] - 1][index[1] - 1];
-        } else if index[2] == 17 {
-            return &self.front[index[0] - 1][index[1] - 1];
-        } else {
-            return &self.center[[index[0] - 1, index[1] - 1, index[2] - 1]];
-        }
     }
 }
 

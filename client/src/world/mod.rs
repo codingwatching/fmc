@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{game_state::GameState, player::Player};
+use crate::{constants::CHUNK_SIZE, game_state::GameState, player::Player};
 
 pub mod blocks;
 pub mod world_map;
@@ -20,9 +20,9 @@ impl Plugin for WorldPlugin {
 
 // TODO: This could have been made to be just f64 transforms as with the server, but I don't know
 // enough about the rendering stuff to replace Transform. Instead this litters conversions all over
-// the place...
+// the place.
 //
-// For entities that use a Transform an offset is needed to preserve the precision of f32s. This is
+// For entities that use a Transform, an offset is needed to preserve the precision of f32s. This is
 // updated to be the chunk position of the player every time the player moves between chunk
 // borders.
 #[derive(Resource, Deref, DerefMut, Clone, Copy)]
@@ -35,7 +35,6 @@ fn update_origin(
     mut origin: ResMut<Origin>,
     mut positions: ParamSet<(
         Query<&Transform, (Changed<Transform>, With<Player>)>,
-        // Move all object roots, no UI
         Query<&mut Transform, With<MovesWithOrigin>>,
     )>,
 ) {
@@ -46,17 +45,17 @@ fn update_origin(
         return;
     };
 
-    let distance = player_transform.translation.as_ivec3() / 16;
+    let true_translation = player_transform.translation.as_dvec3() + origin.0.as_dvec3();
+    let new_origin = crate::utils::world_position_to_chunk_pos(true_translation.as_ivec3());
 
-    let translation_change = if distance != IVec3::ZERO {
-        (distance * 16).as_vec3()
-    } else {
+    if new_origin == origin.0 {
         return;
     };
 
-    origin.0 += distance * 16;
-
+    let change = (new_origin - origin.0).as_vec3();
     for mut transform in positions.p1().iter_mut() {
-        transform.translation -= translation_change;
+        transform.translation -= change;
     }
+
+    origin.0 = new_origin;
 }

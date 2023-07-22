@@ -24,17 +24,18 @@ const INTERFACE_CONFIG_PATH: &str = "server_assets/interfaces/";
 // would lead to "stealing" items from each other when several hold the same item. I'm beginning to
 // think it was a bad idea. It would have simpler code in exchange for some slightly weird
 // behaviour. Do a think about this.
-//
 
 // TODO: The item grid in the inventory can only have 7 columns, if more the layout breaks.
 
+// TODO: Makes no sense to have this under crate::player::interfaces? This only covers in-game
+// interfaces that are defined by the server at runtime, separate from the hardcoded ui used for
+// the main menu and settings. Can't come up with a good name to separate the two.
 pub struct InterfacePlugin;
 impl Plugin for InterfacePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(UiScale { scale: 4.0 })
             .insert_resource(InterfaceStack::default())
             .add_event::<InterfaceToggleEvent>()
-            .add_systems(OnEnter(GameState::Playing), get_initial_interface_update)
             .add_systems(
                 Update,
                 (
@@ -424,12 +425,6 @@ pub fn load_interfaces(
         })
         .insert(ItemStack::default())
         .insert(CursorItemStackMarker);
-}
-
-// The server can't know when we are ready to receive interface content, and sending it when
-// the interface is first opened would look janky. So we have to ask.
-fn get_initial_interface_update(net: Res<NetworkClient>) {
-    net.send_message(messages::InitialInterfaceUpdateRequest);
 }
 
 // Add content to the interface sent from the server.

@@ -27,11 +27,14 @@ pub struct TerrainGenerationPlugin;
 
 impl Plugin for TerrainGenerationPlugin {
     fn build(&self, app: &mut App) {
-        let settings = app.world.resource::<ServerSettings>();
-        app.insert_resource(TerrainGeneratorArc(Arc::new(TerrainGenerator::new(
-            settings.seed,
-        ))));
+        app.add_systems(Startup, add_terrain_generator);
     }
+}
+
+fn add_terrain_generator(mut commands: Commands, server_settings: Res<ServerSettings>) {
+    commands.insert_resource(TerrainGeneratorArc(Arc::new(TerrainGenerator::new(
+        server_settings.seed,
+    ))));
 }
 
 #[derive(Resource, Deref)]
@@ -155,8 +158,6 @@ impl TerrainGenerator {
         }
     }
 
-    // TODO: Create some actual terrain. I only set up skeleton. There's an unfinished 3d noise
-    // (for overhangs) attempt too.
     // TODO: Use X direction of noise as Y direction, this way all access of the vector is
     // sequential, hopefully removing cache misses.
     //
@@ -178,12 +179,12 @@ impl TerrainGenerator {
     //
     /// Generates all blocks for the chunk at the given position.
     /// Blocks that are generated outside of the chunk are also included (trees etc.)
-    /// Return type (uniform, blocks), uniform if all blocks of same type.
+    /// Return type (uniform, blocks), uniform if all blocks are of the same type.
     pub async fn generate_chunk(&self, chunk_position: IVec3) -> (bool, HashMap<IVec3, BlockId>) {
         let mut blocks: HashMap<IVec3, BlockId> = HashMap::with_capacity(CHUNK_SIZE.pow(3));
 
-        // TODO: It should be unique to each chunk but I don't know how. 
-        // Seed used for feature placing, intended to be unique to each chunk column, but it's not.
+        // TODO: It should be unique to each chunk but I don't know how.
+        // Seed used for feature placing, unique to each chunk column.
         let seed = self
             .seed
             .overflowing_add((chunk_position.x as u64).overflowing_mul(i32::MAX as u64).0)

@@ -70,9 +70,6 @@ impl NetworkClient {
         }
     }
 
-    // TODO: A server should be able to transfer the client to a different server. It should be
-    // seamless, but it could have to download assets from the new server. If it has to download
-    // new assets it should be sent to the menu, but if not it should just look like a teleport.
     /// Connect to a remote server
     pub fn connect(
         &mut self,
@@ -121,7 +118,7 @@ impl NetworkClient {
     }
 
     /// Initiate a disconnect, it will not disconnect before the next update cycle.
-    /// The message is shown to the player in-game.
+    /// The message is shown to the player.
     #[track_caller]
     pub fn disconnect<T: AsRef<str>>(&self, message: T) {
         // Log all disconnects that provide a message as errors (even though some aren't)

@@ -35,3 +35,12 @@ pub struct LeftClick;
 /// Send a right click to the server.
 #[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone)]
 pub struct RightClick;
+
+/// A chat message, sent by either the client or the server.
+#[derive(NetworkMessage, ClientBound, ServerBound, Serialize, Deserialize, Clone, Debug)]
+pub struct ChatMessage {
+    /// Name of user which sent message.
+    pub username: String,
+    /// Content of the message.
+    pub message: String,
+}

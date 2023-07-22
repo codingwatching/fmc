@@ -42,7 +42,11 @@ impl Plugin for MovementPlugin {
         app.add_systems(Update, toggle_flight.run_if(in_state(GameState::Playing)))
             .add_systems(
                 FixedUpdate,
-                (change_player_acceleration, simulate_player_physics, swimming)
+                (
+                    change_player_acceleration,
+                    simulate_player_physics,
+                    swimming,
+                )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             )
@@ -403,8 +407,7 @@ fn swimming(
                 };
 
                 let distance = player_aabb.center - block_aabb.center;
-                let overlap =
-                    player_aabb.half_extents + block_aabb.half_extents - distance.abs();
+                let overlap = player_aabb.half_extents + block_aabb.half_extents - distance.abs();
 
                 if overlap.cmpgt(Vec3A::ZERO).all() {
                     collisions.push(block_id);

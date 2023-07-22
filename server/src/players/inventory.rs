@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::{PlayerEquipment, PlayerEquippedItem, PlayerInventoryCraftingTable, PlayerName};
+use super::{PlayerEquipment, PlayerEquippedItem, PlayerInventoryCraftingTable, PlayerMarker};
 
 pub struct InventoryPlugin;
 impl Plugin for InventoryPlugin {
@@ -21,7 +21,7 @@ impl Plugin for InventoryPlugin {
                 equip_item,
                 insert_held_item_component,
                 update_inventory_interface,
-                send_initial_inventory_interface,
+                show_hotbar,
             ),
         );
     }
@@ -334,10 +334,9 @@ impl PlayerInventoryInterface<'_> {
     }
 }
 
-// Add an `HeldItemStack` to every player
 fn insert_held_item_component(
     mut commands: Commands,
-    player_query: Query<Entity, Added<ConnectionId>>,
+    player_query: Query<Entity, Added<PlayerMarker>>,
 ) {
     for player_entity in player_query.iter() {
         commands
@@ -346,27 +345,14 @@ fn insert_held_item_component(
     }
 }
 
-// TODO: This would have to be done for all interfaces, which is a pain. Maybe the client should
-// instead send a general READY signal, and then we add all the player components and change
-// detection does the rest.
-//
-// Send initial inventory interface content to players when they connect.
-fn send_initial_inventory_interface(
+fn show_hotbar(
     net: Res<NetworkServer>,
     players: Res<Players>,
-    mut inventory_query: Query<&mut ItemStorage, With<PlayerName>>,
-    mut interface_update_requests: EventReader<
-        NetworkData<messages::InitialInterfaceUpdateRequest>,
-    >,
+    mut events: EventReader<NetworkData<messages::ClientFinishedLoading>>,
 ) {
-    for request in interface_update_requests.iter() {
-        // Trigger change detection
-        inventory_query
-            .get_mut(players.get(&request.source))
-            .unwrap()
-            .into_inner();
+    for event in events.iter() {
         net.send_one(
-            request.source,
+            event.source,
             messages::InterfaceOpen {
                 name: "hotbar".to_owned(),
             },
@@ -401,8 +387,8 @@ fn update_inventory_interface(
 ) {
     // XXX: It's important that this happens in the same system as place/take events. This way when
     // we get a take/place event from the client we only respond with an interface update if the
-    // action it took was illegal. If the action is legal it will not trigger change detection, and
-    // thus this loop will not send the interface update.
+    // action it took was illegal. If it is legal it will not trigger change detection, and thus
+    // won't send an interface update.
     for (mut changed_inventory, mut equipment, mut crafting_table, connection_id) in
         inventory_query.p1().iter_mut()
     {

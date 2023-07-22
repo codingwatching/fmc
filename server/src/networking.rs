@@ -1,18 +1,13 @@
 use std::net::SocketAddr;
 
-use bevy::{math::DVec3, prelude::*};
-use fmc_networking::{messages, NetworkServer, ServerNetworkEvent};
+use bevy::prelude::*;
+use fmc_networking::{messages, NetworkData, NetworkServer, ServerNetworkEvent};
 
 use crate::{
-    bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
     database::DatabaseArc,
     players::{PlayerBundle, PlayerName, PlayerRespawnEvent, Players},
-    world::{
-        blocks::Blocks,
-        items::Items,
-        models::{Model, ModelBundle, ModelVisibility, Models},
-        world_map::chunk_manager::ChunkSubscriptions,
-    },
+    settings::ServerSettings,
+    world::{blocks::Blocks, items::Items, models::Models},
 };
 
 pub struct ServerPlugin;
@@ -20,23 +15,32 @@ pub struct ServerPlugin;
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(fmc_networking::ServerPlugin)
-            .add_systems(Startup, server_setup)
-            // Postupdate so that no connection is removed from the Players struct mid execution,
-            // while there still are packets to be handled from the connection.
-            .add_systems(PreUpdate, handle_network_events);
+            .add_systems(PostStartup, server_setup)
+            // Postupdate to ensure all packets from disconnected clients have been handled before
+            // the connection is removed.
+            .add_systems(PostUpdate, handle_network_events);
     }
 }
 
-fn server_setup(mut net: ResMut<NetworkServer>) {
+fn server_setup(
+    mut commands: Commands,
+    mut net: ResMut<NetworkServer>,
+    assets_hash: Res<crate::assets::AssetArchiveHash>,
+    models: Res<Models>,
+    items: Res<Items>,
+    server_settings: Res<ServerSettings>,
+) {
     let socket_address: SocketAddr = "127.0.0.1:42069".parse().unwrap();
 
-    match net.listen(socket_address) {
-        Ok(_) => (),
-        Err(err) => {
-            error!("Failed to start listening for network connections: {}", err);
-            panic!();
-        }
-    }
+    net.listen(socket_address);
+
+    commands.insert_resource(messages::ServerConfig {
+        assets_hash: assets_hash.hash.clone(),
+        block_ids: Blocks::get().filenames(),
+        model_ids: models.clone_ids(),
+        item_ids: items.clone_ids(),
+        render_distance: server_settings.render_distance,
+    });
 
     info!("Started listening for new connections!");
 }
@@ -44,91 +48,35 @@ fn server_setup(mut net: ResMut<NetworkServer>) {
 fn handle_network_events(
     mut commands: Commands,
     net: Res<NetworkServer>,
-    database: Res<DatabaseArc>,
-    assets_hash: Res<crate::assets::AssetArchiveHash>,
-    models: Res<Models>,
-    items: Res<Items>,
+    server_config: Res<messages::ServerConfig>,
     mut players: ResMut<Players>,
-    mut chunk_subsciptions: ResMut<ChunkSubscriptions>,
     mut network_events: EventReader<ServerNetworkEvent>,
-    mut respawn_events: EventWriter<PlayerRespawnEvent>,
     player_query: Query<&PlayerName>,
 ) {
     for event in network_events.iter() {
         match event {
-            ServerNetworkEvent::Connected(connection_id, username) => {
+            ServerNetworkEvent::Connected {
+                connection,
+                username,
+            } => {
+                net.send_one(*connection, server_config.clone());
+
+                // The PlayerBundle is inserted on Added<PlayerName>(next tick), but is
+                // guaranteed to be available by the time the first packet is processed.
+                let entity = commands
+                    .spawn((*connection, PlayerName(username.clone())))
+                    .id();
+                players.insert(*connection, entity);
+
                 info!("{} joined the server.", username);
 
                 net.broadcast(messages::ChatMessage {
                     username: String::from("SERVER"),
                     message: format!("{} joined the server.", username),
                 });
-
-                let config = messages::ServerConfig {
-                    assets_hash: assets_hash.hash.clone(),
-                    block_ids: Blocks::get().filenames(),
-                    model_ids: models.clone_ids(),
-                    item_ids: items.clone_ids(),
-                };
-                net.send_one(*connection_id, config);
-
-                let mut entity_commands = commands.spawn_empty();
-
-                let player_bundle = if let Some(saved_player) = database.load_player(username) {
-                    let bundle = PlayerBundle::from(saved_player);
-                    net.send_one(
-                        *connection_id,
-                        messages::PlayerPosition {
-                            position: bundle.transform.translation,
-                        },
-                    );
-                    bundle
-                } else {
-                    // Move new players to spawn
-                    respawn_events.send(PlayerRespawnEvent(entity_commands.id()));
-                    PlayerBundle::new()
-                };
-
-                net.send_one(
-                    *connection_id,
-                    messages::PlayerConfiguration {
-                        aabb_dimensions: player_bundle.aabb.half_extents.as_vec3() * 2.0,
-                        camera_position: player_bundle.camera.translation.as_vec3(),
-                    },
-                );
-
-                net.send_one(
-                    *connection_id,
-                    messages::PlayerCameraRotation {
-                        rotation: player_bundle.camera.rotation.as_f32(),
-                    },
-                );
-
-                let entity = entity_commands
-                    .with_children(|parent| {
-                        parent.spawn(ModelBundle {
-                            model: Model::new(models.get_id("player")),
-                            visibility: ModelVisibility::new(true),
-                            global_transform: F64GlobalTransform::default(),
-                            transform: F64Transform {
-                                //translation: player_bundle.camera.translation - player_bundle.camera.translation.y,
-                                translation: DVec3::Z * 0.3 + DVec3::X * 0.3,
-                                rotation: player_bundle.camera.rotation,
-                                ..default()
-                            },
-                        });
-                    })
-                    .insert(player_bundle)
-                    .insert(*connection_id)
-                    .insert(PlayerName(username.clone()))
-                    .id();
-
-                players.insert(*connection_id, entity);
             }
-            ServerNetworkEvent::Disconnected(conn_id) => {
-                let entity = players.remove(conn_id).unwrap();
-                chunk_subsciptions.remove_subscriber(conn_id);
-
+            ServerNetworkEvent::Disconnected(connection) => {
+                let entity = players.remove(connection).unwrap();
                 let username = player_query.get(entity).unwrap();
 
                 net.broadcast(messages::ChatMessage {
@@ -137,8 +85,8 @@ fn handle_network_events(
                 });
 
                 info!(
-                    "Player disconnected, {}, username: {}",
-                    conn_id,
+                    "Player disconnected, id: {}, username: {}",
+                    connection,
                     username.as_str()
                 );
 

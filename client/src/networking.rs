@@ -1,23 +1,19 @@
-use std::net::{SocketAddr, ToSocketAddrs};
-
 use bevy::prelude::*;
-use fmc_networking::{messages, ClientNetworkEvent, NetworkClient, NetworkData, NetworkSettings};
+use fmc_networking::{messages, ClientNetworkEvent, NetworkClient, NetworkData};
 
-use crate::{assets::AssetState, game_state::GameState};
+use crate::game_state::GameState;
 
 pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(fmc_networking::ClientPlugin)
-            .add_systems(Update, (handle_network_events, handle_server_config));
+            .add_systems(Update, (handle_connection, handle_server_config));
     }
 }
 
-// TODO: Disconnect and error message should be shown to player.
-// TODO: How the state ends up ordered is probably wrong and will lead to panics. I want a simpler
-// way to handle it.
-fn handle_network_events(
+// TODO: Disconnect and error message should be shown to player through the ui.
+fn handle_connection(
     net: Res<NetworkClient>,
     mut network_events: EventReader<ClientNetworkEvent>,
     mut game_state: ResMut<NextState<GameState>>,
@@ -51,7 +47,3 @@ fn handle_server_config(
         commands.insert_resource(server_config);
     }
 }
-
-//pub struct Server {
-//    pub config: messages::ServerConfig,
-//}

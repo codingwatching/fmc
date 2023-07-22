@@ -166,6 +166,7 @@ fn fragment(
 
     output_color = alpha_discard(material, output_color);
 
+    // This is water depth, hard to figure out, don't know if useless, no delete.
     //if ((material.flags & STANDARD_MATERIAL_FLAGS_IS_WATER) != 0u) {
     //    let z_depth_ndc = prepass_depth(frag_coord, sample_index);
     //    let z_depth_buffer_view = view.projection[3][2] / z_depth_ndc;
@@ -174,6 +175,7 @@ fn fragment(
     //    let alpha = min(exp(-diff * 0.08 - 1.0), 1.0);
     //    output_color.a = alpha;
     //}
+
 //#ifdef VERTEX_COLORS
 //    output_color = output_color * color;
 //#endif
@@ -264,7 +266,7 @@ fn fragment(
 //    }
 //
 #ifdef TONEMAP_IN_SHADER
-    output_color = tone_mapping(output_color);
+    //output_color = tone_mapping(output_color);
 #ifdef DEBAND_DITHER
     var output_rgb = output_color.rgb;
     output_rgb = powsafe(output_rgb, 1.0 / 2.2);

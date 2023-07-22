@@ -15,11 +15,13 @@ mod settings;
 mod utils;
 mod world;
 
-// TODO: Sepeprate out setup into functions. Currently if stuff fails the errors mix with the bevy
-// errors and it's hard to parse for the human.
 fn main() {
-    // TODO: The plugins are ordered, some plugins rely on others. Which are relied on is
-    // opaque. I want a way to make the dependecy tree explicit.
+    // TODO: Some resources are inserted at app build, and the rest in the startup schedules. What
+    // depends on what is completely opaque. It would be nice to have it be explicit, but I don't
+    // want to dirty the namespaces with loading functions to congregate them all in the same spot.
+    // Maybe it's possible with systemsets, but I don't know how to flush commands with them.
+    // Ideally I would want to just cram everything into Startup and mark each loading function
+    // with a .run_if(this_or_that_resource.exists()) and have them magically ordered by bevy.
     App::new()
         .insert_resource(ScheduleRunnerSettings {
             run_mode: RunMode::Loop {
@@ -27,7 +29,6 @@ fn main() {
                 wait: Some(std::time::Duration::from_millis(16)),
             },
         })
-        // Bevy specific
         .add_plugins(MinimalPlugins)
         .add_plugin(bevy::hierarchy::HierarchyPlugin::default())
         .add_plugin(bevy_extensions::f64_transform::TransformPlugin)
@@ -36,7 +37,7 @@ fn main() {
         //.add_plugin(LogDiagnosticsPlugin::default())
         //.add_plugin(FrameTimeDiagnosticsPlugin::default())
         // Server specific
-        .insert_resource(settings::ServerSettings::read())
+        .insert_resource(settings::ServerSettings::load())
         .add_plugin(assets::AssetPlugin)
         .add_plugin(database::DatabasePlugin)
         .add_plugin(networking::ServerPlugin)

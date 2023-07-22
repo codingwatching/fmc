@@ -3,15 +3,12 @@ use std::{
     io::{BufReader, Read},
 };
 
-use bevy::{
-    math::{DVec3, Vec3A},
-    prelude::*,
-};
+use bevy::{math::DVec3, prelude::*};
 use fmc_networking::{messages, NetworkServer};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    database::{Database, DatabaseArc},
+    database::DatabaseArc,
     physics::shapes::Aabb,
     utils,
     world::world_map::chunk_manager::{ChunkSubscriptionEvent, ChunkSubscriptions},
@@ -26,10 +23,8 @@ pub type ModelId = u32;
 pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
     fn build(&self, app: &mut App) {
-        let database = app.world.resource::<DatabaseArc>();
-
-        app.insert_resource(Models::load(database.as_ref()))
-            .insert_resource(ModelMap::default())
+        app.insert_resource(ModelMap::default())
+            .add_systems(PreStartup, load_models)
             .add_systems(
                 Update,
                 (
@@ -43,6 +38,41 @@ impl Plugin for ModelPlugin {
             // removed up to CoreStage::Last.
             .add_systems(PostUpdate, remove_models);
     }
+}
+
+fn load_models(mut commands: Commands, database: Res<DatabaseArc>) {
+    let ids = database.load_model_ids();
+    let mut configs = HashMap::with_capacity(ids.len());
+
+    for (filename, id) in ids.iter() {
+        let file_path = MODEL_PATH.to_owned() + filename + ".glb";
+
+        let mut reader = match std::fs::File::open(&file_path) {
+            Ok(f) => BufReader::new(f),
+            Err(e) => panic!("Failed to open model at: {}\nError: {}", &file_path, e),
+        };
+
+        // Skip magic and header
+        reader.seek_relative(12).unwrap();
+
+        // Length of json
+        let mut buf = [0u8; 4];
+        reader.read_exact(&mut buf).unwrap();
+        let length = u32::from_le_bytes(buf);
+
+        // TODO: It will just fail here if it isn't correct. Should do a complete validation of
+        // the assets so that the clients won't encounter malformed assets.
+        let mut buf = vec![0u8; length as usize + 4];
+        reader.read_exact(&mut buf).unwrap();
+        // Skip 'JSON' prefix.
+        let gltf: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
+
+        let model_config = ModelConfig::from(gltf);
+
+        configs.insert(*id, model_config);
+    }
+
+    commands.insert_resource(Models { ids, configs });
 }
 
 #[derive(Bundle)]
@@ -78,12 +108,6 @@ pub struct ModelVisibility {
 impl Default for ModelVisibility {
     fn default() -> Self {
         Self { is_visible: true }
-    }
-}
-
-impl ModelVisibility {
-    pub fn new(is_visible: bool) -> Self {
-        Self { is_visible }
     }
 }
 
@@ -128,41 +152,6 @@ pub struct Models {
 }
 
 impl Models {
-    pub fn load(database: &Database) -> Self {
-        let ids = database.load_model_ids();
-        let mut configs = HashMap::with_capacity(ids.len());
-
-        for (filename, id) in ids.iter() {
-            let file_path = MODEL_PATH.to_owned() + filename + ".glb";
-
-            let mut reader = match std::fs::File::open(&file_path) {
-                Ok(f) => BufReader::new(f),
-                Err(e) => panic!("Failed to open model at: {}\nError: {}", &file_path, e),
-            };
-
-            // Skip magic and header
-            reader.seek_relative(12).unwrap();
-
-            // Length of json
-            let mut buf = [0u8; 4];
-            reader.read_exact(&mut buf).unwrap();
-            let length = u32::from_le_bytes(buf);
-
-            // TODO: It will just fail here if it isn't correct. Should do a complete validation of
-            // the assets so that the clients won't encounter malformed assets.
-            let mut buf = vec![0u8; length as usize + 4];
-            reader.read_exact(&mut buf).unwrap();
-            // Skip prefix of 4 characters that spell 'JSON'.
-            let gltf: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
-
-            let model_config = ModelConfig::from(gltf);
-
-            configs.insert(*id, model_config);
-        }
-
-        return Self { ids, configs };
-    }
-
     pub fn get(&self, id: &u32) -> &ModelConfig {
         self.configs.get(id).unwrap()
     }

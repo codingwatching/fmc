@@ -66,7 +66,10 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     let light = pow(0.82, f32(15u - max(sunlight, artificial_light)));
 
     if sunlight > artificial_light {
-        output_color = vec4(output_color.rgb * clamp(light * lights.ambient_color.r, 0.05, 1.0), output_color.a);
+        // The object is made both a little brighter at no brightness as well as full brightness to
+        // make it contrast better against the terrain.
+        // TODO: This should probably be done for the artifical light too, but I haven't implemented it yet.
+        output_color = vec4(output_color.rgb * clamp(light * lights.ambient_color.a, 0.04, 1.0) * 1.20, output_color.a);
     } else {
         output_color = vec4(output_color.rgb * light, output_color.a);
     }

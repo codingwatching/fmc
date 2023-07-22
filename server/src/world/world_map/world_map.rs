@@ -10,14 +10,14 @@ use crate::{
     utils,
     world::{
         blocks::{BlockFace, Blocks, Friction},
-        world_map::chunk::{Chunk, ChunkType},
+        world_map::chunk::{Chunk, ChunkStatus},
     },
 };
 use fmc_networking::BlockId;
 
 #[derive(Default, Resource)]
 pub struct WorldMap {
-    pub chunks: std::collections::HashMap<IVec3, Chunk>,
+    chunks: std::collections::HashMap<IVec3, Chunk>,
 }
 
 impl WorldMap {
@@ -37,14 +37,17 @@ impl WorldMap {
         self.chunks.insert(pos, value);
     }
 
+    pub fn remove_chunk(&mut self, pos: &IVec3) {
+        self.chunks.remove(pos);
+    }
+
     pub fn get_block(&self, position: IVec3) -> Option<BlockId> {
         let (chunk_pos, index) = utils::world_position_to_chunk_position_and_block_index(position);
 
         if let Some(chunk) = self.get_chunk(&chunk_pos) {
-            match chunk.chunk_type {
-                ChunkType::Normal => Some(chunk[index]),
-                ChunkType::Partial => None,
-                ChunkType::Uniform(block_id) => Some(block_id),
+            match chunk.status {
+                ChunkStatus::Finished => Some(chunk[index]),
+                _ => None,
             }
         } else {
             return None;
@@ -55,7 +58,7 @@ impl WorldMap {
         let (chunk_pos, index) = utils::world_position_to_chunk_position_and_block_index(position);
 
         if let Some(chunk) = self.get_chunk(&chunk_pos) {
-            return chunk.block_state.get(&index).copied();
+            return chunk.get_block_state(&index);
         } else {
             return None;
         }

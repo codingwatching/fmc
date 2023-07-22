@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use bevy::{prelude::*, tasks::IoTaskPool};
 
-use fmc_networking::{messages, BlockId, NetworkServer};
+use fmc_networking::{messages, BlockId, ConnectionId, NetworkServer};
 
 pub mod chunk;
 pub mod chunk_manager;
@@ -17,7 +17,7 @@ use crate::{
 };
 
 use self::{
-    chunk::{Chunk, ChunkType},
+    chunk::{Chunk, ChunkStatus},
     chunk_manager::ChunkSubscriptions,
 };
 
@@ -35,9 +35,6 @@ impl Plugin for WorldMapPlugin {
     }
 }
 
-// TODO: Unfortunate naming, a BlockUpdate happens, and this is the response that is sent out
-// widely, but they kinda sound like the same thing.
-//
 // Some types of block need to know whenever a block adjacent to it changes (for example water
 // needs to know when it should spread), instead of sending out the position of the changed block,
 // this struct is constructed to save on lookup time as each system that reacts to this would need
@@ -121,6 +118,7 @@ fn handle_block_updates(
     for event in block_events.iter() {
         match event {
             BlockUpdate::Change(position, block_id, block_state) => {
+                // TODO: Collect all blocks and spawn them as one task.
                 task_pool
                     .spawn(save_block(
                         database.clone(),
@@ -139,24 +137,13 @@ fn handle_block_updates(
                     panic!("Tried to change block in non-existing chunk");
                 };
 
-                match chunk.chunk_type {
-                    ChunkType::Uniform(uniform_block_id) => {
-                        let mut new_chunk = Chunk::new(uniform_block_id);
+                if chunk.is_uniform() {
+                    chunk.convert_uniform_to_regular();
+                }
 
-                        new_chunk[block_index] = *block_id;
-                        if let Some(state) = block_state {
-                            new_chunk.block_state.insert(block_index, *state);
-                        }
-
-                        world_map.insert(chunk_pos, new_chunk);
-                    }
-                    ChunkType::Normal => {
-                        chunk[block_index] = *block_id;
-                        if let Some(state) = block_state {
-                            chunk.block_state.insert(block_index, *state);
-                        }
-                    }
-                    ChunkType::Partial => unreachable!(),
+                chunk[block_index] = *block_id;
+                if let Some(state) = block_state {
+                    chunk.set_block_state(block_index, *state);
                 }
 
                 if let Some(subscribers) = chunk_subsriptions.get_subscribers(&chunk_pos) {

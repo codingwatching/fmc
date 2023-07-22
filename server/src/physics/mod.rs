@@ -57,7 +57,8 @@ fn simulate_aabb_physics(
             DVec3::new(velocity.x, 0.0, 0.0),
             DVec3::new(0.0, 0.0, velocity.z),
         ] {
-            let pos_after_move = transform.translation + directional_velocity * time.delta_seconds_f64();
+            let pos_after_move =
+                transform.translation + directional_velocity * time.delta_seconds_f64();
 
             let aabb = Aabb {
                 center: aabb.center + pos_after_move,
@@ -131,7 +132,7 @@ fn simulate_aabb_physics(
                 }
             }
 
-        transform.translation = pos_after_move + move_back;
+            transform.translation = pos_after_move + move_back;
         }
     }
 }
