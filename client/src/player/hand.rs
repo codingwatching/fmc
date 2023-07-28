@@ -151,7 +151,11 @@ fn equip_item(
             let mut max: f32 = 0.0;
             for primitive in gltf_mesh.primitives.iter() {
                 let mesh = meshes.get(&primitive.mesh).unwrap();
-                let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else {continue};
+                let Some(VertexAttributeValues::Float32x3(vertices)) =
+                    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+                else {
+                    continue;
+                };
                 for vertex in vertices.iter() {
                     min = min.min(vertex[1]);
                     max = max.max(vertex[1]);
@@ -233,7 +237,9 @@ fn play_use_animation(
     mut hand_animation_query: Query<&mut AnimationPlayer, With<HandMarker>>,
     equipped_item_query: Query<&ItemStack, With<EquippedItem>>,
 ) {
-    let Ok(equipped_item) = equipped_item_query.get_single() else {return};
+    let Ok(equipped_item) = equipped_item_query.get_single() else {
+        return;
+    };
 
     // Only play if not in an interface or settings menu.
     if window.single().cursor.visible {

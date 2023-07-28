@@ -132,11 +132,10 @@ pub fn load_blocks(
             BlockConfig::Cube {
                 name,
                 faces,
-                cull,
-                cull_only_if_same_block,
                 quads,
                 friction,
                 material,
+                only_cull_self,
                 interactable,
                 light_attenuation,
             } => {
@@ -151,15 +150,6 @@ pub fn load_blocks(
                 };
 
                 let material = materials.get(&material_handle).unwrap();
-
-                let transparent = match material.alpha_mode {
-                    AlphaMode::Blend
-                    | AlphaMode::Add
-                    | AlphaMode::Multiply
-                    | AlphaMode::Mask(_)
-                    | AlphaMode::Premultiplied => true,
-                    AlphaMode::Opaque => false,
-                };
 
                 let mut mesh_primitives = Vec::new();
 
@@ -191,8 +181,7 @@ pub fn load_blocks(
                             vertices: FACE_VERTICES[i],
                             normals: [FACE_NORMALS[i], FACE_NORMALS[i]],
                             texture_array_id,
-                            cull_face: if cull {
-                                Some(match i {
+                            cull_face: Some(match i {
                                     0 => BlockFace::Bottom,
                                     1 => BlockFace::Back,
                                     2 => BlockFace::Right,
@@ -200,10 +189,7 @@ pub fn load_blocks(
                                     4 => BlockFace::Front,
                                     5 => BlockFace::Top,
                                     _ => unreachable!(),
-                                })
-                            } else {
-                                None
-                            },
+                                }),
                             light_face: match i {
                                 0 => BlockFace::Top,
                                 1 => BlockFace::Front,
@@ -285,18 +271,27 @@ pub fn load_blocks(
                     }
                 }
 
+                let cull_method = if only_cull_self {
+                    CullMethod::OnlySelf
+                } else {
+                    match material.alpha_mode {
+                        AlphaMode::Opaque => CullMethod::All,
+                        AlphaMode::Mask(_) => CullMethod::None,
+                        _ => CullMethod::TransparentOnly
+                    }
+                };
+
                 Block::Cube(Cube {
                     name,
                     material_handle,
                     quads: mesh_primitives,
                     friction,
-                    cull,
-                    cull_only_if_same_block,
                     interactable,
-                    transparent,
+                    cull_method,
                     light_attenuation: light_attenuation.unwrap_or(15).min(15),
                 })
             }
+
             BlockConfig::Model {
                 name,
                 center_model,
@@ -418,17 +413,11 @@ pub struct Cube {
     pub quads: Vec<QuadPrimitive>,
     /// Friction value for player contact.
     pub friction: Friction,
-    /// If adjacent blocks should cull the side facing this block.
-    pub cull: bool,
-    // This is useful for things like water, where you want to cull all water blocks adjacent, but
-    // nothing else.
-    /// If only blocks of this type, facing this block should have their face culled.
-    pub cull_only_if_same_block: bool,
     /// If when the player uses their equipped item on this block it should count as an
     /// interaction, or it should count as trying to place its associated block.
     pub interactable: bool,
-    /// Marker for if the block is transparent, read from the block's material
-    pub transparent: bool,
+    /// The alpha mode of the blocks associated material, used to determine face culling.
+    cull_method: CullMethod,
     /// If transparent, should this decrease the vertical sunlight level.
     pub light_attenuation: u8,
 }
@@ -467,31 +456,40 @@ pub enum Block {
 }
 
 impl Block {
-    /// Returns if this block should cull the opposing face of the one provided.
-    pub fn culls_face(&self, side: BlockFace) -> bool {
+    pub fn culls(&self, other: &Block, face: BlockFace) -> bool {
         match self {
-            Block::Cube(cube) => cube.cull,
-            Block::Model(model) => match side {
-                BlockFace::Front => model.cull_faces.front,
-                BlockFace::Back => model.cull_faces.back,
-                BlockFace::Top => model.cull_faces.top,
-                BlockFace::Bottom => model.cull_faces.bottom,
-                BlockFace::Left => model.cull_faces.left,
-                BlockFace::Right => model.cull_faces.right,
-            },
-        }
-    }
-
-    pub fn only_cull_if_same(&self) -> bool {
-        match self {
-            Block::Cube(c) => c.cull_only_if_same_block,
-            Block::Model(_) => false,
+            Block::Cube(cube) => {
+                let Block::Cube(other_cube) = other else { unreachable!() };
+                match cube.cull_method {
+                    CullMethod::All => true,
+                    CullMethod::None => false,
+                    CullMethod::TransparentOnly => other_cube.cull_method == CullMethod::TransparentOnly,
+                    // TODO: This isn't correct on purpose, the blocks should be compared. Could be by id,
+                    // but I don't have that here. Comparing by name is expensive, don't want to.
+                    // Will fuck up if two different blocks are put together. Can use const* to
+                    // compare pointer?
+                    CullMethod::OnlySelf => other_cube.cull_method == CullMethod::OnlySelf
+                }
+            }
+            Block::Model(model) => {
+                match face {
+                    BlockFace::Front => model.cull_faces.front,
+                    BlockFace::Back => model.cull_faces.back,
+                    BlockFace::Top => model.cull_faces.top,
+                    BlockFace::Bottom => model.cull_faces.bottom,
+                    BlockFace::Left => model.cull_faces.left,
+                    BlockFace::Right => model.cull_faces.right,
+                }
+            }
         }
     }
 
     pub fn is_transparent(&self) -> bool {
         match self {
-            Block::Cube(c) => c.transparent,
+            Block::Cube(c) => match c.cull_method {
+                CullMethod::All => false,
+                _ => true
+            },
             Block::Model(_) => true,
         }
     }
@@ -529,17 +527,15 @@ enum BlockConfig {
         name: String,
         /// Convenient way to define a block as opposed to having to define it through the quads.
         faces: Option<TextureNames>,
-        /// If this block should cull all adjacent block faces.
-        cull: bool,
-        /// If *only* blocks of this type, facing this block should have their face culled.
-        #[serde(default)]
-        cull_only_if_same_block: bool,
         /// List of quads that make up a mesh.
         quads: Option<Vec<QuadPrimitiveJson>>,
         /// The friction or drag.
         friction: Friction,
         /// Material that should be used to render
         material: String,
+        /// If the block should only cull quads from blocks of the same type.
+        #[serde(default)]
+        only_cull_self: bool,
         /// If the block is interactable
         #[serde(default)]
         interactable: bool,
@@ -555,7 +551,7 @@ enum BlockConfig {
         side_model: Option<ModelConfig>,
         /// The friction or drag.
         friction: Friction,
-        /// Which faces the model should cull adjacent blocks.
+        /// Which faces the model can cull of adjacent blocks.
         #[serde(default)]
         cull_faces: ModelCullFaces,
         /// If the block is interactable
@@ -609,6 +605,25 @@ impl BlockConfig {
     }
 }
 
+// This is derived from the AlphaMode of the block's material as well as the BlockConfig::Cube
+// attribute 'cull_self'. 
+// 'All' is for AlphaMode::Opaque e.g. stone
+// 'OnlyTransparent' for all blending AlphaMode's e.g. water
+// 'None' is for AlphaMode::Mask e.g. leaves
+// 'OnlySelf' for AlphaMode::Mask with cull_self==true e.g. glass
+#[derive(Debug, PartialEq)]
+enum CullMethod {
+    // Cull all faces that are adjacent.
+    All,
+    // Cull only other transparent faces that are adjacent. This does not apply to mask
+    // transparency. Use for liquids.
+    TransparentOnly,
+    // Do not cull. Use for blocks with masked transparency, glass, leaves.
+    None,
+    // Cull only blocks of the same type.
+    OnlySelf,
+}
+
 #[derive(Debug)]
 pub struct QuadPrimitive {
     /// Vertices of the 4 corners of the square.
@@ -630,8 +645,6 @@ struct QuadPrimitiveJson {
     vertices: [[f32; 3]; 4],
     texture: String,
     cull_face: Option<BlockFace>,
-    #[serde(default)]
-    only_cull_same: bool,
 }
 
 #[derive(Deserialize)]

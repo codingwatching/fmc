@@ -237,11 +237,6 @@ pub struct BlockMaterial {
     // TODO: Need a way to define the length of the animation too.
     /// Cycle through the n next textures in the texture array. Defaults to 1(no animation)
     pub animation_frames: u32,
-
-    // TODO: There's probably some good general way to specify this. You should be able to say how
-    // far into a "liquid" you can see, and a host of other stuff. But I barely understand.
-    // Hardcoded :)
-    pub is_water: bool,
 }
 
 // NOTE: These must match the bit flags in bevy_pbr/src/render/pbr_types.wgsl!
@@ -260,7 +255,6 @@ bitflags::bitflags! {
         const FLIP_NORMAL_MAP_Y          = (1 << 7);
         const FOG_ENABLED                = (1 << 8);
         const DEPTH_MAP                  = (1 << 9); // Used for parallax mapping
-        const IS_WATER                   = (1 << 10);
         const ALPHA_MODE_RESERVED_BITS   = (Self::ALPHA_MODE_MASK_BITS << Self::ALPHA_MODE_SHIFT_BITS); // ← Bitmask reserving bits for the `AlphaMode`
         const ALPHA_MODE_OPAQUE          = (0 << Self::ALPHA_MODE_SHIFT_BITS);                          // ← Values are just sequential values bitshifted into
         const ALPHA_MODE_MASK            = (1 << Self::ALPHA_MODE_SHIFT_BITS);                          //   the bitmask, and can range from 0 to 7.
@@ -404,9 +398,6 @@ impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
         }
         if self.fog_enabled {
             flags |= BlockMaterialFlags::FOG_ENABLED;
-        }
-        if self.is_water {
-            flags |= BlockMaterialFlags::IS_WATER;
         }
         let has_normal_map = self.normal_map_texture.is_some();
         if has_normal_map {

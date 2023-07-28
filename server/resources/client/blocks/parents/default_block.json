@@ -12,6 +12,5 @@
         }
     },
     "hardness": 1.0,
-    "cull": true,
     "interactable": false
 }

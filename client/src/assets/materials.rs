@@ -44,7 +44,6 @@ struct MaterialConfig {
     pub fog_enabled: bool,
     pub transparency: String,
     pub animation_frames: u32,
-    pub is_water: bool,
 }
 
 impl Default for MaterialConfig {
@@ -68,7 +67,6 @@ impl Default for MaterialConfig {
             fog_enabled: true,
             transparency: "opaque".to_owned(),
             animation_frames: 1,
-            is_water: false,
         }
     }
 }
@@ -149,6 +147,7 @@ pub fn load_materials(
             None => None,
         };
 
+        // TODO: Create separate enum that is serializable
         let alpha_mode = match config.transparency.as_str() {
             "opaque" => AlphaMode::Opaque,
             "blend" => AlphaMode::Blend,
@@ -191,7 +190,6 @@ pub fn load_materials(
                 depth_bias: 0.0,
                 texture_array: Some(block_textures.handle.clone()),
                 animation_frames: config.animation_frames,
-                is_water: config.is_water,
             };
             block_materials.add(material).clone_untyped()
         } else if config.r#type == "standard" {

@@ -9,6 +9,5 @@
         }
     },
     "transparency": "blend",
-    "animation_frames": 32,
-    "is_water": true
+    "animation_frames": 32
 }

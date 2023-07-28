@@ -7,6 +7,5 @@
     "friction": {
         "drag": [0.0, 0.0, 0.0]
     },
-    "cull": false,
     "drop": "torch"
 }

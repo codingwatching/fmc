@@ -228,13 +228,13 @@ impl MeshBuilder {
         //    [1.0, 0.0],
         //];
 
-        // TODO: This packing was premature.
         for i in 0..6 {
             //self.normals.push(quad.normal);
+            // TODO: This packing isn't followed right now.
             // Pack bits, from right to left:
             // 19 bits, texture index
-            // 3 bits, uv (can be reduced to 2)
-            // 8 bits, light (4 for sunlight, 4 for artificial)
+            // 3 bits, uv, 1 bit for if it should be diagonal, 2 for coordinate index
+            // 5 bits, light, 1 bit bool true if sunlight, 4 bits intensity
             // 3 bits, normals
             self.uvs
                 .push(quad.texture_array_id | (i << 19) | (light.0 as u32) << 22)
@@ -299,11 +299,7 @@ async fn build_mesh(
 
                                 let adjacent_block_config = &blocks[&adjacent_block_id];
 
-                                if adjacent_block_config.only_cull_if_same()
-                                    && block_id == adjacent_block_id
-                                {
-                                    continue;
-                                } else if adjacent_block_config.culls_face(cull_face) {
+                                if adjacent_block_config.culls(block_config, cull_face) {
                                     continue;
                                 }
                             }

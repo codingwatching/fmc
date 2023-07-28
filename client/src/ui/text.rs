@@ -91,7 +91,9 @@ fn edit_text_box(
     mut focused_text_box: Query<&mut Text, With<FocusedText>>,
     mut chars: EventReader<ReceivedCharacter>,
 ) {
-    let Ok(mut text) = focused_text_box.get_single_mut() else { return };
+    let Ok(mut text) = focused_text_box.get_single_mut() else {
+        return;
+    };
 
     // TODO: There is currently no way to read the keyboard input properly. Res<Input<Keycode>> has
     // no utility function for discerning if it is a valid char, you have to match the whole thing,

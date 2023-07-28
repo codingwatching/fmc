@@ -311,7 +311,9 @@ fn relight_chunks(
     let blocks = Blocks::get();
 
     for relight_event in relight_events.iter() {
-        let Some(chunk) = world_map.get_chunk(&relight_event.chunk_position) else { continue };
+        let Some(chunk) = world_map.get_chunk(&relight_event.chunk_position) else {
+            continue;
+        };
         let mut new_chunk = if chunk.is_uniform() {
             let block_config = match blocks.get_config(&chunk[0]) {
                 Some(c) => c,
@@ -626,8 +628,13 @@ fn propagate_light(
         // Because of the unordered execution we discard updates that don't have an associated
         // LightChunk (as they are guaranteed not part of a chunk), but keep updates where the
         // chunk has not been added yet (as that may happen after).
-        let Some(light_chunk) = light_map.chunks.get_mut(chunk_position) else { continue; };
-        let Some(chunk) = world_map.get_chunk(chunk_position) else { light_update_queues.insert(*chunk_position, updates); continue };
+        let Some(light_chunk) = light_map.chunks.get_mut(chunk_position) else {
+            continue;
+        };
+        let Some(chunk) = world_map.get_chunk(chunk_position) else {
+            light_update_queues.insert(*chunk_position, updates);
+            continue;
+        };
 
         if chunk.is_uniform() && blocks[&chunk[0]].light_attenuation() == 15 {
             // Ignore light updates sent into solid chunks, but trigger render.

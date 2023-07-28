@@ -5,8 +5,6 @@
     "friction": {
         "drag": [0.8, 0.5, 0.8] 
     },
-    "cull": false,
-    "cull_only_if_same_block": true,
     "light_attenuation": 1,
     "quads": [
         {
