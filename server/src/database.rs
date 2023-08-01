@@ -475,25 +475,30 @@ impl Database {
 
     /// Add new block ids to the database. The ids will be constant and cannot change.
     pub fn save_block_ids(&self) {
-        let mut block_names: Vec<String> = Vec::new();
+        fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
+            let mut files = Vec::new();
 
-        let directory = std::fs::read_dir(crate::world::blocks::BLOCK_CONFIG_PATH).expect(
-            "Could not read files from block configuration directory, make sure it is present.\n",
-        );
+            let directory = std::fs::read_dir(dir).expect(
+                "Could not read files from block configuration directory, make sure it is present.",
+            );
 
-        for dir_entry in directory {
-            let file_path = match dir_entry {
-                Ok(d) => d.path(),
-                Err(e) => panic!(
-                    "Failed to read the filename of a block config, Error: {}",
-                    e
-                ),
-            };
+            for entry in directory {
+                let file_path = entry.expect("Failed to read the filename of a block config").path();
 
-            if file_path.is_dir() {
-                continue;
+                if file_path.is_dir() {
+                    let sub_files = walk_dir(&file_path);
+                    files.extend(sub_files);
+                } else {
+                    files.push(file_path);
+                }
             }
 
+            files
+        }
+
+        let mut block_names: Vec<String> = Vec::new();
+
+        for file_path in walk_dir(&crate::world::blocks::BLOCK_CONFIG_PATH) {
             let file = std::fs::File::open(&file_path).unwrap();
             let config: serde_json::Value = match serde_json::from_reader(file) {
                 Ok(c) => c,
@@ -506,7 +511,8 @@ impl Database {
 
             let block_name = match config.get("name").and_then(|name| name.as_str()) {
                 Some(n) => n,
-                _ => continue,
+                // Blocks that don't have names are used as parent blocks and are not saved.
+                None => continue,
             };
 
             block_names.push(block_name.to_owned());

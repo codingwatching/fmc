@@ -3,6 +3,8 @@ use fmc_networking_derive::{ClientBound, NetworkMessage, ServerBound};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::BlockId;
+
 /// Sent by client to notify the server that it has processed all assets and is ready to be served.
 #[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone)]
 pub struct ClientFinishedLoading;
@@ -12,8 +14,8 @@ pub struct ClientFinishedLoading;
 pub struct ServerConfig {
     /// Hash of the assets the server wants used.
     pub assets_hash: Vec<u8>,
-    /// Vec of block filenames ordered by their id.
-    pub block_ids: Vec<String>,
+    /// Map from block name to id on the server.
+    pub block_ids: HashMap<String, BlockId>,
     /// Map from model name to id on the server.
     pub model_ids: HashMap<String, u32>,
     /// Map from item name to id on the server.

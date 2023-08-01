@@ -36,7 +36,7 @@ fn server_setup(
 
     commands.insert_resource(messages::ServerConfig {
         assets_hash: assets_hash.hash.clone(),
-        block_ids: Blocks::get().filenames(),
+        block_ids: Blocks::get().clone_ids(),
         model_ids: models.clone_ids(),
         item_ids: items.clone_ids(),
         render_distance: server_settings.render_distance,

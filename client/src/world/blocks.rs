@@ -106,17 +106,43 @@ pub fn load_blocks(
         return;
     }
 
-    let mut block_ids = HashMap::with_capacity(server_config.block_ids.len());
-    let mut blocks = Vec::with_capacity(server_config.block_ids.len());
+    let mut block_ids = server_config.block_ids.clone();
+    let mut maybe_blocks = Vec::new();
+    maybe_blocks.resize_with(block_ids.len(), Option::default);
 
-    let mut file_path = PathBuf::from(BLOCK_CONFIG_PATH);
-    file_path.push("temp");
+    // Recursively walk block configuration directory
+    fn walk_dir<T: AsRef<std::path::Path>>(dir: T) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+        let mut files = Vec::new();
 
-    for (id, filename) in server_config.block_ids.iter().enumerate() {
-        file_path.set_file_name(filename);
-        file_path.set_extension("json");
+        let directory = std::fs::read_dir(dir)?;
 
-        let block_config = match BlockConfig::from_file(&file_path) {
+        for entry in directory {
+            let file_path = entry?.path();
+
+            if file_path.is_dir() {
+                let sub_files = walk_dir(&file_path)?; 
+                files.extend(sub_files);
+            } else {
+                files.push(file_path);
+            }
+        }
+
+        Ok(files)
+    }
+
+    let files = match walk_dir(BLOCK_CONFIG_PATH) {
+        Ok(f) => f,
+        Err(e) => {
+            net.disconnect(&format!(
+                "Failed to read file paths from the block configuration directory.\nError: {}",
+                e
+            ));
+            return;
+        }
+    };
+
+    for file_path in files {
+        let block_config_json = match BlockConfig::read_as_json(&file_path) {
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
@@ -126,6 +152,23 @@ pub fn load_blocks(
                 ));
                 return;
             }
+        };
+
+        let block_config = if block_config_json.get("name").is_some() {
+            match serde_json::from_value(block_config_json) {
+                Ok(result) => result,
+                Err(e) => {
+                    net.disconnect(&format!(
+                        "Misconfigured resource pack, failed to read block config at {}\nError: {}",
+                        file_path.display(),
+                        e
+                    ));
+                    return;
+                }
+            }
+        } else {
+            // Blocks without names are parents and are therefore ignored
+            continue;
         };
 
         let block = match block_config {
@@ -182,14 +225,14 @@ pub fn load_blocks(
                             normals: [FACE_NORMALS[i], FACE_NORMALS[i]],
                             texture_array_id,
                             cull_face: Some(match i {
-                                    0 => BlockFace::Bottom,
-                                    1 => BlockFace::Back,
-                                    2 => BlockFace::Right,
-                                    3 => BlockFace::Left,
-                                    4 => BlockFace::Front,
-                                    5 => BlockFace::Top,
-                                    _ => unreachable!(),
-                                }),
+                                0 => BlockFace::Bottom,
+                                1 => BlockFace::Back,
+                                2 => BlockFace::Right,
+                                3 => BlockFace::Left,
+                                4 => BlockFace::Front,
+                                5 => BlockFace::Top,
+                                _ => unreachable!(),
+                            }),
                             light_face: match i {
                                 0 => BlockFace::Top,
                                 1 => BlockFace::Front,
@@ -199,6 +242,8 @@ pub fn load_blocks(
                                 5 => BlockFace::Bottom,
                                 _ => unreachable!(),
                             },
+                            rotate_texture: false,
+
                         };
 
                         mesh_primitives.push(square);
@@ -267,6 +312,7 @@ pub fn load_blocks(
                             texture_array_id,
                             cull_face: quad.cull_face,
                             light_face,
+                            rotate_texture: quad.rotate_texture,
                         });
                     }
                 }
@@ -277,7 +323,7 @@ pub fn load_blocks(
                     match material.alpha_mode {
                         AlphaMode::Opaque => CullMethod::All,
                         AlphaMode::Mask(_) => CullMethod::None,
-                        _ => CullMethod::TransparentOnly
+                        _ => CullMethod::TransparentOnly,
                     }
                 };
 
@@ -349,13 +395,26 @@ pub fn load_blocks(
             }
         };
 
-        block_ids.insert(block.name().to_owned(), id as BlockId);
-        blocks.push(block);
+        if let Some(block_id) = block_ids.remove(block.name()) {
+            maybe_blocks[block_id as usize] = Some(block);
+        }
+    }
+
+    if block_ids.len() > 0 {
+        net.disconnect(format!(
+            "Misconfigured resource pack, missing blocks: {:?}",
+            block_ids.keys().collect::<Vec<_>>()
+        ));
     }
 
     unsafe {
         BLOCKS.take();
-        BLOCKS.set(Blocks { blocks, block_ids }).unwrap();
+        BLOCKS
+            .set(Blocks {
+                blocks: maybe_blocks.into_iter().flatten().collect(),
+                block_ids: server_config.block_ids.clone(),
+            })
+            .unwrap();
     }
 }
 
@@ -459,28 +518,30 @@ impl Block {
     pub fn culls(&self, other: &Block, face: BlockFace) -> bool {
         match self {
             Block::Cube(cube) => {
-                let Block::Cube(other_cube) = other else { unreachable!() };
+                let Block::Cube(other_cube) = other else {
+                    unreachable!()
+                };
                 match cube.cull_method {
                     CullMethod::All => true,
                     CullMethod::None => false,
-                    CullMethod::TransparentOnly => other_cube.cull_method == CullMethod::TransparentOnly,
+                    CullMethod::TransparentOnly => {
+                        other_cube.cull_method == CullMethod::TransparentOnly
+                    }
                     // TODO: This isn't correct on purpose, the blocks should be compared. Could be by id,
                     // but I don't have that here. Comparing by name is expensive, don't want to.
                     // Will fuck up if two different blocks are put together. Can use const* to
                     // compare pointer?
-                    CullMethod::OnlySelf => other_cube.cull_method == CullMethod::OnlySelf
+                    CullMethod::OnlySelf => other_cube.cull_method == CullMethod::OnlySelf,
                 }
             }
-            Block::Model(model) => {
-                match face {
-                    BlockFace::Front => model.cull_faces.front,
-                    BlockFace::Back => model.cull_faces.back,
-                    BlockFace::Top => model.cull_faces.top,
-                    BlockFace::Bottom => model.cull_faces.bottom,
-                    BlockFace::Left => model.cull_faces.left,
-                    BlockFace::Right => model.cull_faces.right,
-                }
-            }
+            Block::Model(model) => match face {
+                BlockFace::Front => model.cull_faces.front,
+                BlockFace::Back => model.cull_faces.back,
+                BlockFace::Top => model.cull_faces.top,
+                BlockFace::Bottom => model.cull_faces.bottom,
+                BlockFace::Left => model.cull_faces.left,
+                BlockFace::Right => model.cull_faces.right,
+            },
         }
     }
 
@@ -488,7 +549,7 @@ impl Block {
         match self {
             Block::Cube(c) => match c.cull_method {
                 CullMethod::All => false,
-                _ => true
+                _ => true,
             },
             Block::Model(_) => true,
         }
@@ -561,13 +622,6 @@ enum BlockConfig {
 }
 
 impl BlockConfig {
-    fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
-        let config = Self::read_as_json(path)?;
-
-        return serde_json::from_value(config)
-            .map_err(|error| Box::new(error) as Box<dyn std::error::Error>);
-    }
-
     fn read_as_json(
         path: &std::path::Path,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -577,9 +631,7 @@ impl BlockConfig {
 
         // recursively read parent configs
         if let Some(parent) = config["parent"].as_str() {
-            let parent_path = std::path::Path::new(BLOCK_CONFIG_PATH)
-                .join("parents")
-                .join(parent);
+            let parent_path = std::path::Path::new(BLOCK_CONFIG_PATH).join(parent);
             let mut parent: serde_json::Value = match Self::read_as_json(&parent_path) {
                 Ok(c) => c,
                 Err(e) => {
@@ -606,7 +658,7 @@ impl BlockConfig {
 }
 
 // This is derived from the AlphaMode of the block's material as well as the BlockConfig::Cube
-// attribute 'cull_self'. 
+// attribute 'cull_self'.
 // 'All' is for AlphaMode::Opaque e.g. stone
 // 'OnlyTransparent' for all blending AlphaMode's e.g. water
 // 'None' is for AlphaMode::Mask e.g. leaves
@@ -638,6 +690,7 @@ pub struct QuadPrimitive {
     pub cull_face: Option<BlockFace>,
     /// Which blockface this quad will take it's lighting from.
     pub light_face: BlockFace,
+    pub rotate_texture: bool,
 }
 
 #[derive(Deserialize)]
@@ -645,6 +698,8 @@ struct QuadPrimitiveJson {
     vertices: [[f32; 3]; 4],
     texture: String,
     cull_face: Option<BlockFace>,
+    #[serde(default)]
+    rotate_texture: bool,
 }
 
 #[derive(Deserialize)]

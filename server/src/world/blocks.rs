@@ -51,35 +51,43 @@ impl Plugin for BlockPlugin {
 // Reads blocks from resources/client/blocks/ and resources/server/mods/*/blocks and loads them
 // Each block will have a permanent id assigned to it that will persist through restarts.
 fn load_blocks(database: Res<DatabaseArc>) {
+    fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
+        let mut files = Vec::new();
+
+        let directory = std::fs::read_dir(dir).expect(
+            "Could not read files from block configuration directory, make sure it is present",
+        );
+
+        for entry in directory {
+            let file_path = entry.expect("Failed to read the filenames of the block configs").path();
+
+            if file_path.is_dir() {
+                let sub_files = walk_dir(&file_path);
+                files.extend(sub_files);
+            } else {
+                files.push(file_path);
+            }
+        }
+
+        files
+    }
+
     let mut blocks = Blocks {
         blocks: Vec::new(),
         ids: database.load_block_ids(),
-        filenames: Vec::new(),
     };
 
-    let mut block_ids = blocks.ids.clone();
     let item_ids = database.load_item_ids();
-    let mut maybe_blocks = vec![None; block_ids.len()];
-    let mut filenames = vec![String::default(); block_ids.len()];
 
-    let directory = std::fs::read_dir(crate::world::blocks::BLOCK_CONFIG_PATH).expect(
-        "Could not read files from block configuration directory, make sure it is present.\n",
-    );
+    let mut block_ids = blocks.clone_ids();
+    let mut maybe_blocks = Vec::new();
+    maybe_blocks.resize_with(block_ids.len(), Option::default);
 
-    for dir_entry in directory {
-        let file_path = match dir_entry {
-            Ok(d) => d.path(),
-            Err(e) => panic!(
-                "Failed to read the filename of a block config, Error: {}",
-                e
-            ),
+    for file_path in walk_dir(&crate::world::blocks::BLOCK_CONFIG_PATH) {
+        let block_config_json = match BlockConfigJson::from_file(&file_path) {
+            Some(b) => b,
+            None => continue
         };
-
-        if file_path.is_dir() {
-            continue;
-        }
-
-        let block_config_json = BlockConfigJson::from_file(&file_path);
 
         let drop = match block_config_json.drop {
             Some(drop) => match BlockDrop::from(&drop, &item_ids) {
@@ -103,20 +111,17 @@ fn load_blocks(database: Res<DatabaseArc>) {
             };
 
             maybe_blocks[block_id as usize] = Some(Block::new(block_config));
-            filenames[block_id as usize] =
-                file_path.file_stem().unwrap().to_str().unwrap().to_owned();
         }
     }
 
     if block_ids.len() > 0 {
         panic!(
             "Misconfigured resource pack, missing blocks: {:?}",
-            block_ids.values().collect::<Vec<_>>()
+            block_ids.keys().collect::<Vec<_>>()
         );
     }
 
     blocks.blocks = maybe_blocks.into_iter().flatten().collect();
-    blocks.filenames = filenames;
 
     BLOCKS.set(blocks).ok();
 }
@@ -149,7 +154,6 @@ pub trait BlockFunctionality {
 //    }
 //}
 
-#[derive(Clone)]
 pub struct Block {
     config: BlockConfig,
     /// This function is used to set up the ecs entity for the block if it should have
@@ -189,13 +193,10 @@ impl Block {
 /// The configurations and ids of the blocks in the game.
 #[derive(Debug)]
 pub struct Blocks {
-    // TODO: Can be a vec.
     // block id -> block config
     blocks: Vec<Block>,
     // block name -> block id
     ids: HashMap<String, BlockId>,
-    // Filenames sent to client. The block ids are implied by the filename location in the the vec.
-    filenames: Vec<String>,
 }
 
 impl Blocks {
@@ -223,8 +224,8 @@ impl Blocks {
         }
     }
 
-    pub fn filenames(&self) -> Vec<String> {
-        return self.filenames.clone();
+    pub fn clone_ids(&self) -> HashMap<String, BlockId> {
+        return self.ids.clone();
     }
 }
 
@@ -308,80 +309,52 @@ struct BlockConfigJson {
 }
 
 impl BlockConfigJson {
-    fn from_file<P: AsRef<Path>>(path: P) -> Self {
-        let file = match std::fs::File::open(&path) {
-            Ok(f) => f,
-            Err(e) => panic!(
-                "Failed to open block config at path: {}\nError: {}",
-                path.as_ref().display(),
-                e
-            ),
+    fn from_file(path: &Path) -> Option<Self> {
+        fn read_as_json_value(path: &std::path::Path) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+            let file = std::fs::File::open(&path)?;
+
+            let mut config: serde_json::Value = serde_json::from_reader(&file)?;
+
+            // recursively read parent configs
+            if let Some(parent) = config["parent"].as_str() {
+                let parent_path = std::path::Path::new(BLOCK_CONFIG_PATH).join(parent);
+                let mut parent: serde_json::Value = match read_as_json_value(&parent_path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        return Err(format!(
+                            "Failed to read parent block config at {}: {}",
+                            parent_path.display(),
+                            e
+                        )
+                        .into())
+                    }
+                };
+                parent
+                    .as_object_mut()
+                    .unwrap()
+                    .append(&mut config.as_object_mut().unwrap());
+
+                config = parent;
+            }
+
+            Ok(config)
+        }
+
+        let json = match read_as_json_value(path) {
+            Ok(j) => j,
+            Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e)
         };
 
-        let mut config: serde_json::Value = match serde_json::from_reader(file) {
-            Ok(c) => c,
-            Err(e) => panic!(
-                "Failed to read block config at path: {}\nError: {}",
-                path.as_ref().display(),
-                e
-            ),
-        };
-
-        let config = if let Some(parent_file_name) = config["parent"].as_str() {
-            let parent_path = std::path::Path::new(BLOCK_CONFIG_PATH)
-                .join("parents")
-                .join(parent_file_name);
-            let mut parent = match Self::read_parent(&parent_path) {
-                Ok(p) => p,
-                Err(e) => panic!(
-                    "Failed to read parent block config for block at path: {}, parent path: {}\nError: {}",
-                    path.as_ref().display(),
-                    parent_path.display(),
-                    e
-                ),
-            };
-            // Overwrite the parent config values with the ones of the child.
-            parent
-                .as_object_mut()
-                .unwrap()
-                .append(&mut config.as_object_mut().unwrap());
-            serde_json::from_value(parent)
+        if json.get("name").is_some_and(|name| name.is_string()) {
+            return match serde_json::from_value(json) {
+                Ok(b) => Some(b),
+                Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e)
+            }
         } else {
-            serde_json::from_value(config)
-        };
-
-        match config {
-            Ok(c) => return c,
-            Err(e) => panic!(
-                "Failed to read block config at path: {}\nError: {}",
-                path.as_ref().display(),
-                e
-            ),
+            return None
         }
     }
 
-    fn read_parent(path: &std::path::Path) -> anyhow::Result<serde_json::Value> {
-        let file = std::fs::File::open(&path)?;
-
-        let mut config: serde_json::Value = serde_json::from_reader(&file)?;
-
-        // recursively read parent configs
-        if let Some(parent) = config["parent"].as_str() {
-            let path = std::path::Path::new(BLOCK_CONFIG_PATH).join(parent);
-            // TODO: Should probably add some context to the error here to note which files it has
-            // read to get here. Easier to debug very nested misconfigured blocks if that will be a
-            // thing.
-            let mut parent: serde_json::Value = Self::read_parent(&path)?;
-            parent
-                .as_object_mut()
-                .unwrap()
-                .append(&mut config.as_object_mut().unwrap());
-
-            return Ok(parent);
-        }
-
-        return Ok(config);
-    }
 }
 
 #[derive(Debug, Clone)]
