@@ -102,7 +102,7 @@ impl std::fmt::Debug for NetworkPacket {
 }
 
 /// A network event originating from a [`NetworkServer`]
-#[derive(Debug)]
+#[derive(Debug, Event)]
 pub enum ServerNetworkEvent {
     /// A client has connected
     Connected {
@@ -115,7 +115,7 @@ pub enum ServerNetworkEvent {
     Error(ServerNetworkError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Event)]
 /// A network event originating from a [`NetworkClient`]
 pub enum ClientNetworkEvent {
     /// Connected to the server
@@ -127,7 +127,7 @@ pub enum ClientNetworkEvent {
 }
 
 /// [`NetworkData`] are bevy events that should be handled by the receiver.
-#[derive(Debug, Deref)]
+#[derive(Debug, Deref, Event)]
 pub struct NetworkData<T> {
     /// The connection information of the sender.
     pub source: ConnectionId,
