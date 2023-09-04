@@ -198,7 +198,7 @@ impl TerrainGenerator {
 
         // Don't waste time generating if it is guaranteed to be air.
         if max * BASE_HEIGHT + MAX_RELATIVE_HEIGHT < chunk_position.y as f32 {
-            blocks.insert(chunk_position, self.biome_map.get_biome().filler);
+            blocks.insert(chunk_position, self.biome_map.get_biome().air);
             return (true, blocks);
         }
 
@@ -270,10 +270,12 @@ impl TerrainGenerator {
 
                     let block = if density < 0.0 {
                         layer = 0;
-                        if block_height < 0 {
-                            biome.liquid
+                        if block_height == 0 {
+                            biome.surface_liquid
+                        } else if block_height < 0 {
+                            biome.sub_surface_liquid
                         } else {
-                            biome.filler
+                            biome.air
                         }
                     } else if block_height < 1 {
                         biome.sand
@@ -289,7 +291,7 @@ impl TerrainGenerator {
                                         blocks
                                             .entry(block_position)
                                             .and_modify(|block| {
-                                                if *block == biome.filler {
+                                                if *block == biome.air {
                                                     *block = block_id
                                                 }
                                             })

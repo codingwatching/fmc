@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Index, sync::Arc};
 
-use bevy::{prelude::*, tasks::IoTaskPool};
+use bevy::{app::AppExit, prelude::*, tasks::IoTaskPool};
 
-use fmc_networking::{messages, BlockId, ConnectionId, NetworkServer};
+use fmc_networking::{messages, BlockId, NetworkServer};
 
 pub mod chunk;
 pub mod chunk_manager;
@@ -16,118 +16,118 @@ use crate::{
     utils,
 };
 
-use self::{
-    chunk::{Chunk, ChunkStatus},
-    chunk_manager::ChunkSubscriptions,
-};
+use self::chunk_manager::ChunkSubscriptions;
+
+use super::blocks::{BlockFace, BlockState};
 
 pub struct WorldMapPlugin;
 impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(chunk_manager::ChunkManagerPlugin)
-            .add_plugin(terrain_generation::TerrainGenerationPlugin)
-            .add_event::<BlockUpdate>()
-            .add_event::<ChangedBlockEvent>()
-            .add_systems(
-                PreUpdate,
+        app.insert_resource(DatabaseSyncTimer(Timer::from_seconds(
+            5.0,
+            TimerMode::Repeating,
+        )))
+        .add_plugin(chunk_manager::ChunkManagerPlugin)
+        .add_plugin(terrain_generation::TerrainGenerationPlugin)
+        .add_event::<BlockUpdate>()
+        .add_event::<ChangedBlockEvent>()
+        .add_systems(
+            PreUpdate,
+            (
                 handle_block_updates.run_if(on_event::<BlockUpdate>()),
-            );
+                send_changed_block_event.after(handle_block_updates),
+                save_block_updates_to_database,
+            ),
+        );
     }
 }
 
+
+// TODO: All of the below feels like it belongs in its own module, but I don't really see what to
+// file it under...
+
+// TODO: Convert tuples to local struct "Block" to make access pretty?
+// TODO: It might be better to remove the back_* front_* blocks. They are only used for water at
+// time of writing. Adds 66% lookup time.
+//
 // Some types of block need to know whenever a block adjacent to it changes (for example water
-// needs to know when it should spread), instead of sending out the position of the changed block,
-// this struct is constructed to save on lookup time as each system that reacts to this would need
-// to query all the adjacent block positions individually.
+// needs to know when it should spread). Instead of sending out the position of the changed block,
+// this struct is constructed to save on lookup time as each system that reacts to it would need
+// to query all the adjacent blocks individually.
 //
 /// Event sent in response to a block update.
 pub struct ChangedBlockEvent {
     pub position: IVec3,
-    pub from: BlockId,
-    pub to: BlockId,
-    pub top: BlockId,
-    pub bottom: BlockId,
-    pub right: BlockId,
-    pub left: BlockId,
-    pub front: BlockId,
-    pub back: BlockId,
+    pub to: (BlockId, Option<BlockState>),
+    pub top: Option<(BlockId, Option<BlockState>)>,
+    pub bottom: Option<(BlockId, Option<BlockState>)>,
+    pub back: Option<(BlockId, Option<BlockState>)>,
+    pub back_right: Option<(BlockId, Option<BlockState>)>,
+    pub back_left: Option<(BlockId, Option<BlockState>)>,
+    pub right: Option<(BlockId, Option<BlockState>)>,
+    pub left: Option<(BlockId, Option<BlockState>)>,
+    pub front: Option<(BlockId, Option<BlockState>)>,
+    pub front_right: Option<(BlockId, Option<BlockState>)>,
+    pub front_left: Option<(BlockId, Option<BlockState>)>,
 }
 
-impl ChangedBlockEvent {
-    pub fn has_adjacent_block(&self, block: BlockId) -> Option<(IVec3, BlockId)> {
-        if self.top == block {
-            return Some((self.position + IVec3::new(0, 1, 0), self.top));
-        } else if self.bottom == block {
-            return Some((self.position + IVec3::new(0, -1, 0), self.top));
-        } else if self.right == block {
-            return Some((self.position + IVec3::new(1, 0, 0), self.top));
-        } else if self.left == block {
-            return Some((self.position + IVec3::new(-1, 0, 0), self.top));
-        } else if self.front == block {
-            return Some((self.position + IVec3::new(0, 0, 1), self.top));
-        } else if self.back == block {
-            return Some((self.position + IVec3::new(0, 0, -1), self.top));
-        } else {
-            return None;
+impl Index<BlockFace> for ChangedBlockEvent {
+    type Output = Option<(BlockId, Option<BlockState>)>;
+    fn index(&self, index: BlockFace) -> &Self::Output {
+        match index {
+            BlockFace::Front => &self.front,
+            BlockFace::Back => &self.back,
+            BlockFace::Right => &self.right,
+            BlockFace::Left => &self.left,
+            BlockFace::Top => &self.top,
+            BlockFace::Bottom => &self.bottom,
         }
     }
 }
 
-// TODO: Don't know where to put this yet.
-pub enum BlockUpdate {
-    /// Change one block to another. Fields are position/block id/block state
-    Change(IVec3, BlockId, Option<u16>),
-    ///// Change the state of a block.
-    //State(IVec3, u8),
-    // Particles?
-}
-
-pub async fn save_block(
-    database: Arc<Database>,
-    position: IVec3,
-    block: BlockId,
-    state: Option<u16>,
-) {
-    let connection = database.get_connection();
-    match connection.execute(
-        r#"
-        insert or replace into
-            blocks (x,y,z,block_id,block_state)
-        values
-            (?,?,?,?,?)
-        "#,
-        rusqlite::params![position.x, position.y, position.z, block, state],
-    ) {
-        Ok(..) => (),
-        Err(e) => panic!("Failed to write block to database with error: {e}"),
+impl Index<[BlockFace; 2]> for ChangedBlockEvent {
+    type Output = Option<(BlockId, Option<BlockState>)>;
+    #[track_caller]
+    fn index(&self, index: [BlockFace; 2]) -> &Self::Output {
+        match index {
+            [BlockFace::Front, BlockFace::Left] => &self.front_left,
+            [BlockFace::Left, BlockFace::Front] => &self.front_left,
+            [BlockFace::Front, BlockFace::Right] => &self.front_right,
+            [BlockFace::Right, BlockFace::Front] => &self.front_right,
+            [BlockFace::Back, BlockFace::Left] => &self.back_left,
+            [BlockFace::Left, BlockFace::Back] => &self.back_left,
+            [BlockFace::Back, BlockFace::Right] => &self.back_right,
+            [BlockFace::Right, BlockFace::Back] => &self.back_right,
+            _ => panic!("Tried to index with non-horizontal blockfaces."),
+        }
     }
 }
 
-// TODO: Batch block updates into their corresponding chunks so they can be applied together
-// avoiding lookups.
+pub enum BlockUpdate {
+    /// Change one block to another. Fields are position/block id/block state
+    Change {
+        position: IVec3,
+        block_id: BlockId,
+        block_state: Option<BlockState>,
+    },
+    // Particles?
+}
+
 // Applies block updates to the world and sends them to the players.
 fn handle_block_updates(
-    database: Res<DatabaseArc>,
-    mut world_map: ResMut<world_map::WorldMap>,
-    mut block_events: EventReader<BlockUpdate>,
-    chunk_subsriptions: Res<ChunkSubscriptions>,
     net: Res<NetworkServer>,
+    chunk_subsriptions: Res<ChunkSubscriptions>,
+    mut world_map: ResMut<WorldMap>,
+    mut block_events: EventReader<BlockUpdate>,
+    mut chunked_updates: Local<HashMap<IVec3, Vec<(usize, BlockId, Option<u16>)>>>,
 ) {
-    let task_pool = IoTaskPool::get();
-
     for event in block_events.iter() {
         match event {
-            BlockUpdate::Change(position, block_id, block_state) => {
-                // TODO: Collect all blocks and spawn them as one task.
-                task_pool
-                    .spawn(save_block(
-                        database.clone(),
-                        *position,
-                        *block_id,
-                        *block_state,
-                    ))
-                    .detach();
-
+            BlockUpdate::Change {
+                position,
+                block_id,
+                block_state,
+            } => {
                 let (chunk_pos, block_index) =
                     utils::world_position_to_chunk_position_and_block_index(*position);
 
@@ -137,58 +137,171 @@ fn handle_block_updates(
                     panic!("Tried to change block in non-existing chunk");
                 };
 
-                if chunk.is_uniform() {
-                    chunk.convert_uniform_to_regular();
-                }
+                chunk.try_convert_uniform_to_regular();
 
                 chunk[block_index] = *block_id;
-                if let Some(state) = block_state {
-                    chunk.set_block_state(block_index, *state);
-                }
+                chunk.set_block_state(block_index, *block_state);
 
-                if let Some(subscribers) = chunk_subsriptions.get_subscribers(&chunk_pos) {
-                    net.send_many(
-                        subscribers,
-                        // TODO: All updates in the same chunk should be collected and sent
-                        // together.
-                        messages::BlockUpdates {
-                            chunk_position: chunk_pos,
-                            blocks: vec![(block_index, *block_id)],
-                            block_state: match *block_state {
-                                Some(s) => HashMap::from([(block_index, s)]),
-                                None => HashMap::new(),
-                            },
-                        },
-                    );
-                }
+                let chunked_block_updates =
+                    chunked_updates.entry(chunk_pos).or_insert(Vec::default());
+
+                chunked_block_updates.push((block_index, *block_id, block_state.map(|b| b.0)));
             }
+        }
+    }
+
+    for (chunk_position, blocks) in chunked_updates.drain() {
+        if let Some(subscribers) = chunk_subsriptions.get_subscribers(&chunk_position) {
+            net.send_many(
+                subscribers,
+                messages::BlockUpdates {
+                    chunk_position,
+                    blocks,
+                },
+            );
         }
     }
 }
 
-// Every block change is immediately saved to disc.
-//fn save_block_updates_to_database(
-//    database: Res<Arc<Database>>,
-//    block_events: EventReader<BlockEvent>,
-//) {
-//    let chunk_block_updates: HashMap<Ivec3, Vec<(IVec3, BlockId)>> = HashMap::new();
-//    //let chunk_state_updates: HashMap<Ivec3, (IVec3, State?)> = HashMap::new();
-//    for event in block_events.get_reader() {
-//        match event {
-//            BlockUpdate::Change(pos, id) => {
-//                let (chunk_pos, index) = utils::world_coord_to_chunk_coord_and_block_index(pos);
-//                chunk_block_updates
-//                    .entry(&chunk_pos)
-//                    .or_insert(Vec::new())
-//                    .push((index, id))
-//            }
-//            _ => {}
-//        }
-//    }
-//    if !chunk_block_updates.is_empty() {
-//        let connection = database.get_connection();
-//        for (chunk_pos, blocks) in chunk_block_updates.iter() {
-//            database::
-//        }
-//    }
-//}
+#[derive(Resource, DerefMut, Deref)]
+struct DatabaseSyncTimer(Timer);
+
+async fn save_blocks(
+    database: Arc<Database>,
+    block_updates: Vec<(IVec3, (BlockId, Option<BlockState>))>,
+) {
+    let mut conn = database.get_connection();
+    let transaction = conn.transaction().unwrap();
+    let mut statement = transaction
+        .prepare(
+            r#"
+        insert or replace into
+            blocks (x,y,z,block_id,block_state)
+        values
+            (?,?,?,?,?)
+        "#,
+        )
+        .unwrap();
+
+    for (position, (block_id, block_state)) in block_updates {
+        statement
+            .execute(rusqlite::params![
+                position.x,
+                position.y,
+                position.z,
+                block_id,
+                block_state.map(|state| state.0)
+            ])
+            .unwrap();
+    }
+    statement.finalize().unwrap();
+    transaction
+        .commit()
+        .expect("Failed to write blocks to database.");
+}
+
+fn save_block_updates_to_database(
+    database: Res<DatabaseArc>,
+    time: Res<Time>,
+    mut block_events: EventReader<BlockUpdate>,
+    mut sync_timer: ResMut<DatabaseSyncTimer>,
+    exit_events: EventReader<AppExit>,
+    mut block_updates: Local<HashMap<IVec3, (BlockId, Option<BlockState>)>>,
+) {
+    for event in block_events.iter() {
+        match event {
+            BlockUpdate::Change {
+                position,
+                block_id,
+                block_state,
+            } => {
+                block_updates.insert(*position, (*block_id, *block_state));
+            }
+        }
+    }
+
+    sync_timer.tick(time.delta());
+    if sync_timer.just_finished() {
+        let task_pool = IoTaskPool::get();
+        let database_clone: Arc<Database> = database.clone();
+        let block_updates = block_updates.drain().collect();
+        task_pool
+            .spawn(save_blocks(database_clone, block_updates))
+            .detach();
+    }
+
+    if !exit_events.is_empty() {
+        let database_clone: Arc<Database> = database.clone();
+        let block_updates = block_updates.drain().collect();
+        futures_lite::future::block_on(save_blocks(database_clone, block_updates));
+    }
+}
+
+fn send_changed_block_event(
+    world_map: Res<WorldMap>,
+    mut block_update_events: EventReader<BlockUpdate>,
+    mut changed_block_events: EventWriter<ChangedBlockEvent>,
+) {
+    changed_block_events.send_batch(block_update_events.iter().map(|event| {
+        match event {
+            BlockUpdate::Change {
+                position,
+                block_id,
+                block_state,
+            } => ChangedBlockEvent {
+                position: *position,
+                to: (*block_id, *block_state),
+                top: world_map
+                    .get_block(*position + IVec3::Y)
+                    .map(|block_id| ((block_id, world_map.get_block_state(*position + IVec3::Y)))),
+                bottom: world_map
+                    .get_block(*position - IVec3::Y)
+                    .map(|block_id| (block_id, world_map.get_block_state(*position - IVec3::Y))),
+                right: world_map
+                    .get_block(*position + IVec3::X)
+                    .map(|block_id| (block_id, world_map.get_block_state(*position + IVec3::X))),
+                left: world_map
+                    .get_block(*position - IVec3::X)
+                    .map(|block_id| (block_id, world_map.get_block_state(*position - IVec3::X))),
+                front: world_map
+                    .get_block(*position + IVec3::Z)
+                    .map(|block_id| (block_id, world_map.get_block_state(*position + IVec3::Z))),
+                front_left: world_map
+                    .get_block(*position + IVec3::Z - IVec3::X)
+                    .map(|block_id| {
+                        (
+                            block_id,
+                            world_map.get_block_state(*position + IVec3::Z - IVec3::X),
+                        )
+                    }),
+                front_right: world_map
+                    .get_block(*position + IVec3::Z + IVec3::X)
+                    .map(|block_id| {
+                        (
+                            block_id,
+                            world_map.get_block_state(*position + IVec3::Z + IVec3::X),
+                        )
+                    }),
+                back: world_map
+                    .get_block(*position - IVec3::Z)
+                    .map(|block_id| (block_id, world_map.get_block_state(*position - IVec3::Z))),
+                back_left: world_map
+                    .get_block(*position - IVec3::Z - IVec3::X)
+                    .map(|block_id| {
+                        (
+                            block_id,
+                            world_map.get_block_state(*position - IVec3::Z - IVec3::X),
+                        )
+                    }),
+                back_right: world_map
+                    .get_block(*position - IVec3::Z + IVec3::X)
+                    .map(|block_id| {
+                        (
+                            block_id,
+                            world_map.get_block_state(*position - IVec3::Z + IVec3::X),
+                        )
+                    }),
+            },
+        }
+    }))
+}

@@ -22,10 +22,6 @@ pub mod messages;
 pub use client::NetworkClient;
 pub use server::NetworkServer;
 
-/// Storage type of blocks.
-/// Used by both server and client.
-pub type BlockId = u16;
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use bevy::{prelude::*, utils::Uuid};
@@ -36,6 +32,13 @@ use error::{ClientNetworkError, ServerNetworkError};
 use network_message::NetworkMessage;
 use serde::{Deserialize, Serialize};
 use server::AppNetworkServerMessage;
+
+// TODO: Should probably define BlockState here too, to avoid hard to parse u16's and easier to
+// change data type.
+// TODO: I don't remember why I went with an alias instead of newtyping it.
+/// Storage type of blocks.
+/// Used by both server and client.
+pub type BlockId = u16;
 
 struct SyncChannel<T> {
     pub(crate) sender: Sender<T>,
@@ -123,8 +126,8 @@ pub enum ClientNetworkEvent {
     Error(ClientNetworkError),
 }
 
-#[derive(Debug, Deref)]
 /// [`NetworkData`] are bevy events that should be handled by the receiver.
+#[derive(Debug, Deref)]
 pub struct NetworkData<T> {
     /// The connection information of the sender.
     pub source: ConnectionId,
@@ -183,7 +186,6 @@ impl Plugin for ServerPlugin {
             .listen_for_server_message::<messages::PlayerPosition>()
             .listen_for_server_message::<messages::LeftClick>()
             .listen_for_server_message::<messages::RightClick>()
-            .listen_for_server_message::<messages::BlockUpdates>()
             .listen_for_server_message::<messages::InterfaceTakeItem>()
             .listen_for_server_message::<messages::InterfacePlaceItem>()
             .listen_for_server_message::<messages::InterfaceEquipItem>()

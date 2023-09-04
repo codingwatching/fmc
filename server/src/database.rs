@@ -8,7 +8,7 @@ use crate::{
     players::PlayerSave,
     settings::ServerSettings,
     world::{
-        blocks::Blocks,
+        blocks::{BlockState, Blocks},
         items::ItemId,
         models::Model,
         world_map::chunk::{Chunk, ChunkStatus},
@@ -483,7 +483,9 @@ impl Database {
             );
 
             for entry in directory {
-                let file_path = entry.expect("Failed to read the filename of a block config").path();
+                let file_path = entry
+                    .expect("Failed to read the filename of a block config")
+                    .path();
 
                 if file_path.is_dir() {
                     let sub_files = walk_dir(&file_path);

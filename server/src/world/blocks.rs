@@ -28,7 +28,7 @@ use crate::database::DatabaseArc;
 use super::items::ItemId;
 
 mod furnace;
-mod liquids;
+mod water;
 
 pub const BLOCK_CONFIG_PATH: &str = "./resources/client/blocks/";
 
@@ -43,7 +43,7 @@ impl Plugin for BlockPlugin {
         // resource and then at the end of startup move it.
         //let database = app.world.resource::<DatabaseArc>();
         //Blocks::load(database.as_ref());
-        //app.add_plugin(liquids::LiquidsPlugin);
+        app.add_plugin(water::WaterPlugin);
         //.add_plugin(furnace::FurnacePlugin);
     }
 }
@@ -59,7 +59,9 @@ fn load_blocks(database: Res<DatabaseArc>) {
         );
 
         for entry in directory {
-            let file_path = entry.expect("Failed to read the filenames of the block configs").path();
+            let file_path = entry
+                .expect("Failed to read the filenames of the block configs")
+                .path();
 
             if file_path.is_dir() {
                 let sub_files = walk_dir(&file_path);
@@ -86,7 +88,7 @@ fn load_blocks(database: Res<DatabaseArc>) {
     for file_path in walk_dir(&crate::world::blocks::BLOCK_CONFIG_PATH) {
         let block_config_json = match BlockConfigJson::from_file(&file_path) {
             Some(b) => b,
-            None => continue
+            None => continue,
         };
 
         let drop = match block_config_json.drop {
@@ -108,6 +110,7 @@ fn load_blocks(database: Res<DatabaseArc>) {
                 friction: block_config_json.friction,
                 hardness: block_config_json.hardness,
                 drop,
+                is_rotatable: block_config_json.is_rotatable,
             };
 
             maybe_blocks[block_id as usize] = Some(Block::new(block_config));
@@ -244,6 +247,7 @@ enum BlockDrop {
         item: ItemId,
         count: ItemId,
     },
+    // TODO: There's no way to define something that drops only one thing n% of the time.
     Chance {
         // The probablities of the drops.
         weights: WeightedIndex<f64>,
@@ -306,11 +310,15 @@ struct BlockConfigJson {
     hardness: Option<f32>,
     // Which item(s) the block drops
     drop: Option<BlockDropJson>,
+    #[serde(default)]
+    is_rotatable: bool,
 }
 
 impl BlockConfigJson {
     fn from_file(path: &Path) -> Option<Self> {
-        fn read_as_json_value(path: &std::path::Path) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        fn read_as_json_value(
+            path: &std::path::Path,
+        ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
             let file = std::fs::File::open(&path)?;
 
             let mut config: serde_json::Value = serde_json::from_reader(&file)?;
@@ -342,19 +350,19 @@ impl BlockConfigJson {
 
         let json = match read_as_json_value(path) {
             Ok(j) => j,
-            Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e)
+            Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e),
         };
 
         if json.get("name").is_some_and(|name| name.is_string()) {
+            // TODO: When this fails, theres no way to know which field made it panic.
             return match serde_json::from_value(json) {
                 Ok(b) => Some(b),
-                Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e)
-            }
+                Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e),
+            };
         } else {
-            return None
+            return None;
         }
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -367,6 +375,8 @@ pub struct BlockConfig {
     pub hardness: Option<f32>,
     // Which item(s) the block drops.
     drop: Option<BlockDrop>,
+    // If the block is rotatable around the y axis
+    pub is_rotatable: bool,
 }
 
 impl BlockConfig {
@@ -380,7 +390,7 @@ impl BlockConfig {
 }
 
 /// The different sides of a block
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub enum BlockFace {
     Front,
     Back,
@@ -388,6 +398,29 @@ pub enum BlockFace {
     Left,
     Top,
     Bottom,
+}
+
+impl BlockFace {
+    pub fn shift_position(&self, position: IVec3) -> IVec3 {
+        match self {
+            Self::Front => position + IVec3::Z,
+            Self::Back => position - IVec3::Z,
+            Self::Right => position + IVec3::X,
+            Self::Left => position - IVec3::X,
+            Self::Top => position + IVec3::Y,
+            Self::Bottom => position - IVec3::Y,
+        }
+    }
+
+    pub fn to_rotation(&self) -> BlockRotation {
+        match self {
+            Self::Front => BlockRotation::None,
+            Self::Right => BlockRotation::Once,
+            Self::Back => BlockRotation::Twice,
+            Self::Left => BlockRotation::Thrice,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -404,4 +437,37 @@ pub enum Friction {
     },
     /// For non-collidable blocks, the friction is instead drag on the player movement.
     Drag(Vec3),
+}
+
+#[derive(Default, Hash, PartialEq, Eq, Clone, Copy, Debug)]
+pub struct BlockState(pub u16);
+
+impl BlockState {
+    pub fn new(rotation: BlockRotation) -> Self {
+        return BlockState(rotation as u16);
+    }
+
+    pub fn rotation(&self) -> BlockRotation {
+        return BlockRotation::from(self.0);
+    }
+
+    pub fn set_rotation(&mut self, rotation: BlockRotation) {
+        self.0 = self.0 & !0b11 & (rotation as u16 & 0b11);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u16)]
+pub enum BlockRotation {
+    None = 0,
+    Once,
+    Twice,
+    Thrice,
+}
+
+impl From<u16> for BlockRotation {
+    #[track_caller]
+    fn from(value: u16) -> Self {
+        return unsafe { std::mem::transmute(value & 0b11) };
+    }
 }

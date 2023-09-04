@@ -11,10 +11,9 @@ pub struct Biome {
     pub mid_layer_thickness: usize,
     pub bottom_layer_block: BlockId,
     pub surface_features: Vec<FeaturePlacer>,
-    // TODO: Some way to determine appropriate "filler" blocks. This block above this altitude,
-    // this below...
-    pub liquid: BlockId,
-    pub filler: BlockId,
+    pub surface_liquid: BlockId,
+    pub sub_surface_liquid: BlockId,
+    pub air: BlockId,
     pub sand: BlockId,
 }
 
@@ -37,8 +36,9 @@ impl BiomeMap {
                 3,
                 Box::new(Tree::new(blocks.get_id("oak"), blocks.get_id("leaves"))),
             )],
-            liquid: blocks.get_id("water"),
-            filler: blocks.get_id("air"),
+            surface_liquid: blocks.get_id("surface_water"),
+            sub_surface_liquid: blocks.get_id("subsurface_water"),
+            air: blocks.get_id("air"),
             sand: blocks.get_id("sand"),
         };
         return Self { biomes: [forest] };

@@ -16,8 +16,8 @@ use crate::{
     game_state::GameState,
     rendering::materials,
     world::{
-        blocks::{Block, BlockFace, Blocks, QuadPrimitive},
-        world_map::{Chunk, ChunkMarker, ChunkRequestEvent, WorldMap},
+        blocks::{Block, BlockFace, BlockRotation, BlockState, Blocks, QuadPrimitive},
+        world_map::{Chunk, ChunkMarker, WorldMap},
         Origin,
     },
 };
@@ -152,11 +152,10 @@ fn handle_mesh_tasks(
 #[derive(Default)]
 struct MeshBuilder {
     pub vertices: Vec<[f32; 3]>,
-    //pub triangles: Vec<u32>,
-    //pub normals: Vec<[f32; 3]>,
-    //pub uvs: Vec<u32>,
-    pub uvs: Vec<u32>,
-    pub texture_indices: Vec<i32>,
+    pub triangles: Vec<u32>,
+    pub normals: Vec<[f32; 3]>,
+    pub packed_bits: Vec<u32>,
+    //pub texture_indices: Vec<i32>,
     pub face_count: u32,
 }
 
@@ -164,91 +163,63 @@ impl MeshBuilder {
     fn to_mesh(self) -> Mesh {
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.vertices);
-        //mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
-        //mesh.insert_attribute(materials::BLOCK_ATTRIBUTE_UV, self.uvs);
-        //mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
-        mesh.insert_attribute(materials::ATTRIBUTE_PACKED_BITS_0, self.uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        mesh.insert_attribute(materials::ATTRIBUTE_PACKED_BITS_0, self.packed_bits);
 
-        mesh.compute_flat_normals();
-        //mesh.generate_tangents().unwrap();
-        // TODO: Remove these if it saves memory.
-        //mesh.set_indices(Some(Indices::U32(self.triangles)));
+        mesh.set_indices(Some(Indices::U32(self.triangles)));
         return mesh;
     }
 
-    fn add_face(&mut self, position: [f32; 3], quad: &QuadPrimitive, light: Light) {
-        //for (i, vertex) in quad.vertices.iter().enumerate() {
-        //    self.vertices
-        //        .push([vertex[0] + position[0], vertex[1] + position[1], vertex[2] + position[2]]);
-        //    self.normals.extend(&quad.normals);
-        //    //self.normals.push(quad.normal);
-        //}
-        self.vertices.push([
-            quad.vertices[0][0] + position[0],
-            quad.vertices[0][1] + position[1],
-            quad.vertices[0][2] + position[2],
-        ]);
-        self.vertices.push([
-            quad.vertices[1][0] + position[0],
-            quad.vertices[1][1] + position[1],
-            quad.vertices[1][2] + position[2],
-        ]);
-        self.vertices.push([
-            quad.vertices[2][0] + position[0],
-            quad.vertices[2][1] + position[1],
-            quad.vertices[2][2] + position[2],
-        ]);
-        self.vertices.push([
-            quad.vertices[2][0] + position[0],
-            quad.vertices[2][1] + position[1],
-            quad.vertices[2][2] + position[2],
-        ]);
-        self.vertices.push([
-            quad.vertices[1][0] + position[0],
-            quad.vertices[1][1] + position[1],
-            quad.vertices[1][2] + position[2],
-        ]);
-        self.vertices.push([
-            quad.vertices[3][0] + position[0],
-            quad.vertices[3][1] + position[1],
-            quad.vertices[3][2] + position[2],
-        ]);
-        //self.triangles.extend(
-        //    TRIANGLES
-        //        .iter()
-        //        .map(|x| x + 4 * self.face_count)
-        //);
+    fn add_face(
+        &mut self,
+        position: [f32; 3],
+        quad: &QuadPrimitive,
+        light: Light,
+        block_state: BlockState,
+        cull_delimiter: Option<(f32, f32)>,
+    ) {
+        let rotation = block_state.rotation();
+        let mut vertices = quad.vertices.clone();
 
-        //const UVS: [[f32; 2]; 6] = [
-        //    [0.0, 1.0],
-        //    [0.0, 0.0],
-        //    [1.0, 1.0],
-        //    [1.0, 1.0],
-        //    [0.0, 0.0],
-        //    [1.0, 0.0],
-        //];
+        if let Some((top_left, top_right)) = cull_delimiter {
+            if vertices[0][1] <= top_left && vertices[2][1] <= top_right {
+                return;
+            }
+            vertices[1][1] = vertices[1][1].max(top_left);
+            vertices[3][1] = vertices[3][1].max(top_right);
+        }
 
-        for i in 0..6 {
-            //self.normals.push(quad.normal);
-            // TODO: This packing isn't followed right now.
+        for (i, mut vertex) in vertices.into_iter().enumerate() {
+            if rotation != BlockRotation::None {
+                rotation.rotate_vertex(&mut vertex);
+            }
+
+            vertex[0] += position[0];
+            vertex[1] += position[1];
+            vertex[2] += position[2];
+            self.vertices.push(vertex);
+            self.normals.push(quad.normals[i / 2]);
             // Pack bits, from right to left:
             // 19 bits, texture index
             // 3 bits, uv, 1 bit for if it should be diagonal, 2 for coordinate index
             // 5 bits, light, 1 bit bool true if sunlight, 4 bits intensity
-            // 3 bits, normals
-            self.uvs
-                .push(quad.texture_array_id | (i << 19) | (light.0 as u32) << 22)
-            //self.uvs.push(UVS[i]);
-            //self.texture_indices.push(quad.texture_array_id as i32);
+            // TODO: Maybe better to rotate the vertices in mesh instead of shader? Possible way of
+            // reclaiming bits if needed.
+            // 3 bits, rotation, 1 bit upside down, 2 bit rotation around y axis
+            self.packed_bits.push(
+                quad.texture_array_id
+                    | (i as u32) << 19
+                    | (quad.rotate_texture as u32) << 21
+                    | (light.0 as u32) << 22
+                    | (rotation as u32) << 27,
+            )
         }
+        self.triangles
+            .extend(TRIANGLES.iter().map(|x| x + 4 * self.face_count));
         self.face_count += 1;
     }
 }
 
-// TODO: Implemented simple version first that takes up ~2gb of memory for a 32x world.
-// Both normals and uvs should be packed into the vertex. To do this it needs to be able to
-// separate blocks that are cubes and those which aren't. Cubes only have 6 normals so they can be
-// packed in 3 bits.
 async fn build_mesh(
     chunk: ExpandedChunk,
     light_chunk: ExpandedLightChunk,
@@ -270,6 +241,14 @@ async fn build_mesh(
 
                 let block_config = &blocks[&block_id];
 
+                let block_state = if block_config.can_have_block_state() {
+                    chunk
+                        .get_block_state(x, y, z)
+                        .unwrap_or(BlockState::default())
+                } else {
+                    BlockState::default()
+                };
+
                 match block_config {
                     Block::Cube(cube) => {
                         let builder =
@@ -282,53 +261,72 @@ async fn build_mesh(
                             };
 
                         for quad in &cube.quads {
-                            if let Some(cull_face) = quad.cull_face {
-                                let adjacent_block = match cull_face {
-                                    BlockFace::Front => chunk.get_block(x, y, z + 1),
-                                    BlockFace::Back => chunk.get_block(x, y, z - 1),
-                                    BlockFace::Bottom => chunk.get_block(x, y + 1, z),
-                                    BlockFace::Top => chunk.get_block(x, y - 1, z),
-                                    BlockFace::Left => chunk.get_block(x + 1, y, z),
-                                    BlockFace::Right => chunk.get_block(x - 1, y, z),
-                                };
+                            let cull_delimiter = if let Some(cull_face) = quad.cull_face {
+                                let cull_face = cull_face.rotate(block_state.rotation());
 
-                                let adjacent_block_id = match adjacent_block {
-                                    Some(block_id) => block_id,
+                                let (x, y, z) = match cull_face {
+                                    BlockFace::Back => (x, y, z - 1),
+                                    BlockFace::Front => (x, y, z + 1),
+                                    BlockFace::Bottom => (x, y - 1, z),
+                                    BlockFace::Top => (x, y + 1, z),
+                                    BlockFace::Left => (x - 1, y, z),
+                                    BlockFace::Right => (x + 1, y, z),
+                                };
+                                let adjacent_block_id = match chunk.get_block(x, y, z) {
+                                    Some(b) => b,
                                     None => continue,
                                 };
 
                                 let adjacent_block_config = &blocks[&adjacent_block_id];
 
-                                if adjacent_block_config.culls(block_config, cull_face) {
-                                    continue;
-                                }
-                            }
+                                if adjacent_block_config.culls(block_config) {
+                                    let adjacent_block_state =
+                                        if adjacent_block_config.can_have_block_state() {
+                                            chunk
+                                                .get_block_state(x, y, z)
+                                                .unwrap_or(BlockState::default())
+                                        } else {
+                                            BlockState::default()
+                                        };
 
-                            let light = match quad.light_face {
-                                BlockFace::Top => light_chunk[[x, y + 1, z]],
-                                BlockFace::Bottom => light_chunk[[x, y - 1, z]],
-                                BlockFace::Right => light_chunk[[x + 1, y, z]],
-                                BlockFace::Left => light_chunk[[x - 1, y, z]],
-                                BlockFace::Front => light_chunk[[x, y, z - 1]],
-                                BlockFace::Back => light_chunk[[x, y, z + 1]],
+                                    match adjacent_block_config.cull_delimiter(
+                                        cull_face
+                                            .invert()
+                                            .reverse_rotate(adjacent_block_state.rotation()),
+                                    ) {
+                                        Some(deli) => Some(deli),
+                                        None => continue,
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+
+                            // TODO: Water surfaces under solid blocks will be 0 light level. Quads
+                            // need to be able to set the offset directly so that they can take
+                            // the light level of the block they are from perhaps.
+                            let light = match quad.light_face.rotate(block_state.rotation()) {
+                                BlockFace::Right => light_chunk.get_light(x + 1, y, z),
+                                BlockFace::Left => light_chunk.get_light(x - 1, y, z),
+                                BlockFace::Front => light_chunk.get_light(x, y, z + 1),
+                                BlockFace::Back => light_chunk.get_light(x, y, z - 1),
+                                BlockFace::Top => light_chunk.get_light(x, y + 1, z),
+                                BlockFace::Bottom => light_chunk.get_light(x, y - 1, z),
                             };
 
                             builder.add_face(
                                 [x as f32 - 1.0, y as f32 - 1.0, z as f32 - 1.0],
                                 quad,
                                 light,
+                                block_state,
+                                cull_delimiter,
                             );
                         }
                     }
                     Block::Model(model) => {
-                        let rotation = match chunk.get_block_state(x, y, z) {
-                            Some(b) => b,
-                            None => panic!(
-                                "Block state should have been validated at reception of the chunk."
-                            ),
-                        };
-
-                        let (handle, mut transform) = if rotation & 0b0100 != 0 {
+                        let (handle, mut transform) = if block_state.uses_side_model() {
                             match &model.side {
                                 Some((handle, transform)) => {
                                     (handle.clone_weak(), transform.clone())
@@ -344,22 +342,18 @@ async fn build_mesh(
                             }
                         };
 
-                        match rotation & 0b0011 {
-                            // north, default
-                            0 => (),
-                            // east
-                            1 => transform.rotate_local_y(90.0),
-                            // south
-                            2 => transform.rotate_local_y(180.0),
-                            // west
-                            3 => transform.rotate_local_y(270.0),
-                            _ => unreachable!(),
+                        let mut rotation = match block_state.rotation() {
+                            BlockRotation::None => Quat::from_rotation_y(0.0),
+                            BlockRotation::Once => Quat::from_rotation_y(90.0),
+                            BlockRotation::Twice => Quat::from_rotation_y(180.0),
+                            BlockRotation::Thrice => Quat::from_rotation_y(270.0),
+                        };
+
+                        if block_state.is_upside_down() {
+                            rotation *= Quat::from_rotation_x(180.0);
                         }
 
-                        if rotation & 0b1000 == 0b1000 {
-                            transform.rotate_local_x(180.0)
-                        }
-
+                        transform.rotate_around(Vec3::splat(0.5), rotation);
                         transform.translation += Vec3::new(x as f32, y as f32, z as f32) - 1.0;
 
                         scene_bundles.push((handle, transform));
@@ -383,38 +377,78 @@ async fn build_mesh(
     return (meshes, scene_bundles);
 }
 
+// TODO: This used to used to store 2d arrays for the surrounding chunks, but changed to Chunk's to
+// have access to block state while rendering. After changing though it looks to me like it renders
+// slower (not actually sure). How can this be? Constructing the arrays must surely be way more
+// expensive! Maybe it's because of having to map the option every time it's accessing a block.
+// Might be worth testing just storing the blocks as a vec instead of the Chunk struct, empty
+// vecs for chunks that don't exist.
+// See commit 'b5d40b1' for array layout
+//
 /// Larger chunk containing both the chunks and the immediate blocks around it.
 pub struct ExpandedChunk {
     pub center: Chunk,
-    pub top: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
-    pub bottom: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
-    pub right: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
-    pub left: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
-    pub front: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
-    pub back: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE],
+    pub top: Option<Chunk>,
+    pub bottom: Option<Chunk>,
+    pub right: Option<Chunk>,
+    pub left: Option<Chunk>,
+    pub front: Option<Chunk>,
+    pub back: Option<Chunk>,
 }
 
 impl ExpandedChunk {
     fn get_block(&self, x: usize, y: usize, z: usize) -> Option<BlockId> {
         if x == 0 {
-            return self.left[y - 1][z - 1];
+            return self.left.as_ref().map(|chunk| chunk[[15, y - 1, z - 1]]);
         } else if x == 17 {
-            return self.right[y - 1][z - 1];
+            return self.right.as_ref().map(|chunk| chunk[[0, y - 1, z - 1]]);
         } else if y == 0 {
-            return self.bottom[x - 1][z - 1];
+            return self.bottom.as_ref().map(|chunk| chunk[[x - 1, 15, z - 1]]);
         } else if y == 17 {
-            return self.top[x - 1][z - 1];
+            return self.top.as_ref().map(|chunk| chunk[[x - 1, 0, z - 1]]);
         } else if z == 0 {
-            return self.back[x - 1][y - 1];
+            return self.back.as_ref().map(|chunk| chunk[[x - 1, y - 1, 15]]);
         } else if z == 17 {
-            return self.front[x - 1][y - 1];
+            return self.front.as_ref().map(|chunk| chunk[[x - 1, y - 1, 0]]);
         } else {
             return Some(self.center[[x - 1, y - 1, z - 1]]);
         }
     }
 
-    fn get_block_state(&self, x: usize, y: usize, z: usize) -> Option<u16> {
-        return self.center.get_block_state(x - 1, y - 1, z - 1);
+    fn get_block_state(&self, x: usize, y: usize, z: usize) -> Option<BlockState> {
+        if x == 0 {
+            return self
+                .left
+                .as_ref()
+                .and_then(|chunk| chunk.get_block_state(15, y - 1, z - 1));
+        } else if x == 17 {
+            return self
+                .right
+                .as_ref()
+                .and_then(|chunk| chunk.get_block_state(0, y - 1, z - 1));
+        } else if y == 0 {
+            return self
+                .bottom
+                .as_ref()
+                .and_then(|chunk| chunk.get_block_state(x - 1, 15, z - 1));
+        } else if y == 17 {
+            return self
+                .top
+                .as_ref()
+                .and_then(|chunk| chunk.get_block_state(x - 1, 0, z - 1));
+        } else if z == 0 {
+            return self
+                .back
+                .as_ref()
+                .and_then(|chunk| chunk.get_block_state(x - 1, y - 1, 15));
+        } else if z == 17 {
+            return self
+                .front
+                .as_ref()
+                .and_then(|chunk| chunk.get_block_state(x - 1, y - 1, 0));
+        } else {
+            return self.center.get_block_state(x - 1, y - 1, z - 1);
+        }
     }
 }
 
@@ -428,24 +462,22 @@ pub struct ExpandedLightChunk {
     pub back: [[Light; CHUNK_SIZE]; CHUNK_SIZE],
 }
 
-impl Index<[usize; 3]> for ExpandedLightChunk {
-    type Output = Light;
-
-    fn index(&self, index: [usize; 3]) -> &Self::Output {
-        if index[0] == 0 {
-            return &self.left[index[1] - 1][index[2] - 1];
-        } else if index[0] == 17 {
-            return &self.right[index[1] - 1][index[2] - 1];
-        } else if index[1] == 0 {
-            return &self.bottom[index[0] - 1][index[2] - 1];
-        } else if index[1] == 17 {
-            return &self.top[index[0] - 1][index[2] - 1];
-        } else if index[2] == 0 {
-            return &self.back[index[0] - 1][index[1] - 1];
-        } else if index[2] == 17 {
-            return &self.front[index[0] - 1][index[1] - 1];
+impl ExpandedLightChunk {
+    fn get_light(&self, x: usize, y: usize, z: usize) -> Light {
+        if x == 0 {
+            return self.left[y - 1][z - 1];
+        } else if x == 17 {
+            return self.right[y - 1][z - 1];
+        } else if y == 0 {
+            return self.bottom[x - 1][z - 1];
+        } else if y == 17 {
+            return self.top[x - 1][z - 1];
+        } else if z == 0 {
+            return self.back[x - 1][y - 1];
+        } else if z == 17 {
+            return self.front[x - 1][y - 1];
         } else {
-            return &self.center[[index[0] - 1, index[1] - 1, index[2] - 1]];
+            return self.center[[x - 1, y - 1, z - 1]];
         }
     }
 }

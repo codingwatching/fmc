@@ -311,7 +311,10 @@ fn handle_chunk_loading_tasks(
                 let invert_offset = -(*chunk_offset);
 
                 if let Some(neighbors) = chunk.status.neighbors() {
-                    neighbors.insert(*chunk_offset, neighbor_chunk.partial_chunks[&invert_offset].clone());
+                    neighbors.insert(
+                        *chunk_offset,
+                        neighbor_chunk.partial_chunks[&invert_offset].clone(),
+                    );
                 }
 
                 if let Some(neighbors) = neighbor_chunk.status.neighbors() {
@@ -374,7 +377,9 @@ fn unsubscribe_from_chunks(
                 // loading is moved fully server side. The edge case here is that a player moves
                 // outside the render distance while the chunk is still generating, so the server
                 // discards it, but it's left as requested on the client.
-                if world_map.contains_chunk(&chunk_pos) && chunk_subscriptions.unsubscribe(&chunk_pos, &connection) {
+                if world_map.contains_chunk(&chunk_pos)
+                    && chunk_subscriptions.unsubscribe(&chunk_pos, &connection)
+                {
                     unload_chunk_events.send(ChunkUnloadEvent(chunk_pos));
                 }
             }

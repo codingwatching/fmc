@@ -12,7 +12,7 @@ use crate::{
     players::{PlayerCamera, Players},
     utils,
     world::{
-        blocks::{BlockFace, Blocks, Friction},
+        blocks::{BlockFace, BlockRotation, BlockState, Blocks, Friction},
         items::{DroppedItem, Item, ItemStack, ItemStorage, Items},
         //blocks::Blocks,
         models::{Model, ModelBundle, ModelVisibility, Models},
@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-use super::PlayerEquippedItem;
+use super::{PlayerEquippedItem, PlayerMarker};
 
 // Keeps the state of how far along a block is to breaking
 #[derive(Debug)]
@@ -62,7 +62,7 @@ pub fn handle_left_clicks(
 
         let (block_pos, block_id, _block_face) =
             match world_map.raycast_to_block(&camera_transform, 5.0) {
-                Some(tuple) => tuple,
+                Some(b) => b,
                 None => continue,
             };
 
@@ -106,11 +106,11 @@ pub fn handle_left_clicks(
                     model.asset_id = models.get_id("breaking_stage_9");
                 } else if progress >= 1.0 {
                     let blocks = Blocks::get();
-                    block_update_writer.send(BlockUpdate::Change(
-                        block_pos,
-                        blocks.get_id("air"),
-                        None,
-                    ));
+                    block_update_writer.send(BlockUpdate::Change {
+                        position: block_pos,
+                        block_id: blocks.get_id("air"),
+                        block_state: None,
+                    });
 
                     let block_config = blocks.get_config(&block_id);
                     let (dropped_item_id, count) = match block_config.drop() {
@@ -159,7 +159,7 @@ pub fn handle_left_clicks(
                                 ..default()
                             },
                         },
-                        // TODO: This velocity feels very off
+                        // TODO: This velocity feels off
                         Velocity(DVec3::new(velocity_x, 5.5, velocity_z)),
                         aabb,
                     ));
@@ -206,65 +206,111 @@ pub fn handle_left_clicks(
 }
 
 // Process block events sent by the clients. Client should make sure that it is a valid placement.
-pub fn place_blocks(
+pub fn handle_right_clicks(
     net: Res<NetworkServer>,
     world_map: Res<WorldMap>,
     players: Res<Players>,
     items: Res<Items>,
+    mut clicks: EventReader<NetworkData<messages::RightClick>>,
+    mut player_query: Query<
+        (
+            &mut ItemStorage,
+            &PlayerEquippedItem,
+            &F64GlobalTransform,
+            &PlayerCamera,
+        ),
+        With<PlayerMarker>,
+    >,
     mut block_update_writer: EventWriter<BlockUpdate>,
-    mut inventory_query: Query<(&mut ItemStorage, &PlayerEquippedItem), With<ConnectionId>>,
-    mut block_update_events: EventReader<NetworkData<messages::BlockUpdates>>,
 ) {
-    for event in block_update_events.iter() {
-        let player_entity = players.get(&event.source);
-        let (mut inventory, equipped_item) = inventory_query.get_mut(player_entity).unwrap();
+    for right_click in clicks.iter() {
+        let player_entity = players.get(&right_click.source);
+        let (mut inventory, equipped_item, player_position, player_camera) =
+            player_query.get_mut(player_entity).unwrap();
+
+        let camera_transform = F64Transform {
+            translation: player_position.translation() + player_camera.translation,
+            rotation: player_camera.rotation,
+            ..default()
+        };
+
+        let (block_pos, _, block_face) = match world_map.raycast_to_block(&camera_transform, 5.0) {
+            Some(b) => b,
+            None => continue,
+        };
+
+        let new_block_position = block_face.shift_position(block_pos);
+        let block_id = world_map.get_block(new_block_position).unwrap();
+
+        let blocks = Blocks::get();
+        let block_config = blocks.get_config(&block_id);
+
+        if !matches!(block_config.friction, Friction::Drag(_)) {
+            dbg!(&block_config.name, block_face, new_block_position);
+            continue;
+        }
+
         let equipped_item = &mut inventory[equipped_item.0];
 
         if equipped_item.is_empty() {
-            // Illegal, don't try to place without something in your hand.
-            net.disconnect(event.source);
             continue;
         }
 
         let item_config = items.get_config(&equipped_item.item().unwrap().id);
+        equipped_item.subtract(1);
 
-        let chunk = match world_map.get_chunk(&event.chunk_position) {
-            Some(chunk) => chunk,
-            None => {
-                net.send_one(
-                    event.source,
-                    messages::Disconnect {
-                        message: "Client sent block update for unloaded chunk.".to_owned(),
-                    },
-                );
-                net.disconnect(event.source);
-                continue;
+        // TODO: Placing blocks like stairs can be annoying, as situations often arise where your
+        // position alone isn't adequate to find the correct placement.
+        // There's a clever way to do this I think. If you partition a block face as such:
+        //  -------------------
+        //  | \_____________/ |
+        //  | |             | |
+        //  | |             | |
+        //  | |             | |
+        //  | |             | |
+        //  | |_____________| |
+        //  |/              \ |
+        //  -------------------
+        //  (Depicts 4 outer trapezoids and one inner square)
+        // By comparing which sector was clicked and the angle of the camera I think a more
+        // intuitive block placement can be achieved.
+        let block_state = if blocks.get_config(&item_config.block).is_rotatable {
+            let mut block_state = BlockState::default();
+
+            if block_face == BlockFace::Bottom {
+                let distance = player_position.translation().as_ivec3() - block_pos;
+                let max = IVec2::new(distance.x, distance.z).max_element();
+
+                if max == distance.x {
+                    if distance.x.is_positive() {
+                        block_state.set_rotation(BlockRotation::Once);
+                        Some(block_state)
+                    } else {
+                        block_state.set_rotation(BlockRotation::Thrice);
+                        Some(block_state)
+                    }
+                } else if max == distance.z {
+                    if distance.z.is_positive() {
+                        None
+                    } else {
+                        block_state.set_rotation(BlockRotation::Twice);
+                        Some(block_state)
+                    }
+                } else {
+                    unreachable!()
+                }
+            } else {
+                block_state.set_rotation(block_face.to_rotation());
+                Some(block_state)
             }
+        } else {
+            None
         };
 
-        let blocks = Blocks::get();
-
-        for (index, block_id) in event.blocks.iter() {
-            if *block_id != item_config.block || equipped_item.size() == 0 {
-                net.disconnect(event.source);
-                continue;
-            }
-
-            equipped_item.subtract(1);
-
-            let block_config = if chunk.is_uniform() {
-                blocks.get_config(&chunk[0])
-            } else {
-                blocks.get_config(&chunk[*index])
-            };
-
-            if matches!(block_config.friction, Friction::Drag(_)) {
-                block_update_writer.send(BlockUpdate::Change(
-                    event.chunk_position + utils::block_index_to_position(*index),
-                    *block_id,
-                    event.block_state.get(index).copied(),
-                ));
-            }
-        }
+        block_update_writer.send(BlockUpdate::Change {
+            position: new_block_position,
+            block_id: item_config.block,
+            block_state,
+        });
     }
 }

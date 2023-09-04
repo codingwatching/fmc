@@ -23,33 +23,33 @@ const FACE_VERTICES: [[[f32; 3]; 4]; 6] = [
         [1.0, 1.0, 0.0],
         [1.0, 1.0, 1.0],
     ],
-    // Front
+    // Back
     [
-        [0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0],
         [1.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
     ],
     // Left
     [
-        [0.0, 0.0, 1.0],
-        [0.0, 1.0, 1.0],
-        [0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 1.0, 1.0],
+        [0.0, 0.0, 1.0],
     ],
     // Right
     [
-        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0],
         [1.0, 1.0, 0.0],
-        [1.0, 0.0, 1.0],
-        [1.0, 1.0, 1.0],
+        [1.0, 0.0, 0.0],
     ],
-    // Back
+    // Front
     [
-        [1.0, 0.0, 1.0],
-        [1.0, 1.0, 1.0],
-        [0.0, 0.0, 1.0],
         [0.0, 1.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0],
     ],
     // Bottom
     [
@@ -62,10 +62,10 @@ const FACE_VERTICES: [[[f32; 3]; 4]; 6] = [
 
 const FACE_NORMALS: [[f32; 3]; 6] = [
     [0.0, 1.0, 0.0],  // Top
-    [0.0, 0.0, -1.0], // Front
+    [0.0, 0.0, -1.0], // Back
     [-1.0, 0.0, 0.0], // Left
     [1.0, 0.0, 0.0],  // Right
-    [0.0, 0.0, 1.0],  // Back
+    [0.0, 0.0, 1.0],  // Front
     [0.0, -1.0, 0.0], // Bottom
 ];
 
@@ -111,7 +111,9 @@ pub fn load_blocks(
     maybe_blocks.resize_with(block_ids.len(), Option::default);
 
     // Recursively walk block configuration directory
-    fn walk_dir<T: AsRef<std::path::Path>>(dir: T) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    fn walk_dir<T: AsRef<std::path::Path>>(
+        dir: T,
+    ) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
         let mut files = Vec::new();
 
         let directory = std::fs::read_dir(dir)?;
@@ -120,7 +122,7 @@ pub fn load_blocks(
             let file_path = entry?.path();
 
             if file_path.is_dir() {
-                let sub_files = walk_dir(&file_path)?; 
+                let sub_files = walk_dir(&file_path)?;
                 files.extend(sub_files);
             } else {
                 files.push(file_path);
@@ -180,6 +182,7 @@ pub fn load_blocks(
                 material,
                 only_cull_self,
                 interactable,
+                is_rotatable,
                 light_attenuation,
             } => {
                 let material_handle = if let Some(m) = material_handles.get(&material) {
@@ -220,35 +223,30 @@ pub fn load_blocks(
                             }
                         };
 
+                        let face = match i {
+                            0 => BlockFace::Top,
+                            1 => BlockFace::Back,
+                            2 => BlockFace::Left,
+                            3 => BlockFace::Right,
+                            4 => BlockFace::Front,
+                            5 => BlockFace::Bottom,
+                            _ => unreachable!(),
+                        };
+
                         let square = QuadPrimitive {
                             vertices: FACE_VERTICES[i],
                             normals: [FACE_NORMALS[i], FACE_NORMALS[i]],
                             texture_array_id,
-                            cull_face: Some(match i {
-                                0 => BlockFace::Bottom,
-                                1 => BlockFace::Back,
-                                2 => BlockFace::Right,
-                                3 => BlockFace::Left,
-                                4 => BlockFace::Front,
-                                5 => BlockFace::Top,
-                                _ => unreachable!(),
-                            }),
-                            light_face: match i {
-                                0 => BlockFace::Top,
-                                1 => BlockFace::Front,
-                                2 => BlockFace::Left,
-                                3 => BlockFace::Right,
-                                4 => BlockFace::Back,
-                                5 => BlockFace::Bottom,
-                                _ => unreachable!(),
-                            },
+                            cull_face: Some(face),
+                            light_face: face,
                             rotate_texture: false,
-
                         };
 
                         mesh_primitives.push(square);
                     }
                 }
+
+                let mut cull_delimiters = [None, None, None, None];
 
                 if let Some(quads) = quads {
                     for quad in quads.iter() {
@@ -306,6 +304,19 @@ pub fn load_blocks(
                             unreachable!();
                         };
 
+                        match quad.cull_face {
+                            Some(BlockFace::Top) | Some(BlockFace::Bottom) => (),
+                            Some(b) => {
+                                if quad.vertices[0][1] != 1.0 || quad.vertices[2][1] != 1.0 {
+                                    // Top left -> top right and vice versa to mirror it to how a
+                                    // facing block would see it.
+                                    cull_delimiters[b as usize] =
+                                        Some((quad.vertices[2][1], quad.vertices[0][1]));
+                                }
+                            }
+                            None => (),
+                        }
+
                         mesh_primitives.push(QuadPrimitive {
                             vertices: quad.vertices,
                             normals,
@@ -334,6 +345,8 @@ pub fn load_blocks(
                     friction,
                     interactable,
                     cull_method,
+                    cull_delimiters,
+                    is_rotatable,
                     light_attenuation: light_attenuation.unwrap_or(15).min(15),
                 })
             }
@@ -343,7 +356,6 @@ pub fn load_blocks(
                 center_model,
                 side_model,
                 friction,
-                cull_faces,
                 interactable,
             } => {
                 let center_model = if let Some(center_model) = center_model {
@@ -389,7 +401,6 @@ pub fn load_blocks(
                     center: center_model,
                     side: side_model,
                     friction,
-                    cull_faces,
                     interactable,
                 })
             }
@@ -439,18 +450,12 @@ impl Blocks {
         }
     }
 
-    /// Use when reading blocks directly from server connection. It is unknown if it is a valid
-    /// block.
-    pub fn get_config(&self, block_id: &BlockId) -> Option<&Block> {
-        return self.blocks.get(*block_id as usize);
-    }
-
     pub fn get_id(&self, name: &str) -> Option<&BlockId> {
         return self.block_ids.get(name);
     }
 
-    pub fn contains(&self, block_id: BlockId) -> bool {
-        return block_id as usize <= self.blocks.len();
+    pub fn contain(&self, block_id: BlockId) -> bool {
+        return (block_id as usize) < self.blocks.len();
     }
 }
 
@@ -477,6 +482,20 @@ pub struct Cube {
     pub interactable: bool,
     /// The alpha mode of the blocks associated material, used to determine face culling.
     cull_method: CullMethod,
+    // TODO: This is not strictly needed I think, and it makes the code messy in a direction I
+    // don't like. It was needed for water, but I don't think it's actually needed for anything
+    // else. Water could be implemented by having many more water blocks to ensure that all
+    // possible water states are covered. This would also make water feel fluent, which it doesn't
+    // currently. I didn't because I feel bad about wasting some 500 blocks (9!/6! I think is
+    // correct.)
+    //
+    /// Two vertical points on the left and right side of the vertical block faces that make a line
+    /// delimiting how much of an adjacent block face it will cull. This is needed for transparent
+    /// blocks like water as you only want the parts exposed to air to render when two water blocks
+    /// of different levels are adjacent to each other.
+    cull_delimiters: [Option<(f32, f32)>; 4],
+    /// If the block is rotateable around the y-axis
+    is_rotatable: bool,
     /// If transparent, should this decrease the vertical sunlight level.
     pub light_attenuation: u8,
 }
@@ -501,8 +520,6 @@ pub struct BlockModel {
     pub side: Option<(Handle<Scene>, Transform)>,
     /// Friction or drag, applied by closest normal of the textures.
     pub friction: Friction,
-    /// Which of the blocks faces obstruct the view of adjacent blocks.
-    pub cull_faces: ModelCullFaces,
     /// If when the player uses their equipped item on this block, it should count as an
     /// interaction, or it should count as trying to place a block.
     pub interactable: bool,
@@ -515,7 +532,17 @@ pub enum Block {
 }
 
 impl Block {
-    pub fn culls(&self, other: &Block, face: BlockFace) -> bool {
+    pub fn cull_delimiter(&self, block_face: BlockFace) -> Option<(f32, f32)> {
+        match self {
+            Block::Cube(cube) => match block_face {
+                BlockFace::Top | BlockFace::Bottom => None,
+                b => cube.cull_delimiters[b as usize],
+            },
+            Block::Model(_) => None,
+        }
+    }
+
+    pub fn culls(&self, other: &Block) -> bool {
         match self {
             Block::Cube(cube) => {
                 let Block::Cube(other_cube) = other else {
@@ -534,14 +561,7 @@ impl Block {
                     CullMethod::OnlySelf => other_cube.cull_method == CullMethod::OnlySelf,
                 }
             }
-            Block::Model(model) => match face {
-                BlockFace::Front => model.cull_faces.front,
-                BlockFace::Back => model.cull_faces.back,
-                BlockFace::Top => model.cull_faces.top,
-                BlockFace::Bottom => model.cull_faces.bottom,
-                BlockFace::Left => model.cull_faces.left,
-                BlockFace::Right => model.cull_faces.right,
-            },
+            Block::Model(_) => false,
         }
     }
 
@@ -552,6 +572,13 @@ impl Block {
                 _ => true,
             },
             Block::Model(_) => true,
+        }
+    }
+
+    pub fn can_have_block_state(&self) -> bool {
+        match self {
+            Block::Cube(cube) => cube.is_rotatable,
+            Block::Model(model) => model.side.is_some(),
         }
     }
 
@@ -574,6 +601,49 @@ impl Block {
             Block::Cube(c) => &c.name,
             Block::Model(m) => &m.name,
         }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BlockState(pub u16);
+
+impl BlockState {
+    pub fn rotation(&self) -> BlockRotation {
+        return unsafe { std::mem::transmute(self.0 & 0b11) };
+    }
+
+    pub fn uses_side_model(&self) -> bool {
+        return self.0 & 0b100 != 0;
+    }
+
+    pub fn is_upside_down(&self) -> bool {
+        return self.0 & 0b1000 != 0;
+    }
+}
+
+// Clockwise rotation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
+pub enum BlockRotation {
+    None = 0,
+    Once,
+    Twice,
+    Thrice,
+}
+
+impl BlockRotation {
+    // Bevy's coordinate system is so that +z is out of the screen, +y up, +x right so if you do a
+    // normal rotation it would look like it's moving clockwise when viewing it from above. Since
+    // rotations are expected to be counter clockwise the rotation is inverted. Making the true
+    // rotation clockwise, but when you view it from above it will look counter clockwise. This is
+    // to make it easier to rotate mentally.
+    pub fn rotate_vertex(&self, vertex: &mut [f32; 3]) {
+        let cos = (*self as u16 as f32 * std::f32::consts::FRAC_PI_2).cos();
+        let sin = (*self as u16 as f32 * std::f32::consts::FRAC_PI_2).sin();
+        let new_x = 0.5 + cos * (vertex[0] - 0.5) + sin * (vertex[2] - 0.5);
+        let new_z = 0.5 - sin * (vertex[0] - 0.5) + cos * (vertex[2] - 0.5);
+        vertex[0] = new_x;
+        vertex[2] = new_z;
     }
 }
 
@@ -600,6 +670,9 @@ enum BlockConfig {
         /// If the block is interactable
         #[serde(default)]
         interactable: bool,
+        /// If the block can rotate around the y axis
+        #[serde(default)]
+        is_rotatable: bool,
         /// How many levels light should decrease when passing through this block.
         light_attenuation: Option<u8>,
     },
@@ -612,9 +685,6 @@ enum BlockConfig {
         side_model: Option<ModelConfig>,
         /// The friction or drag.
         friction: Friction,
-        /// Which faces the model can cull of adjacent blocks.
-        #[serde(default)]
-        cull_faces: ModelCullFaces,
         /// If the block is interactable
         #[serde(default)]
         interactable: bool,
@@ -680,8 +750,6 @@ enum CullMethod {
 pub struct QuadPrimitive {
     /// Vertices of the 4 corners of the square.
     pub vertices: [[f32; 3]; 4],
-    // XXX: These aren't in use
-    // Note that this is necessary to have the two tris angled differently as with water.
     /// Normals for both triangles.
     pub normals: [[f32; 3]; 2],
     /// Index id in the texture array.
@@ -695,6 +763,11 @@ pub struct QuadPrimitive {
 
 #[derive(Deserialize)]
 struct QuadPrimitiveJson {
+    // indexing
+    // 1  3
+    // |\ |
+    // | \|
+    // 0  2
     vertices: [[f32; 3]; 4],
     texture: String,
     cull_face: Option<BlockFace>,
@@ -721,27 +794,72 @@ struct ModelConfig {
     rotation: Quat,
 }
 
-/// Which faces of the block
-#[derive(Default, Debug, Deserialize)]
-pub struct ModelCullFaces {
-    front: bool,
-    back: bool,
-    top: bool,
-    bottom: bool,
-    right: bool,
-    left: bool,
-}
-
 // The different faces of a block
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockFace {
-    Top,
-    Bottom,
+    // +X direction
     Right,
     Left,
+    // +Z direction
     Front,
     Back,
+    // +Y direction
+    Top,
+    Bottom,
+}
+
+impl BlockFace {
+    pub fn rotate(&self, rotation: BlockRotation) -> BlockFace {
+        match self {
+            BlockFace::Right => match rotation {
+                BlockRotation::None => BlockFace::Right,
+                BlockRotation::Once => BlockFace::Back,
+                BlockRotation::Twice => BlockFace::Left,
+                BlockRotation::Thrice => BlockFace::Front,
+            },
+            BlockFace::Front => match rotation {
+                BlockRotation::None => BlockFace::Front,
+                BlockRotation::Once => BlockFace::Right,
+                BlockRotation::Twice => BlockFace::Back,
+                BlockRotation::Thrice => BlockFace::Left,
+            },
+            BlockFace::Left => match rotation {
+                BlockRotation::None => BlockFace::Left,
+                BlockRotation::Once => BlockFace::Front,
+                BlockRotation::Twice => BlockFace::Right,
+                BlockRotation::Thrice => BlockFace::Back,
+            },
+            BlockFace::Back => match rotation {
+                BlockRotation::None => BlockFace::Back,
+                BlockRotation::Once => BlockFace::Left,
+                BlockRotation::Twice => BlockFace::Front,
+                BlockRotation::Thrice => BlockFace::Right,
+            },
+            BlockFace::Top => BlockFace::Top,
+            BlockFace::Bottom => BlockFace::Bottom,
+        }
+    }
+
+    pub fn reverse_rotate(&self, rotation: BlockRotation) -> BlockFace {
+        return self.rotate(match rotation {
+            BlockRotation::None => BlockRotation::None,
+            BlockRotation::Once => BlockRotation::Thrice,
+            BlockRotation::Twice => BlockRotation::Twice,
+            BlockRotation::Thrice => BlockRotation::Once,
+        });
+    }
+
+    pub fn invert(&self) -> Self {
+        match self {
+            BlockFace::Right => BlockFace::Left,
+            BlockFace::Left => BlockFace::Right,
+            BlockFace::Front => BlockFace::Back,
+            BlockFace::Back => BlockFace::Front,
+            BlockFace::Top => BlockFace::Bottom,
+            BlockFace::Bottom => BlockFace::Top,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -3,7 +3,7 @@ use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
 use crate::database::Database;
-use crate::world::blocks::Blocks;
+use crate::world::blocks::{BlockState, Blocks};
 use crate::{constants::*, utils};
 use bevy::prelude::IVec3;
 use fmc_networking::BlockId;
@@ -40,7 +40,7 @@ impl ChunkStatus {
                 neighbors: partial_chunks,
                 ..
             } => Some(partial_chunks),
-            Self::Finished => None
+            Self::Finished => None,
         }
     }
 
@@ -63,7 +63,7 @@ pub struct Chunk {
     // Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
     // (zero indexed) the formula x * CHUNK_SIZE^2 + z * CHUNK_SIZE + y is used.
     pub blocks: Vec<BlockId>,
-    // Block state containing optional information, see fmc_networking for bit layout
+    // Block state containing optional information, see `BlockState` for bit layout
     pub block_state: HashMap<usize, u16>,
 }
 
@@ -92,16 +92,18 @@ impl Chunk {
         };
     }
 
-    pub fn get_block_state(&self, index: &usize) -> Option<u16> {
-        return self.block_state.get(index).copied();
+    pub fn get_block_state(&self, index: &usize) -> Option<BlockState> {
+        return self.block_state.get(index).copied().map(BlockState);
     }
 
     pub fn is_uniform(&self) -> bool {
         return self.blocks.len() == 1;
     }
 
-    pub fn convert_uniform_to_regular(&mut self) {
-        assert!(self.blocks.len() == 1);
+    pub fn try_convert_uniform_to_regular(&mut self) {
+        if !self.is_uniform() {
+            return;
+        }
         let block_id = self.blocks[0];
         self.blocks = vec![block_id; CHUNK_SIZE.pow(3)];
     }
@@ -167,14 +169,18 @@ impl Chunk {
         return (position, chunk);
     }
 
-    pub fn set_block_state(&mut self, block_index: usize, state: u16) {
-        self.block_state.insert(block_index, state);
+    pub fn set_block_state(&mut self, block_index: usize, block_state: Option<BlockState>) {
+        if let Some(block_state) = block_state {
+            self.block_state.insert(block_index, block_state.0);
+        } else {
+            self.block_state.remove(&block_index);
+        }
     }
 
     pub fn try_finish(&mut self) -> bool {
         let neighbors = match self.status.neighbors() {
             Some(n) => n,
-            None => return false
+            None => return false,
         };
 
         if !(neighbors.len() == 26) {
@@ -185,7 +191,13 @@ impl Chunk {
 
         let status = std::mem::replace(&mut self.status, ChunkStatus::Finished);
 
-        let ChunkStatus::Unfinished { saved_blocks, mut neighbors } = status else { unreachable!() };
+        let ChunkStatus::Unfinished {
+            saved_blocks,
+            mut neighbors,
+        } = status
+        else {
+            unreachable!()
+        };
         let below_blocks = neighbors.remove(&IVec3::new(0, -16, 0)).unwrap();
 
         let air = Blocks::get().get_id("air");
@@ -194,14 +206,14 @@ impl Chunk {
             .chain(neighbors.drain())
         {
             if blocks.len() > 0 && self.is_uniform() {
-                self.convert_uniform_to_regular();
+                self.try_convert_uniform_to_regular();
             }
 
             for (block_index, (block, block_state)) in blocks.into_iter() {
                 if &self[block_index] == &air {
                     self[block_index] = block;
                     if let Some(block_state) = block_state {
-                        self.set_block_state(block_index, block_state);
+                        self.set_block_state(block_index, Some(BlockState(block_state)));
                     }
                 }
             }
@@ -210,7 +222,7 @@ impl Chunk {
         for (block_index, (block, block_state)) in saved_blocks {
             self[block_index] = block;
             if let Some(block_state) = block_state {
-                self.set_block_state(block_index, block_state);
+                self.set_block_state(block_index, Some(BlockState(block_state)));
             }
         }
 

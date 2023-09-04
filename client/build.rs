@@ -1,6 +1,6 @@
 // This compresses the assets into an archive so that it can be included in the executable.
 fn main() {
-    println!("cargo:rerun-if-change=assets");
+    println!("cargo:rerun-if-changed=assets");
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let mut archive = tar::Builder::new(Vec::new());

@@ -5,7 +5,8 @@ use crate::{
     rendering::chunk::MeshedChunkMarker,
     settings, utils,
     world::{
-        blocks::{Block, Blocks},
+        self,
+        blocks::{Block, BlockState, Blocks},
         world_map::{
             chunk::{Chunk, ChunkMarker, VisibleSides},
             WorldMap,
@@ -408,6 +409,13 @@ fn send_chunk_requests(
     }
 }
 
+// TODO: This could take like ResMut<Events<ChunkResponse>> and drain the chunks to avoid
+// reallocation. The lighting system listens for the same event, and it is nice to have the systems
+// self-contained. Maybe the world map should contain only the chunk entity. This way There would
+// no longer be a need for VisibleSidesEvent either. Everything just listens for Changed<Chunk>.
+// Accessing the world_map isn't actually a bottleneck I think, and doing a double lookup can't be
+// that bad.
+//
 /// Handles chunks sent from the server.
 fn handle_chunk_responses(
     origin: Res<Origin>,
@@ -415,6 +423,7 @@ fn handle_chunk_responses(
     mut world_map: ResMut<WorldMap>,
     mut requested: ResMut<Requested>,
     net: Res<NetworkClient>,
+    //mut chunk_responses: ResMut<Events<NetworkData<messages::ChunkResponse>>>,
     mut chunk_responses: EventReader<NetworkData<messages::ChunkResponse>>,
     mut visible_sides_events: EventWriter<VisibleSidesEvent>,
     //mut amount: Local<usize>, //chunk_query: Query<(&Chunk, &chunk::Blocks)>,
@@ -425,8 +434,11 @@ fn handle_chunk_responses(
         for chunk in response.chunks.iter() {
             // TODO: Need to validate block state too. Server can crash client.
             for block_id in chunk.blocks.iter() {
-                if !blocks.contains(*block_id) {
-                    net.disconnect("Server sent chunk with unknown block id: '{}'");
+                if !blocks.contain(*block_id) {
+                    net.disconnect(format!(
+                        "Server sent chunk with unknown block id: '{}'",
+                        block_id
+                    ));
                     return;
                 }
             }
@@ -439,7 +451,14 @@ fn handle_chunk_responses(
             {
                 world_map.insert(
                     chunk.position,
-                    Chunk::new_air(chunk.blocks.clone(), chunk.block_state.clone()),
+                    Chunk::new_air(
+                        chunk.blocks.clone(),
+                        chunk
+                            .block_state
+                            .iter()
+                            .map(|(&k, &v)| (k, BlockState(v)))
+                            .collect(),
+                    ),
                 );
             } else {
                 let entity = commands
@@ -453,7 +472,15 @@ fn handle_chunk_responses(
 
                 world_map.insert(
                     chunk.position,
-                    Chunk::new(entity, chunk.blocks.clone(), chunk.block_state.clone()),
+                    Chunk::new(
+                        entity,
+                        chunk.blocks.clone(),
+                        chunk
+                            .block_state
+                            .iter()
+                            .map(|(&k, &v)| (k, BlockState(v)))
+                            .collect(),
+                    ),
                 );
 
                 visible_sides_events.send(VisibleSidesEvent(chunk.position));
@@ -464,7 +491,7 @@ fn handle_chunk_responses(
     }
 }
 
-// TODO: This doesn't feel like it belongs in this file.
+// TODO: This doesn't belong in this file
 fn handle_block_updates(
     mut commands: Commands,
     origin: Res<Origin>,
@@ -494,8 +521,8 @@ fn handle_block_updates(
         }
 
         let blocks = Blocks::get();
-        for (index, block) in event.blocks.iter() {
-            if !blocks.contains(*block) {
+        for (index, block, block_state) in event.blocks.iter() {
+            if !blocks.contain(*block) {
                 net.disconnect(
                     "Server sent block update with non-existing block, no block \
                     with the id: '{block}'",
@@ -517,8 +544,8 @@ fn handle_block_updates(
 
             chunk[*index] = *block;
 
-            if let Some(state) = event.block_state.get(index) {
-                chunk.set_block_state(*index, *state);
+            if let Some(state) = block_state {
+                chunk.set_block_state(*index, BlockState(*state));
             } else {
                 chunk.remove_block_state(index);
             }

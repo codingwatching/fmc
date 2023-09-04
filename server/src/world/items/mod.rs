@@ -324,7 +324,7 @@ fn trigger_physics_update_on_block_change(
 ) {
     for block_update in block_updates.iter() {
         let position = match block_update {
-            BlockUpdate::Change(position, _, _) => *position,
+            BlockUpdate::Change { position, .. } => *position,
             _ => continue,
         };
         let chunk_position = utils::world_position_to_chunk_position(position);

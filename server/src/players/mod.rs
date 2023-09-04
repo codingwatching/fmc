@@ -42,7 +42,7 @@ impl Plugin for PlayersPlugin {
                     handle_player_position_updates,
                     handle_player_rotation_updates,
                     actions::handle_left_clicks,
-                    actions::place_blocks,
+                    actions::handle_right_clicks,
                 ),
             );
     }

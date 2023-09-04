@@ -9,7 +9,7 @@ use crate::{
     bevy_extensions::f64_transform::F64Transform,
     utils,
     world::{
-        blocks::{BlockFace, Blocks, Friction},
+        blocks::{BlockFace, BlockState, Blocks, Friction},
         world_map::chunk::{Chunk, ChunkStatus},
     },
 };
@@ -54,7 +54,7 @@ impl WorldMap {
         }
     }
 
-    pub fn get_block_state(&self, position: IVec3) -> Option<u16> {
+    pub fn get_block_state(&self, position: IVec3) -> Option<BlockState> {
         let (chunk_pos, index) = utils::world_position_to_chunk_position_and_block_index(position);
 
         if let Some(chunk) = self.get_chunk(&chunk_pos) {

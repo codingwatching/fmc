@@ -283,7 +283,7 @@ fn queue_chunk_updates(
 }
 
 fn handle_failed(
-    mut light_map: ResMut<LightMap>,
+    light_map: Res<LightMap>,
     mut failed_lighting_events: EventReader<FailedLightingEvent>,
     mut relight_events: EventWriter<RelightEvent>,
 ) {
@@ -292,7 +292,7 @@ fn handle_failed(
             for y in [1, 0, -1] {
                 for z in [1, 0, -1] {
                     let chunk_position = failed.chunk_position + IVec3 { x, y, z };
-                    if light_map.chunks.remove(&chunk_position).is_some() {
+                    if light_map.chunks.contains_key(&chunk_position) {
                         relight_events.send(RelightEvent { chunk_position });
                     }
                 }
@@ -314,11 +314,9 @@ fn relight_chunks(
         let Some(chunk) = world_map.get_chunk(&relight_event.chunk_position) else {
             continue;
         };
+
         let mut new_chunk = if chunk.is_uniform() {
-            let block_config = match blocks.get_config(&chunk[0]) {
-                Some(c) => c,
-                None => continue,
-            };
+            let block_config = &blocks[&chunk[0]];
             if block_config.light_attenuation() == 0 {
                 LightChunk::Uniform(Light::new(15, 0))
             } else {
@@ -594,8 +592,6 @@ fn relight_chunks(
             .insert(relight_event.chunk_position, new_chunk);
     }
 }
-
-const POSO: IVec3 = IVec3::new(-289, 2, -7);
 
 fn propagate_light(
     world_map: Res<WorldMap>,

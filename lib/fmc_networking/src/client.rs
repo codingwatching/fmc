@@ -123,7 +123,7 @@ impl NetworkClient {
     pub fn disconnect<T: AsRef<str>>(&self, message: T) {
         // Log all disconnects that provide a message as errors (even though some aren't)
         if message.as_ref().len() > 0 {
-            error!("{}\n{}", std::panic::Location::caller(), message.as_ref());
+            error!("{}: {}", std::panic::Location::caller(), message.as_ref());
         }
 
         self.network_events

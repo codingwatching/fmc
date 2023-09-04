@@ -22,9 +22,6 @@ pub struct PlayerName(pub String);
 #[derive(Component, Deref, DerefMut)]
 pub struct PlayerCamera(pub F64Transform);
 
-#[derive(Component)]
-pub struct PlayerCameraMarker;
-
 #[derive(Component, Default, Deref, DerefMut, Serialize, Deserialize)]
 pub struct PlayerEquipment([ItemStack; 4]);
 

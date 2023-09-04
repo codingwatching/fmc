@@ -13,8 +13,6 @@ use crate::{
     },
 };
 
-use super::ChunkRequestEvent;
-
 /// Map of all chunks that have been received from the server.
 #[derive(Resource, Default)]
 pub struct WorldMap {
@@ -198,52 +196,22 @@ impl WorldMap {
         let center = self.get_chunk(&position).unwrap().clone();
 
         let top_position = position + IVec3::new(0, CHUNK_SIZE as i32, 0);
-        let top_chunk = self.get_chunk(&top_position);
+        let top = self.get_chunk(&top_position).cloned();
 
         let bottom_position = position - IVec3::new(0, CHUNK_SIZE as i32, 0);
-        let bottom_chunk = self.get_chunk(&bottom_position);
+        let bottom = self.get_chunk(&bottom_position).cloned();
 
         let right_position = position + IVec3::new(CHUNK_SIZE as i32, 0, 0);
-        let right_chunk = self.get_chunk(&right_position);
+        let right = self.get_chunk(&right_position).cloned();
 
         let left_position = position - IVec3::new(CHUNK_SIZE as i32, 0, 0);
-        let left_chunk = self.get_chunk(&left_position);
+        let left = self.get_chunk(&left_position).cloned();
 
         let front_position = position + IVec3::new(0, 0, CHUNK_SIZE as i32);
-        let front_chunk = self.get_chunk(&front_position);
+        let front = self.get_chunk(&front_position).cloned();
 
         let back_position = position - IVec3::new(0, 0, CHUNK_SIZE as i32);
-        let back_chunk = self.get_chunk(&back_position);
-
-        let mut top: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut bottom: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut right: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut left: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut front: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-        let mut back: [[Option<BlockId>; CHUNK_SIZE]; CHUNK_SIZE] = Default::default();
-
-        for i in 0..CHUNK_SIZE {
-            for j in 0..CHUNK_SIZE {
-                if let Some(top_chunk) = top_chunk {
-                    top[i][j] = Some(top_chunk[[i, 0, j]]);
-                }
-                if let Some(bottom_chunk) = bottom_chunk {
-                    bottom[i][j] = Some(bottom_chunk[[i, CHUNK_SIZE - 1, j]]);
-                }
-                if let Some(right_chunk) = right_chunk {
-                    right[i][j] = Some(right_chunk[[0, i, j]]);
-                }
-                if let Some(left_chunk) = left_chunk {
-                    left[i][j] = Some(left_chunk[[CHUNK_SIZE - 1, i, j]]);
-                }
-                if let Some(back_chunk) = back_chunk {
-                    back[i][j] = Some(back_chunk[[i, j, CHUNK_SIZE - 1]]);
-                }
-                if let Some(front_chunk) = front_chunk {
-                    front[i][j] = Some(front_chunk[[i, j, 0]]);
-                }
-            }
-        }
+        let back = self.get_chunk(&back_position).cloned();
 
         return ExpandedChunk {
             center,

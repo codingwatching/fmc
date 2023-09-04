@@ -286,7 +286,6 @@ fn send_clicks(mouse_button_input: Res<Input<MouseButton>>, net: Res<NetworkClie
 //
 // Place a block locally, the server will parse
 fn place_block(
-    net: Res<NetworkClient>,
     world_map: ResMut<WorldMap>,
     items: Res<Items>,
     origin: Res<Origin>,
@@ -301,7 +300,9 @@ fn place_block(
     if mouse_button_input.just_pressed(MouseButton::Right) {
         let (player_aabb, player_position) = player_query.single();
         let camera_transform = camera_transform.single();
-        let mut equipped_item = equipped_query.single_mut();
+        let Ok(mut equipped_item) = equipped_query.get_single_mut() else {
+            return;
+        };
         let blocks = Blocks::get();
 
         let (mut block_position, _block_id, block_face) = match world_map.raycast_to_block(
@@ -352,12 +353,8 @@ fn place_block(
             utils::world_position_to_chunk_position_and_block_index(block_position);
         let message = messages::BlockUpdates {
             chunk_position,
-            blocks: vec![(block_index, *block_id)],
-            block_state: HashMap::from([(block_index, 0)]),
+            blocks: vec![(block_index, *block_id, None)],
         };
-
-        net.send_message(message.clone());
-
         // Pretend we get the block from the server so it gets the update immediately for mesh
         // generation. More responsive.
         match block {
@@ -370,9 +367,3 @@ fn place_block(
         }
     }
 }
-
-//fn bobbing(
-//    equipped_query: Query<&mut Transform, With<EquippedMarker>>
-//) {
-//
-//}

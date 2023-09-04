@@ -10,7 +10,7 @@ use fmc_networking::BlockId;
 use futures_lite::future;
 
 use crate::utils;
-use crate::world::blocks::Blocks;
+use crate::world::blocks::{BlockState, Blocks};
 use crate::{constants::*, game_state::GameState, utils::Direction, world::world_map::WorldMap};
 
 pub struct ChunkPlugin;
@@ -86,22 +86,19 @@ pub struct Chunk {
     /// XXX: Notice that the coordinates align with the rendering world, the z axis extends
     /// out of the screen. 0,0,0 is the bottom left FAR corner. Not bottom left NEAR.
     /// A CHUNK_SIZE^3 array containing all the blocks in the chunk.
-    /// Indexed by x*CHUNK_SIZE^2 + y*CHUNK_SIZE + z
+    /// Indexed by x*CHUNK_SIZE^2 + z*CHUNK_SIZE + y
     blocks: Vec<BlockId>,
     /// Optional block state containing info like rotation and color
-    ///
-    /// bits:
-    ///     0000 0000 0000 unused
-    ///     0000
-    ///       ^^-north/east/south/west
-    ///      ^---center/side model
-    ///     ^----upright / upside down
-    block_state: HashMap<usize, u16>,
+    pub block_state: HashMap<usize, BlockState>,
 }
 
 impl Chunk {
     /// Build a normal chunk
-    pub fn new(entity: Entity, blocks: Vec<BlockId>, block_state: HashMap<usize, u16>) -> Self {
+    pub fn new(
+        entity: Entity,
+        blocks: Vec<BlockId>,
+        block_state: HashMap<usize, BlockState>,
+    ) -> Self {
         return Self {
             entity: Some(entity),
             blocks,
@@ -110,7 +107,7 @@ impl Chunk {
     }
 
     /// Create a new chunk of only air blocks; to be filled after creation.
-    pub fn new_air(blocks: Vec<BlockId>, block_state: HashMap<usize, u16>) -> Self {
+    pub fn new_air(blocks: Vec<BlockId>, block_state: HashMap<usize, BlockState>) -> Self {
         assert!(blocks.len() == 1);
 
         return Self {
@@ -132,7 +129,7 @@ impl Chunk {
         return self.blocks.len() == 1;
     }
 
-    pub fn set_block_state(&mut self, block_index: usize, state: u16) {
+    pub fn set_block_state(&mut self, block_index: usize, state: BlockState) {
         self.block_state.insert(block_index, state);
     }
 
@@ -140,7 +137,7 @@ impl Chunk {
         self.block_state.remove(&block_index);
     }
 
-    pub fn get_block_state(&self, x: usize, y: usize, z: usize) -> Option<u16> {
+    pub fn get_block_state(&self, x: usize, y: usize, z: usize) -> Option<BlockState> {
         let index = x << 8 | z << 4 | y;
         return self.block_state.get(&index).copied();
     }

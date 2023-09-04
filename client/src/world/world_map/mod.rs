@@ -5,7 +5,6 @@ mod chunk_manager;
 mod world_map;
 
 pub use chunk::{Chunk, ChunkFace, ChunkMarker};
-pub use chunk_manager::ChunkRequestEvent;
 pub use world_map::WorldMap;
 
 pub struct WorldMapPlugin;
