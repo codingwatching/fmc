@@ -17,8 +17,8 @@ pub const ATTRIBUTE_PACKED_BITS_0: MeshVertexAttribute =
 pub struct MaterialsPlugin;
 impl Plugin for MaterialsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(MaterialPlugin::<BlockMaterial>::default())
-            .add_plugin(MaterialPlugin::<SkyMaterial>::default())
-            .add_plugin(pbr_material::PbrMaterialPlugin);
+        app.add_plugins(MaterialPlugin::<BlockMaterial>::default())
+            .add_plugins(MaterialPlugin::<SkyMaterial>::default())
+            .add_plugins(pbr_material::PbrMaterialPlugin);
     }
 }

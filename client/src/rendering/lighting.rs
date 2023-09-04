@@ -219,6 +219,7 @@ impl Index<usize> for LightChunk {
 }
 
 // Event sent whenever a chunk is added, or a block changes in a chunk.
+#[derive(Event)]
 struct RelightEvent {
     chunk_position: IVec3,
 }
@@ -229,6 +230,7 @@ struct RelightEvent {
 //
 // Lighting is inherently faulty because it needs to assume what is sky and what is not. When this
 // assumption is wrong, this event is sent to relight the chunk and all its surrounding chunks.
+#[derive(Event)]
 struct FailedLightingEvent {
     chunk_position: IVec3,
 }
@@ -839,6 +841,7 @@ fn light_chunk_unloading(world_map: Res<WorldMap>, mut light_map: ResMut<LightMa
     }
 }
 
+#[derive(Event)]
 struct TestFinishedLightingEvent(IVec3);
 
 fn send_chunk_mesh_events(

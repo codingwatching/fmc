@@ -39,6 +39,7 @@ impl Plugin for ChunkPlugin {
 }
 
 // Sent whenever we want to redraw a chunk
+#[derive(Event)]
 pub struct ChunkMeshEvent {
     /// Position of the chunk.
     pub position: IVec3,

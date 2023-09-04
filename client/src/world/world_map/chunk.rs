@@ -25,6 +25,7 @@ impl Plugin for ChunkPlugin {
 }
 
 /// Event sent when the visible chunk faces of a chunk should be recomputed.
+#[derive(Event)]
 pub struct ComputeVisibleChunkFacesEvent(pub IVec3);
 
 #[derive(Component)]

@@ -56,6 +56,7 @@ impl Plugin for InterfacePlugin {
 }
 
 /// Event used by keybindings to toggle an interface open or closed.
+#[derive(Event)]
 pub struct InterfaceToggleEvent(pub Entity);
 
 #[derive(Component)]
@@ -340,10 +341,8 @@ pub fn load_interfaces(
             // Root node
             .spawn(NodeBundle {
                 style: Style {
-                    size: Size {
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
-                    },
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     position_type: PositionType::Absolute,
                     ..default()
                 },
@@ -355,10 +354,8 @@ pub fn load_interfaces(
                 parent
                     .spawn(ImageBundle {
                         style: Style {
-                            size: Size {
-                                width: Val::Px(image.texture_descriptor.size.width as f32),
-                                height: Val::Px(image.texture_descriptor.size.height as f32),
-                            },
+                            width: Val::Px(image.texture_descriptor.size.width as f32),
+                            height: Val::Px(image.texture_descriptor.size.height as f32),
                             left: interface.config.position.left,
                             right: interface.config.position.right,
                             top: interface.config.position.top,
@@ -381,10 +378,8 @@ pub fn load_interfaces(
                                         position_type: PositionType::Absolute,
                                         left: Val::Px(section_config.position[0]),
                                         top: Val::Px(section_config.position[1]),
-                                        size: Size {
-                                            width: Val::Px(section_config.size[0]),
-                                            height: Val::Px(section_config.size[1]),
-                                        },
+                                        width: Val::Px(section_config.size[0]),
+                                        height: Val::Px(section_config.size[1]),
                                         flex_wrap: FlexWrap::WrapReverse,
                                         justify_content: JustifyContent::SpaceBetween,
                                         align_content: AlignContent::SpaceBetween,
@@ -411,7 +406,8 @@ pub fn load_interfaces(
     commands
         .spawn(ImageBundle {
             style: Style {
-                size: Size::new(Val::Px(16.0), Val::Px(16.0)),
+                width: Val::Px(16.0),
+                height: Val::Px(16.0),
                 position_type: PositionType::Absolute,
                 flex_direction: FlexDirection::ColumnReverse,
                 align_items: AlignItems::FlexEnd,
@@ -506,7 +502,8 @@ fn handle_interface_item_box_updates(
                             // TODO: This doesn't actually block? Can't highlight items because of it.
                             focus_policy: bevy::ui::FocusPolicy::Block,
                             style: Style {
-                                size: Size::new(Val::Px(16.0), Val::Px(16.0)),
+                                width: Val::Px(16.0),
+                                height: Val::Px(16.0),
                                 // https://github.com/bevyengine/bevy/issues/6879
                                 //padding: UiRect {
                                 //    left: Val::Px(1.0),
@@ -796,11 +793,11 @@ fn item_box_mouse_interaction(
     // TODO: It should only pick up when the button is released. But the clicked Interaction does
     // not sync up with just_released, only just_pressed
     for (mut box_item_stack, interaction, item_box) in item_box_query.iter_mut() {
-        if *interaction != Interaction::Clicked {
+        if *interaction != Interaction::Pressed {
             return;
         }
         if mouse_button_input.just_pressed(MouseButton::Left)
-            && !keyboard_input.pressed(KeyCode::LShift)
+            && !keyboard_input.pressed(KeyCode::ShiftLeft)
         {
             let mut held_item_stack = held_item_stack_query.single_mut();
             let interface = interface_query.get(item_box.interface_entity).unwrap();
@@ -847,7 +844,7 @@ fn item_box_mouse_interaction(
         }
 
         if mouse_button_input.just_pressed(MouseButton::Left)
-            && keyboard_input.pressed(KeyCode::LShift)
+            && keyboard_input.pressed(KeyCode::ShiftLeft)
         {
             let mut held_item_stack = held_item_stack_query.single_mut();
             let interface = interface_query.get(item_box.interface_entity).unwrap();

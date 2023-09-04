@@ -5,7 +5,7 @@ use bevy::{
         MAX_CASCADES_PER_LIGHT, MAX_DIRECTIONAL_LIGHTS,
     },
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypeUuid, TypePath},
     render::{
         mesh::{MeshVertexBufferLayout, VertexAttributeValues},
         render_asset::RenderAssets,
@@ -23,7 +23,7 @@ use super::ATTRIBUTE_PACKED_BITS_0;
 pub struct PbrMaterialPlugin;
 impl Plugin for PbrMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(MaterialPlugin::<PbrMaterial>::default())
+        app.add_plugins(MaterialPlugin::<PbrMaterial>::default())
             // Some weird schedule ordering here to avoid flickering when replacing the meshes.
             // Chosen at random until it worked.
             .add_systems(PostUpdate, replace_material_and_mesh)
@@ -123,7 +123,7 @@ fn replace_material_and_mesh(
 // This is an identical copy of bevy's StandardMaterial. Its only difference is adding a packed bit
 // field to the vertex attributes so that gltf objects can inherit the light level from the nearest
 // block.
-#[derive(AsBindGroup, Debug, Clone, TypeUuid)]
+#[derive(AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
 #[uuid = "e65799f2-923e-4548-8879-be574f9db988"]
 #[bind_group_data(PbrMaterialKey)]
 #[uniform(0, StandardMaterialUniform)]

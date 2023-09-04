@@ -70,7 +70,7 @@ struct Requested {
 struct Pause(bool);
 
 // Event sent from systems that want to request a chunk from the server.
-#[derive(Default)]
+#[derive(Default, Event)]
 pub struct ChunkRequestEvent(pub IVec3);
 
 fn pause_system(mut pause: ResMut<Pause>, keyboard_input: Res<Input<KeyCode>>) {

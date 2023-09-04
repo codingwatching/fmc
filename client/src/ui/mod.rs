@@ -18,8 +18,8 @@ impl Plugin for UiPlugin {
         app.add_state::<UiState>()
             .insert_resource(Interfaces::default());
 
-        app.add_plugin(main_menu::MainMenuPlugin)
-            .add_plugin(text::TextPlugin)
+        app.add_plugins(main_menu::MainMenuPlugin)
+            .add_plugins(text::TextPlugin)
             .add_systems(Startup, player_cursor_setup)
             .add_systems(Update, change_interface.run_if(state_changed::<UiState>()))
             .add_systems(OnExit(GameState::MainMenu), enter_exit_ui)
@@ -74,7 +74,8 @@ fn player_cursor_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces
     let entity = commands
         .spawn(NodeBundle {
             style: Style {
-                size: Size::new(Val::Px(3.0), Val::Px(3.0)),
+                width: Val::Px(3.0),
+                height: Val::Px(3.0),
                 position_type: PositionType::Absolute,
                 left: Val::Percent(50.0),
                 bottom: Val::Percent(50.0),

@@ -33,14 +33,9 @@ fn setup(
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                gap: Size {
-                    width: Val::Auto,
-                    height: Val::Percent(2.0),
-                },
-                size: Size {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                },
+                row_gap: Val::Percent(2.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 position_type: PositionType::Absolute,
                 ..default()
             },
@@ -51,10 +46,8 @@ fn setup(
                 .spawn(NodeBundle {
                     background_color: Color::WHITE.into(),
                     style: Style {
-                        size: Size {
-                            width: Val::Percent(30.0),
-                            height: Val::Percent(5.0),
-                        },
+                        width: Val::Percent(30.0),
+                        height: Val::Percent(5.0),
                         overflow: Overflow::clip(),
                         ..default()
                     },
@@ -98,10 +91,8 @@ fn setup(
                 .spawn(NodeBundle {
                     background_color: Color::WHITE.into(),
                     style: Style {
-                        size: Size {
-                            width: Val::Percent(30.0),
-                            height: Val::Percent(5.0),
-                        },
+                        width: Val::Percent(30.0),
+                        height: Val::Percent(5.0),
                         ..default()
                     },
                     ..default()
@@ -151,7 +142,7 @@ fn press_play_button(
     mut game_state: ResMut<NextState<GameState>>,
 ) {
     for interaction in play_button.iter() {
-        if *interaction == Interaction::Clicked {
+        if *interaction == Interaction::Pressed {
             let mut ip = server_ip.single().sections[0].value.to_owned();
 
             if !ip.contains(":") {

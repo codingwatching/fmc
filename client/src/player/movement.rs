@@ -147,7 +147,7 @@ fn change_player_acceleration(
                         player.velocity.y = JUMP_VELOCITY;
                     }
                 }
-                KeyCode::LShift => {
+                KeyCode::ShiftLeft => {
                     if player.is_flying {
                         player.velocity.y = -JUMP_VELOCITY;
                     } else if player.is_swimming {
@@ -166,7 +166,7 @@ fn change_player_acceleration(
 
     let mut acceleration = horizontal_acceleration + vertical_acceleration;
 
-    if player.is_flying && keys.pressed(KeyCode::LControl) {
+    if player.is_flying && keys.pressed(KeyCode::ControlLeft) {
         acceleration *= 10.0;
     }
 

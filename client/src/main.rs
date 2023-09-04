@@ -24,22 +24,22 @@ fn main() {
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin {
-                    watch_for_changes: true,
+                    watch_for_changes: None,
                     asset_folder: "".to_string(),
                 })
                 .set(ImagePlugin::default_nearest()),
         )
         //.add_plugin(LogDiagnosticsPlugin::default())
         //.add_plugin(FrameTimeDiagnosticsPlugin::default())
-        .add_plugin(networking::ClientPlugin)
-        .add_plugin(assets::AssetPlugin)
-        .add_plugin(game_state::GameStatePlugin)
-        .add_plugin(rendering::RenderingPlugin)
-        .add_plugin(player::PlayerPlugin)
-        .add_plugin(world::WorldPlugin)
-        .add_plugin(ui::UiPlugin)
-        .add_plugin(chat::ChatPlugin)
-        .add_plugin(settings::SettingsPlugin)
+        .add_plugins(networking::ClientPlugin)
+        .add_plugins(assets::AssetPlugin)
+        .add_plugins(game_state::GameStatePlugin)
+        .add_plugins(rendering::RenderingPlugin)
+        .add_plugins(player::PlayerPlugin)
+        .add_plugins(world::WorldPlugin)
+        .add_plugins(ui::UiPlugin)
+        .add_plugins(chat::ChatPlugin)
+        .add_plugins(settings::SettingsPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, fix_keys_not_released_on_focus_loss)
         .run();

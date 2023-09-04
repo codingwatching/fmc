@@ -20,11 +20,11 @@ const DEFAULT_PLAYER_HEIGHT: f32 = 1.8;
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(movement::MovementPlugin)
-            .add_plugin(interfaces::InterfacePlugin)
-            .add_plugin(camera::CameraPlugin)
-            .add_plugin(hand::HandPlugin)
-            .add_plugin(key_bindings::KeyBindingsPlugin)
+        app.add_plugins(movement::MovementPlugin)
+            .add_plugins(interfaces::InterfacePlugin)
+            .add_plugins(camera::CameraPlugin)
+            .add_plugins(hand::HandPlugin)
+            .add_plugins(key_bindings::KeyBindingsPlugin)
             .add_systems(Startup, setup_player)
             .add_systems(
                 Update,

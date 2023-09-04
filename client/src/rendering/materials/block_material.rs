@@ -2,7 +2,7 @@ use bevy::{
     asset::Handle,
     pbr::{AlphaMode, MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypeUuid, TypePath},
     render::{
         color::Color, mesh::MeshVertexBufferLayout, render_asset::RenderAssets, render_resource::*,
         texture::Image,
@@ -20,7 +20,7 @@ use super::ATTRIBUTE_PACKED_BITS_0;
 // the same material without having to worry about choosing the correct material. The meshes can
 // then be separated easily and can be distinguished from each other in the shader by the
 // VERTEX_NORMALS shader def.
-#[derive(AsBindGroup, Debug, Clone, TypeUuid)]
+#[derive(AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
 #[uuid = "fcce995c-6677-4254-aeae-cba5ddd55b73"]
 #[bind_group_data(BlockMaterialKey)]
 #[uniform(0, BlockMaterialUniform)]

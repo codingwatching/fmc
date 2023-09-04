@@ -23,7 +23,6 @@ impl Plugin for CameraPlugin {
 
 #[derive(Bundle)]
 pub struct CameraBundle {
-    #[bundle]
     camera_3d: Camera3dBundle,
     state: CameraState,
     marker: PlayerCameraMarker,

@@ -75,7 +75,7 @@ fn focus_text_box(
     >,
 ) {
     for (interaction, text_box_marker, children) in possible_new_focus.iter() {
-        if *interaction == Interaction::Clicked {
+        if *interaction == Interaction::Pressed {
             if let Ok(prev_entity) = focused_text_box.get_single() {
                 commands.entity(prev_entity).remove::<FocusedText>();
             }

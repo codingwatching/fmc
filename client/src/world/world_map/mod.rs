@@ -9,8 +9,8 @@ pub use world_map::WorldMap;
 pub struct WorldMapPlugin;
 impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(chunk_manager::ChunkManagerPlugin)
-            .add_plugin(chunk::ChunkPlugin)
+        app.add_plugins(chunk_manager::ChunkManagerPlugin)
+            .add_plugins(chunk::ChunkPlugin)
             .init_resource::<WorldMap>();
     }
 }

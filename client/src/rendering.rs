@@ -9,10 +9,10 @@ mod sky;
 pub struct RenderingPlugin;
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(materials::MaterialsPlugin)
-            .add_plugin(chunk::ChunkPlugin)
-            .add_plugin(lighting::LightingPlugin)
-            .add_plugin(sky::SkyPlugin)
-            .add_plugin(models::ModelPlugin);
+        app.add_plugins(materials::MaterialsPlugin)
+            .add_plugins(chunk::ChunkPlugin)
+            .add_plugins(lighting::LightingPlugin)
+            .add_plugins(sky::SkyPlugin)
+            .add_plugins(models::ModelPlugin);
     }
 }

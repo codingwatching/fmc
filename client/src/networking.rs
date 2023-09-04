@@ -7,7 +7,7 @@ pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(fmc_networking::ClientPlugin)
+        app.add_plugins(fmc_networking::ClientPlugin)
             .add_systems(Update, (handle_connection, handle_server_config));
     }
 }

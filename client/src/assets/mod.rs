@@ -16,20 +16,20 @@ pub use materials::Materials;
 /// for assets from the server. It then loads them.
 #[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AssetState {
-    Downloading,
-    Loading,
     #[default]
     Inactive,
+    Downloading,
+    Loading,
 }
 
 // Some loading actions are separated by states to allow bevy's internal systems to sync the
 // needed values.
 #[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
 enum LoadingState {
-    One,
-    Two,
     #[default]
     Inactive,
+    One,
+    Two,
 }
 
 // TODO: Almost all of this is workarounds for assets having to be loaded async. Bevy 0.11 will
@@ -64,12 +64,12 @@ impl Plugin for AssetPlugin {
             OnEnter(LoadingState::Two),
             (
                 materials::load_materials,
-                apply_system_buffers,
+                apply_deferred,
                 crate::world::blocks::load_blocks,
-                apply_system_buffers,
+                apply_deferred,
                 crate::player::interfaces::load_items,
                 crate::player::interfaces::load_interfaces,
-                apply_system_buffers,
+                apply_deferred,
                 finish,
             )
                 .chain(),
