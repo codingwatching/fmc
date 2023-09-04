@@ -5,10 +5,11 @@ use crate::{
     rendering::chunk::MeshedChunkMarker,
     settings, utils,
     world::{
-        self,
         blocks::{Block, BlockState, Blocks},
         world_map::{
-            chunk::{Chunk, ChunkMarker, VisibleSides},
+            chunk::{
+                Chunk, ChunkFace, ChunkMarker, ComputeVisibleChunkFacesEvent, VisibleChunkFaces,
+            },
             WorldMap,
         },
         MovesWithOrigin, Origin,
@@ -21,8 +22,6 @@ use bevy::{
 };
 use fmc_networking::{messages, NetworkClient, NetworkData};
 use std::collections::{HashMap, HashSet};
-
-use super::chunk::VisibleSidesEvent;
 
 /// Keeps track of which chunks should be loaded/unloaded.
 pub struct ChunkManagerPlugin;
@@ -49,7 +48,7 @@ impl Plugin for ChunkManagerPlugin {
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
-                // This has to be run postupdate because of the async mesh/visible_sides tasks. If
+                // This has to be run postupdate because of the async mesh/visibility tasks. If
                 // it despawns the same tick a task is finished it will panic on trying to insert
                 // for non-existing entity. https://github.com/bevyengine/bevy/issues/3845 relevant
                 // issue
@@ -168,7 +167,7 @@ fn frustum_chunk_loading(
     mut chunk_query: Query<
         (
             Entity,
-            &VisibleSides,
+            &VisibleChunkFaces,
             Option<&mut Visibility>,
             Option<&MeshedChunkMarker>,
         ),
@@ -192,14 +191,14 @@ fn frustum_chunk_loading(
 
     // The order of search directions. forward -> surrounding -> remaining direction
     // Example:
-    // forward     =      ---------- forward -------------
-    //                   /         /         \            \
-    // surrounding =   left      right       up          down
-    //                 /  \      /  \       /  \         /  \
-    // orthogonal  = [up,down] [up,down] [left,right] [left,right]
-    let forward_dir = utils::Direction::convert_vector(&view_vector);
-    let surrounding = forward_dir.surrounding();
-    let orthogonal = forward_dir.orthogonal(&surrounding);
+    // forward     =      ---------- forward -----------
+    //                   /         /         \          \
+    // surrounding =   left      right       top      bottom
+    //                 /  \      /  \       /  \       /  \
+    // orthogonal  = [top,bot] [top,bot] [top,bot] [top, bottom]
+    let forward_face = ChunkFace::convert_vector(&view_vector);
+    let surrounding = forward_face.surrounding();
+    let orthogonal = forward_face.orthogonal(&surrounding);
 
     let mut forward_queue = Vec::with_capacity(settings.render_distance as usize);
     let mut surr_queue = Vec::with_capacity(settings.render_distance as usize);
@@ -211,19 +210,19 @@ fn frustum_chunk_loading(
     // before it adds it to the queue.
     let mut traverse_direction =
         |mut chunk_position: IVec3,
-         from_dir: &utils::Direction, // Direction to enter from
-         to_dir: &utils::Direction,   // Direction to exit through
-         visible_sides: Option<&VisibleSides>,
-         queue: &mut Vec<(IVec3, utils::Direction)>| {
-            // If visible_sides is None it's an air chunk (all sides are visible)
-            // If from_dir is not visible from to_dir, this is where it stops.
-            if let Some(visible_sides) = visible_sides {
-                if !visible_sides.is_visible(from_dir, to_dir) {
+         from_face: &ChunkFace, // Direction to enter from
+         to_face: &ChunkFace,   // Direction to exit through
+         visible_chunk_faces: Option<&VisibleChunkFaces>,
+         queue: &mut Vec<(IVec3, ChunkFace)>| {
+            // If visible_chunk_faces is None it's an air chunk (all chunk faces are visible)
+            // If from_face is not visible from to_face, this is where it stops.
+            if let Some(visible_faces) = visible_chunk_faces {
+                if !visible_faces.is_visible(from_face, to_face) {
                     return;
                 }
             }
 
-            chunk_position = to_dir.shift_chunk_position(chunk_position);
+            chunk_position = to_face.shift_position(chunk_position);
 
             // Only visit a chunk once, no matter which side you enter from
             if already_visited.contains(&chunk_position) {
@@ -259,21 +258,21 @@ fn frustum_chunk_loading(
             }
 
             already_visited.insert(chunk_position);
-            queue.push((chunk_position, to_dir.opposite()));
+            queue.push((chunk_position, to_face.opposite()));
         };
 
     // Reads a chunk from the chunk map. If it does not exist, it requests it.
-    // Returns Option<Option<VisibleSides>>, first option is if there is a chunk that can be
+    // Returns Option<Option<VisibleChunkFaces>>, first option is if there is a chunk that can be
     // traversed there, the second is what kind of chunk it is.
-    // Normal chunk => it has VisibleSides = Some(Some(VisibleSides))
-    // uniform and transparent (probably air) => it doesn't have VisibleSides = Some(None)
-    // Chunk that hasn't computed its VisibleSides yet => None(None) = None
+    // Normal chunk => it has VisibleChunkFaces = Some(Some(VisibleChunkFaces))
+    // uniform and transparent (probably air) => it doesn't have VisibleChunkFaces = Some(None)
+    // Chunk that hasn't computed its VisibleChunkFaces yet => None(None) = None
     macro_rules! read_chunk {
         ($pos:expr) => {{
             if let Some(chunk) = world_map.get_chunk($pos) {
                 if let Some(chunk_entity) = chunk.entity {
                     unsafe {
-                        if let Ok((entity, visible_sides, visibility, is_meshed_chunk)) =
+                        if let Ok((entity, visible_chunk_faces, visibility, is_meshed_chunk)) =
                             chunk_query.get_unchecked(chunk_entity)
                         {
                             if let Some(mut visibility) = visibility {
@@ -281,9 +280,9 @@ fn frustum_chunk_loading(
                             } else if is_meshed_chunk.is_none() {
                                 commands.entity(entity).insert(MeshedChunkMarker);
                             }
-                            Some(Some(visible_sides))
+                            Some(Some(visible_chunk_faces))
                         } else {
-                            // visible_sides not finished yet
+                            // visible_chunk_faces not finished yet
                             None
                         }
                     }
@@ -302,79 +301,79 @@ fn frustum_chunk_loading(
     let player_chunk_pos = utils::world_position_to_chunk_pos(
         camera_position.translation().floor().as_ivec3() + origin.0,
     );
-    forward_queue.push((player_chunk_pos, utils::Direction::None));
+    forward_queue.push((player_chunk_pos, ChunkFace::None));
 
-    while let Some((forward_pos, forward_entry_side)) = forward_queue.pop() {
-        let forward_sides = match read_chunk!(&forward_pos) {
-            Some(sides) => sides,
+    while let Some((forward_pos, forward_entry_face)) = forward_queue.pop() {
+        let forward_faces = match read_chunk!(&forward_pos) {
+            Some(faces) => faces,
             None => continue,
         };
 
-        if forward_entry_side == utils::Direction::None {}
+        if forward_entry_face == ChunkFace::None {}
 
         for (i, surr_dir) in surrounding.iter().enumerate() {
             traverse_direction(
                 forward_pos,
-                &forward_entry_side,
+                &forward_entry_face,
                 surr_dir,
-                forward_sides,
+                forward_faces,
                 &mut surr_queue,
             );
-            while let Some((surr_pos, surr_entry_side)) = surr_queue.pop() {
-                let surr_sides = match read_chunk!(&surr_pos) {
-                    Some(sides) => sides,
+            while let Some((surr_pos, surr_entry_face)) = surr_queue.pop() {
+                let surr_faces = match read_chunk!(&surr_pos) {
+                    Some(faces) => faces,
                     None => continue,
                 };
                 for ortho_dir in orthogonal[i].iter() {
                     traverse_direction(
                         surr_pos,
-                        &surr_entry_side,
+                        &surr_entry_face,
                         ortho_dir,
-                        surr_sides,
+                        surr_faces,
                         &mut ortho_queue,
                     );
-                    while let Some((ortho_pos, ortho_entry_side)) = ortho_queue.pop() {
-                        let ortho_sides = match read_chunk!(&ortho_pos) {
-                            Some(sides) => sides,
+                    while let Some((ortho_pos, ortho_entry_face)) = ortho_queue.pop() {
+                        let ortho_faces = match read_chunk!(&ortho_pos) {
+                            Some(faces) => faces,
                             None => continue,
                         };
                         // XXX: This ordering is most likely not correct and might cause visibility
                         // bugs. Complexity too much for me.
                         traverse_direction(
                             ortho_pos,
-                            &ortho_entry_side,
-                            &forward_dir,
-                            ortho_sides,
+                            &ortho_entry_face,
+                            &forward_face,
+                            ortho_faces,
                             &mut ortho_queue,
                         );
                         traverse_direction(
                             ortho_pos,
-                            &ortho_entry_side,
+                            &ortho_entry_face,
                             surr_dir,
-                            ortho_sides,
+                            ortho_faces,
                             &mut ortho_queue,
                         );
                         traverse_direction(
                             ortho_pos,
-                            &ortho_entry_side,
+                            &ortho_entry_face,
                             ortho_dir,
-                            ortho_sides,
+                            ortho_faces,
                             &mut ortho_queue,
                         );
                     }
                 }
                 traverse_direction(
                     surr_pos,
-                    &surr_entry_side,
-                    &forward_dir,
-                    surr_sides,
+                    &surr_entry_face,
+                    &forward_face,
+                    surr_faces,
                     &mut surr_queue,
                 );
                 traverse_direction(
                     surr_pos,
-                    &surr_entry_side,
+                    &surr_entry_face,
                     surr_dir,
-                    surr_sides,
+                    surr_faces,
                     &mut surr_queue,
                 );
             }
@@ -382,9 +381,9 @@ fn frustum_chunk_loading(
 
         traverse_direction(
             forward_pos,
-            &forward_entry_side,
-            &forward_dir,
-            forward_sides,
+            &forward_entry_face,
+            &forward_face,
+            forward_faces,
             &mut forward_queue,
         );
     }
@@ -412,9 +411,9 @@ fn send_chunk_requests(
 // TODO: This could take like ResMut<Events<ChunkResponse>> and drain the chunks to avoid
 // reallocation. The lighting system listens for the same event, and it is nice to have the systems
 // self-contained. Maybe the world map should contain only the chunk entity. This way There would
-// no longer be a need for VisibleSidesEvent either. Everything just listens for Changed<Chunk>.
-// Accessing the world_map isn't actually a bottleneck I think, and doing a double lookup can't be
-// that bad.
+// no longer be a need for ComputeVisibleChunkFacesEvent either. Everything just listens for
+// Changed<Chunk>. Accessing the world_map isn't actually a bottleneck I think, and doing a double
+// lookup can't be that bad.
 //
 /// Handles chunks sent from the server.
 fn handle_chunk_responses(
@@ -425,7 +424,7 @@ fn handle_chunk_responses(
     net: Res<NetworkClient>,
     //mut chunk_responses: ResMut<Events<NetworkData<messages::ChunkResponse>>>,
     mut chunk_responses: EventReader<NetworkData<messages::ChunkResponse>>,
-    mut visible_sides_events: EventWriter<VisibleSidesEvent>,
+    mut visibility_task_events: EventWriter<ComputeVisibleChunkFacesEvent>,
     //mut amount: Local<usize>, //chunk_query: Query<(&Chunk, &chunk::Blocks)>,
 ) {
     for response in chunk_responses.iter() {
@@ -483,7 +482,7 @@ fn handle_chunk_responses(
                     ),
                 );
 
-                visible_sides_events.send(VisibleSidesEvent(chunk.position));
+                visibility_task_events.send(ComputeVisibleChunkFacesEvent(chunk.position));
             }
 
             requested.chunks.remove(&chunk.position);
@@ -497,7 +496,7 @@ fn handle_block_updates(
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     net: Res<NetworkClient>,
-    mut visible_sides_events: EventWriter<VisibleSidesEvent>,
+    mut visibility_task_events: EventWriter<ComputeVisibleChunkFacesEvent>,
     mut block_updates_events: EventReader<NetworkData<messages::BlockUpdates>>,
 ) {
     for event in block_updates_events.iter() {
@@ -551,6 +550,6 @@ fn handle_block_updates(
             }
         }
 
-        visible_sides_events.send(VisibleSidesEvent(event.chunk_position));
+        visibility_task_events.send(ComputeVisibleChunkFacesEvent(event.chunk_position));
     }
 }

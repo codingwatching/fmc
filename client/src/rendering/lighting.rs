@@ -12,7 +12,7 @@ use crate::{
     utils,
     world::{
         blocks::Blocks,
-        world_map::{ChunkFace, WorldMap},
+        world_map::{chunk::ChunkFace, WorldMap},
         Origin,
     },
 };
@@ -264,7 +264,7 @@ fn queue_block_updates(
             }
 
             failed_lighting_events.send(FailedLightingEvent { chunk_position });
-            chunk_position = ChunkFace::Bottom.offset_position(chunk_position);
+            chunk_position = ChunkFace::Bottom.shift_position(chunk_position);
         }
     }
 }
@@ -328,7 +328,7 @@ fn relight_chunks(
 
         if let Some(above_light_chunk) = light_map
             .chunks
-            .get(&ChunkFace::Top.offset_position(relight_event.chunk_position))
+            .get(&ChunkFace::Top.shift_position(relight_event.chunk_position))
         {
             if !matches!(above_light_chunk, LightChunk::Uniform(light) if light.sunlight() == 15)
                 && matches!(new_chunk, LightChunk::Uniform(_))
@@ -360,7 +360,7 @@ fn relight_chunks(
         if matches!(new_chunk, LightChunk::Uniform(light) if light.sunlight() == 15) {
             // If the new light chunk is uniform sunlight, there won't exist any propagation
             // updates, so sending to adjacent chunks has to be done manually.
-            let below_position = ChunkFace::Bottom.offset_position(relight_event.chunk_position);
+            let below_position = ChunkFace::Bottom.shift_position(relight_event.chunk_position);
             if light_map.chunks.get(&below_position).is_some() {
                 let below_light_updates = light_update_queues
                     .entry(below_position)
@@ -382,7 +382,7 @@ fn relight_chunks(
                 }
             }
 
-            let right_position = ChunkFace::Right.offset_position(relight_event.chunk_position);
+            let right_position = ChunkFace::Right.shift_position(relight_event.chunk_position);
             if light_map.chunks.get(&right_position).is_some() {
                 let right_light_updates = light_update_queues
                     .entry(right_position)
@@ -404,7 +404,7 @@ fn relight_chunks(
                 }
             }
 
-            let left_position = ChunkFace::Left.offset_position(relight_event.chunk_position);
+            let left_position = ChunkFace::Left.shift_position(relight_event.chunk_position);
             if light_map.chunks.get(&left_position).is_some() {
                 let left_light_updates = light_update_queues
                     .entry(left_position)
@@ -426,7 +426,7 @@ fn relight_chunks(
                 }
             }
 
-            let front_position = ChunkFace::Front.offset_position(relight_event.chunk_position);
+            let front_position = ChunkFace::Front.shift_position(relight_event.chunk_position);
             if light_map.chunks.get(&front_position).is_some() {
                 let front_light_updates = light_update_queues
                     .entry(front_position)
@@ -448,7 +448,7 @@ fn relight_chunks(
                 }
             }
 
-            let back_position = ChunkFace::Back.offset_position(relight_event.chunk_position);
+            let back_position = ChunkFace::Back.shift_position(relight_event.chunk_position);
             if light_map.chunks.get(&back_position).is_some() {
                 let back_light_updates = light_update_queues
                     .entry(back_position)
@@ -474,8 +474,7 @@ fn relight_chunks(
             // sunlight. When this assumption is wrong, we need to propagate downwards that they
             // are now not sunlight.
             let mut failed = false;
-            let mut below_position =
-                ChunkFace::Bottom.offset_position(relight_event.chunk_position);
+            let mut below_position = ChunkFace::Bottom.shift_position(relight_event.chunk_position);
             while let Some(below_light_chunk) = light_map.chunks.get(&below_position) {
                 if !failed && matches!(below_light_chunk, LightChunk::Normal(_)) {
                     break;
@@ -489,7 +488,7 @@ fn relight_chunks(
                 failed_lighting_events.send(FailedLightingEvent {
                     chunk_position: below_position,
                 });
-                below_position = ChunkFace::Bottom.offset_position(below_position);
+                below_position = ChunkFace::Bottom.shift_position(below_position);
             }
         }
 
@@ -499,7 +498,7 @@ fn relight_chunks(
 
         if let Some(LightChunk::Normal(below_light_chunk)) = light_map
             .chunks
-            .get(&ChunkFace::Bottom.offset_position(relight_event.chunk_position))
+            .get(&ChunkFace::Bottom.shift_position(relight_event.chunk_position))
         {
             for x in 0..CHUNK_SIZE {
                 for z in 0..CHUNK_SIZE {
@@ -517,7 +516,7 @@ fn relight_chunks(
 
         if let Some(LightChunk::Normal(right_light_chunk)) = light_map
             .chunks
-            .get(&ChunkFace::Right.offset_position(relight_event.chunk_position))
+            .get(&ChunkFace::Right.shift_position(relight_event.chunk_position))
         {
             for z in 0..CHUNK_SIZE {
                 for y in 0..CHUNK_SIZE {
@@ -535,7 +534,7 @@ fn relight_chunks(
 
         if let Some(LightChunk::Normal(left_light_chunk)) = light_map
             .chunks
-            .get(&ChunkFace::Left.offset_position(relight_event.chunk_position))
+            .get(&ChunkFace::Left.shift_position(relight_event.chunk_position))
         {
             for z in 0..CHUNK_SIZE {
                 for y in 0..CHUNK_SIZE {
@@ -553,7 +552,7 @@ fn relight_chunks(
 
         if let Some(LightChunk::Normal(front_light_chunk)) = light_map
             .chunks
-            .get(&ChunkFace::Front.offset_position(relight_event.chunk_position))
+            .get(&ChunkFace::Front.shift_position(relight_event.chunk_position))
         {
             for x in 0..CHUNK_SIZE {
                 for y in 0..CHUNK_SIZE {
@@ -571,7 +570,7 @@ fn relight_chunks(
 
         if let Some(LightChunk::Normal(back_light_chunk)) = light_map
             .chunks
-            .get(&ChunkFace::Back.offset_position(relight_event.chunk_position))
+            .get(&ChunkFace::Back.shift_position(relight_event.chunk_position))
         {
             for x in 0..CHUNK_SIZE {
                 for y in 0..CHUNK_SIZE {
@@ -697,7 +696,7 @@ fn propagate_light(
                     utils::world_position_to_chunk_position_and_block_index(position + IVec3::Y);
                 if chunk_up.y == 16 {
                     let top_updates = light_update_queues
-                        .entry(ChunkFace::Top.offset_position(*chunk_position))
+                        .entry(ChunkFace::Top.shift_position(*chunk_position))
                         .or_insert(VecDeque::with_capacity(CHUNK_SIZE.pow(3)));
                     top_updates.push_front(LightPropagation {
                         index,
@@ -716,7 +715,7 @@ fn propagate_light(
                     utils::world_position_to_chunk_position_and_block_index(position - IVec3::Y);
                 if chunk_down.y == -16 {
                     let bottom_updates = light_update_queues
-                        .entry(ChunkFace::Bottom.offset_position(*chunk_position))
+                        .entry(ChunkFace::Bottom.shift_position(*chunk_position))
                         .or_insert(VecDeque::with_capacity(CHUNK_SIZE.pow(3)));
 
                     bottom_updates.push_back(LightPropagation {
@@ -736,7 +735,7 @@ fn propagate_light(
                     utils::world_position_to_chunk_position_and_block_index(position + IVec3::X);
                 if chunk_right.x == 16 {
                     let right_updates = light_update_queues
-                        .entry(ChunkFace::Right.offset_position(*chunk_position))
+                        .entry(ChunkFace::Right.shift_position(*chunk_position))
                         .or_insert(VecDeque::with_capacity(CHUNK_SIZE.pow(3)));
                     right_updates.push_front(LightPropagation {
                         index,
@@ -755,7 +754,7 @@ fn propagate_light(
                     utils::world_position_to_chunk_position_and_block_index(position - IVec3::X);
                 if chunk_left.x == -16 {
                     let left_updates = light_update_queues
-                        .entry(ChunkFace::Left.offset_position(*chunk_position))
+                        .entry(ChunkFace::Left.shift_position(*chunk_position))
                         .or_insert(VecDeque::with_capacity(CHUNK_SIZE.pow(3)));
                     left_updates.push_front(LightPropagation {
                         index,
@@ -774,7 +773,7 @@ fn propagate_light(
                     utils::world_position_to_chunk_position_and_block_index(position + IVec3::Z);
                 if chunk_front.z == 16 {
                     let front_updates = light_update_queues
-                        .entry(ChunkFace::Front.offset_position(*chunk_position))
+                        .entry(ChunkFace::Front.shift_position(*chunk_position))
                         .or_insert(VecDeque::with_capacity(CHUNK_SIZE.pow(3)));
                     front_updates.push_front(LightPropagation {
                         index,
@@ -793,7 +792,7 @@ fn propagate_light(
                     utils::world_position_to_chunk_position_and_block_index(position - IVec3::Z);
                 if chunk_back.z == -16 {
                     let back_updates = light_update_queues
-                        .entry(ChunkFace::Back.offset_position(*chunk_position))
+                        .entry(ChunkFace::Back.shift_position(*chunk_position))
                         .or_insert(VecDeque::with_capacity(CHUNK_SIZE.pow(3)));
                     back_updates.push_front(LightPropagation {
                         index,

@@ -1,11 +1,6 @@
 use crate::constants::*;
 use bevy::prelude::*;
 
-mod direction;
-
-// This is only used for chunks, maybe move it there and rename Face or Side
-pub use direction::Direction;
-
 // TODO: Move all three to world_map I believe
 // Translates a block position into the chunk position of the chunk the block is in.
 pub fn world_position_to_chunk_pos(mut position: IVec3) -> IVec3 {

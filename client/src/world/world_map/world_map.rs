@@ -6,7 +6,7 @@ use fmc_networking::BlockId;
 use crate::{
     constants::*,
     rendering::chunk::ExpandedChunk,
-    utils::{self, Direction},
+    utils,
     world::{
         blocks::{BlockFace, Blocks, Friction},
         world_map::chunk::Chunk,
@@ -69,10 +69,6 @@ impl WorldMap {
 
     pub fn insert(&mut self, position: IVec3, chunk: Chunk) {
         self.chunks.insert(position, chunk);
-    }
-
-    pub fn remove(&mut self, position: &IVec3) {
-        self.chunks.remove(position);
     }
 
     pub fn contains_chunk(&self, position: &IVec3) -> bool {

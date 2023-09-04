@@ -11,38 +11,39 @@ use futures_lite::future;
 
 use crate::utils;
 use crate::world::blocks::{BlockState, Blocks};
-use crate::{constants::*, game_state::GameState, utils::Direction, world::world_map::WorldMap};
+use crate::{constants::*, game_state::GameState, world::world_map::WorldMap};
 
-pub struct ChunkPlugin;
+pub(super) struct ChunkPlugin;
 impl Plugin for ChunkPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<VisibleSidesEvent>();
+        app.add_event::<ComputeVisibleChunkFacesEvent>();
         app.add_systems(
             Update,
-            (handle_visible_sides_tasks, visible_sides_system).run_if(in_state(GameState::Playing)),
+            (handle_visibility_tasks, spawn_visiblity_tasks).run_if(in_state(GameState::Playing)),
         );
     }
 }
 
-pub struct VisibleSidesEvent(pub IVec3);
+/// Event sent when the visible chunk faces of a chunk should be recomputed.
+pub struct ComputeVisibleChunkFacesEvent(pub IVec3);
 
 #[derive(Component)]
-struct VisibleSidesTask(Task<VisibleSides>);
+struct VisibleSidesTask(Task<VisibleChunkFaces>);
 
 // TODO: Would be really nice to use bevy change detection to trigger this instead of events.
 //       Dont' know how, maybe on Mesh change? But only has access to mesh handle.
 /// Run whenever a chunk changes.
-fn visible_sides_system(
+fn spawn_visiblity_tasks(
     mut commands: Commands,
     world_map: Res<WorldMap>,
-    mut find_visible_sides_events: EventReader<VisibleSidesEvent>,
+    mut find_visible_sides_events: EventReader<ComputeVisibleChunkFacesEvent>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
     for position in find_visible_sides_events.iter() {
         if let Some(chunk) = world_map.get_chunk(&position.0) {
             if let Some(entity) = chunk.entity {
-                let task = thread_pool.spawn(VisibleSides::new(chunk.clone()));
+                let task = thread_pool.spawn(VisibleChunkFaces::new(chunk.clone()));
                 commands.entity(entity).insert(VisibleSidesTask(task));
             }
         } else {
@@ -55,7 +56,7 @@ fn visible_sides_system(
     }
 }
 
-fn handle_visible_sides_tasks(
+fn handle_visibility_tasks(
     mut commands: Commands,
     mut sides_tasks: Query<(Entity, &mut VisibleSidesTask)>,
 ) {
@@ -214,97 +215,97 @@ impl IndexMut<IVec3> for Chunk {
 /// Lookup table for which sides are visible from which in a chunk.
 // Only used by chunk_loading_and_frustum_culling_system
 #[derive(Component, Debug)]
-pub struct VisibleSides {
-    sides: HashMap<Direction, HashSet<Direction>>,
+pub struct VisibleChunkFaces {
+    faces: HashMap<ChunkFace, HashSet<ChunkFace>>,
 }
 
-impl VisibleSides {
+impl VisibleChunkFaces {
     pub async fn new(chunk: Chunk) -> Self {
-        let mut sides: HashMap<Direction, HashSet<Direction>> = HashMap::with_capacity(6);
+        let mut faces: HashMap<ChunkFace, HashSet<ChunkFace>> = HashMap::with_capacity(6);
 
         if chunk.is_uniform() {
             let blocks = Blocks::get();
 
             if blocks[&chunk[0]].is_transparent() {
-                for side in [
-                    Direction::Forward,
-                    Direction::Back,
-                    Direction::Right,
-                    Direction::Left,
-                    Direction::Up,
-                    Direction::Down,
-                    Direction::None,
+                for chunk_face in [
+                    ChunkFace::Front,
+                    ChunkFace::Back,
+                    ChunkFace::Right,
+                    ChunkFace::Left,
+                    ChunkFace::Top,
+                    ChunkFace::Bottom,
+                    ChunkFace::None,
                 ] {
-                    sides.insert(
-                        side,
+                    faces.insert(
+                        chunk_face,
                         HashSet::from([
-                            Direction::Forward,
-                            Direction::Back,
-                            Direction::Right,
-                            Direction::Left,
-                            Direction::Up,
-                            Direction::Down,
-                            Direction::None,
+                            ChunkFace::Front,
+                            ChunkFace::Back,
+                            ChunkFace::Right,
+                            ChunkFace::Left,
+                            ChunkFace::Top,
+                            ChunkFace::Bottom,
+                            ChunkFace::None,
                         ]),
                     );
                 }
             } else {
-                for side in [
-                    Direction::Forward,
-                    Direction::Back,
-                    Direction::Right,
-                    Direction::Left,
-                    Direction::Up,
-                    Direction::Down,
-                    Direction::None,
+                for chunk_face in [
+                    ChunkFace::Front,
+                    ChunkFace::Back,
+                    ChunkFace::Right,
+                    ChunkFace::Left,
+                    ChunkFace::Top,
+                    ChunkFace::Bottom,
+                    ChunkFace::None,
                 ] {
-                    sides.insert(side, HashSet::new());
+                    faces.insert(chunk_face, HashSet::new());
                 }
             }
 
-            let visible_sides = Self { sides };
-            return visible_sides;
+            let visible_chunk_faces = Self { faces };
+            return visible_chunk_faces;
         }
 
-        for side in [
-            Direction::Forward,
-            Direction::Back,
-            Direction::Right,
-            Direction::Left,
-            Direction::Up,
-            Direction::Down,
-            Direction::None,
+        for chunk_face in [
+            ChunkFace::Front,
+            ChunkFace::Back,
+            ChunkFace::Right,
+            ChunkFace::Left,
+            ChunkFace::Top,
+            ChunkFace::Bottom,
+            ChunkFace::None,
         ] {
-            sides.insert(side, HashSet::new());
+            faces.insert(chunk_face, HashSet::new());
         }
 
-        let mut visible_sides = Self { sides };
-        visible_sides.update(&chunk);
+        let mut visible_chunk_faces = Self { faces };
+        visible_chunk_faces.update(&chunk);
 
-        return visible_sides;
+        return visible_chunk_faces;
     }
 
     // Checks visibility from one side to the other.
-    pub fn is_visible(&self, from: &Direction, to: &Direction) -> bool {
+    pub fn is_visible(&self, from: &ChunkFace, to: &ChunkFace) -> bool {
         return self.get(from).get(to).is_some();
     }
 
-    pub fn get(&self, dir: &Direction) -> &HashSet<Direction> {
-        self.sides.get(dir).unwrap()
+    pub fn get(&self, dir: &ChunkFace) -> &HashSet<ChunkFace> {
+        self.faces.get(dir).unwrap()
     }
 
     fn reset(&mut self) {
-        for side in self.sides.values_mut() {
+        for side in self.faces.values_mut() {
             side.clear();
         }
     }
 
-    fn extend(&mut self, sides: HashSet<Direction>) {
-        for side in sides.iter() {
-            self.sides
-                .get_mut(side)
+    fn extend(&mut self, chunk_faces: HashSet<ChunkFace>) {
+        for face in chunk_faces.iter() {
+            self.faces
+                .get_mut(face)
                 .unwrap()
-                .extend(sides.clone().into_iter());
+                .extend(chunk_faces.clone().into_iter());
         }
     }
 
@@ -329,11 +330,23 @@ impl VisibleSides {
                         continue;
                     } else {
                         // front and back
-                        self.extend(Self::find_visible_sides(chunk, &mut visited, front_back));
+                        self.extend(Self::find_visible_chunk_faces(
+                            chunk,
+                            &mut visited,
+                            front_back,
+                        ));
                         // left and
-                        self.extend(Self::find_visible_sides(chunk, &mut visited, left_right));
+                        self.extend(Self::find_visible_chunk_faces(
+                            chunk,
+                            &mut visited,
+                            left_right,
+                        ));
                         // top and b
-                        self.extend(Self::find_visible_sides(chunk, &mut visited, top_bottom));
+                        self.extend(Self::find_visible_chunk_faces(
+                            chunk,
+                            &mut visited,
+                            top_bottom,
+                        ));
                     }
                 }
             }
@@ -347,12 +360,12 @@ impl VisibleSides {
     // This continues until all air blocks that are connected are added to "visited".
     // If a block that is added to the queue is outside the chunk, it means the side from which
     // the block protrudes is visible from the other sides that are marked visible.
-    fn find_visible_sides(
+    fn find_visible_chunk_faces(
         chunk: &Chunk,
         visited: &mut HashSet<IVec3>,
         seed_block: IVec3,
-    ) -> HashSet<Direction> {
-        let mut visible_sides = HashSet::from([Direction::None]);
+    ) -> HashSet<ChunkFace> {
+        let mut visible_chunk_faces = HashSet::from([ChunkFace::None]);
 
         let mut block_queue = Vec::with_capacity(CHUNK_SIZE.pow(3));
         block_queue.push(seed_block);
@@ -361,17 +374,17 @@ impl VisibleSides {
 
         // TODO: Do mut pos here and remove clone lines below?
         while let Some(pos) = block_queue.pop() {
-            let direction = Direction::convert_position(&pos);
+            let direction = ChunkFace::convert_position(&pos);
             match direction {
-                Direction::None => (),
+                ChunkFace::None => (),
                 _ => {
-                    visible_sides.insert(direction);
+                    visible_chunk_faces.insert(direction);
                     // Continue loop since it went outside chunk.
                     continue;
                 }
             }
 
-            // Push all sides of block to queue.
+            // Push all faces of block to queue.
             if !visited.contains(&pos) && blocks[&chunk[pos]].is_transparent() {
                 block_queue.push({
                     let mut pos = pos.clone();
@@ -407,7 +420,7 @@ impl VisibleSides {
                 visited.insert(pos);
             }
         }
-        return visible_sides;
+        return visible_chunk_faces;
     }
 }
 
@@ -433,7 +446,7 @@ impl ChunkFace {
             &ChunkFace::Left => -Vec3::X,
             &ChunkFace::Top => Vec3::Y,
             &ChunkFace::Bottom => -Vec3::Y,
-            &ChunkFace::None => panic!("Can't get normal of None side"),
+            &ChunkFace::None => panic!("Can't get normal of ChunkFace::None"),
         }
     }
 
@@ -445,7 +458,7 @@ impl ChunkFace {
             &ChunkFace::Left => ChunkFace::Right,
             &ChunkFace::Top => ChunkFace::Bottom,
             &ChunkFace::Bottom => ChunkFace::Top,
-            &ChunkFace::None => panic!("Can't get opposite of None side"),
+            &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
         }
     }
 
@@ -457,11 +470,11 @@ impl ChunkFace {
             &ChunkFace::Left => check_opposing == &ChunkFace::Right,
             &ChunkFace::Top => check_opposing == &ChunkFace::Bottom,
             &ChunkFace::Bottom => check_opposing == &ChunkFace::Top,
-            &ChunkFace::None => panic!("Can't get opposite of None side"),
+            &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
         }
     }
 
-    /// Finds the ChunkFaces orthogonal to self.
+    /// Finds the chunk faces orthogonal to self.
     pub fn surrounding(&self) -> Vec<Self> {
         let mut all = vec![
             Self::Front,
@@ -475,13 +488,13 @@ impl ChunkFace {
         return all;
     }
 
-    /// Find the ChunkFaces that are orthogonal on each ChunkFace in 'surrounding', but that do not
+    /// Find the chunk faces that are orthogonal on each ChunkFace in 'surrounding', but that do not
     /// go in the direction of self, or its opposite.
     pub fn orthogonal(&self, surrounding: &Vec<Self>) -> Vec<[Self; 2]> {
         let mut ortho = Vec::with_capacity(4);
-        for side in surrounding {
+        for chunk_face in surrounding {
             if self == &ChunkFace::Top || self == &ChunkFace::Bottom {
-                match side {
+                match chunk_face {
                     ChunkFace::Right => ortho.push([ChunkFace::Front, ChunkFace::Back]),
                     ChunkFace::Left => ortho.push([ChunkFace::Front, ChunkFace::Back]),
                     ChunkFace::Front => ortho.push([ChunkFace::Left, ChunkFace::Right]),
@@ -489,7 +502,7 @@ impl ChunkFace {
                     _ => {}
                 }
             } else if self == &ChunkFace::Front || self == &ChunkFace::Back {
-                match side {
+                match chunk_face {
                     ChunkFace::Right => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
                     ChunkFace::Left => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
                     ChunkFace::Top => ortho.push([ChunkFace::Left, ChunkFace::Right]),
@@ -497,7 +510,7 @@ impl ChunkFace {
                     _ => {}
                 }
             } else if self == &ChunkFace::Right || self == &ChunkFace::Left {
-                match side {
+                match chunk_face {
                     ChunkFace::Front => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
                     ChunkFace::Back => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
                     ChunkFace::Top => ortho.push([ChunkFace::Front, ChunkFace::Back]),
@@ -509,8 +522,8 @@ impl ChunkFace {
         return ortho;
     }
 
-    /// Moves a position a chunk's length in the direction of the face.
-    pub fn offset_position(&self, mut position: IVec3) -> IVec3 {
+    /// Moves the position a chunk's length in the direction of the face.
+    pub fn shift_position(&self, mut position: IVec3) -> IVec3 {
         match self {
             ChunkFace::Front => position.z += CHUNK_SIZE as i32,
             ChunkFace::Back => position.z -= CHUNK_SIZE as i32,
@@ -523,7 +536,7 @@ impl ChunkFace {
         return position;
     }
 
-    /// Return the direction of a vector.
+    /// Returns the chunk face the vector placed in the middle of the chunk points at.
     pub fn convert_vector(vec: &Vec3) -> Self {
         let abs = vec.abs();
         if abs.x > abs.y && abs.x > abs.z {
@@ -547,7 +560,7 @@ impl ChunkFace {
         }
     }
 
-    /// Given a postion that is 1 block outside of a chunk, return which direction it is in.
+    /// Given a relative block position that is immediately adjacent to one of the chunk's faces, return the face.
     pub fn convert_position(pos: &IVec3) -> Self {
         if pos.z > (CHUNK_SIZE - 1) as i32 {
             return ChunkFace::Front;
@@ -568,7 +581,7 @@ impl ChunkFace {
 
     pub fn iter() -> Iter<'static, ChunkFace> {
         use self::ChunkFace::*;
-        static DIRECTIONS: [ChunkFace; 6] = [Front, Back, Right, Left, Top, Bottom];
-        DIRECTIONS.iter()
+        static CHUNK_FACES: [ChunkFace; 6] = [Front, Back, Right, Left, Top, Bottom];
+        CHUNK_FACES.iter()
     }
 }

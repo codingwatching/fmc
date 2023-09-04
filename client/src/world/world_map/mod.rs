@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 
-mod chunk;
+pub mod chunk;
 mod chunk_manager;
 mod world_map;
 
-pub use chunk::{Chunk, ChunkFace, ChunkMarker};
 pub use world_map::WorldMap;
 
 pub struct WorldMapPlugin;

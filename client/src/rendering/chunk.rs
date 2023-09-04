@@ -1,14 +1,14 @@
-use std::{collections::HashMap, ops::Index, sync::Arc};
+use std::collections::HashMap;
 
 use bevy::{
     prelude::*,
     render::{
-        mesh::Indices, primitives::Aabb, render_resource::PrimitiveTopology, view::NoFrustumCulling,
+        mesh::Indices, render_resource::PrimitiveTopology, view::NoFrustumCulling,
     },
     tasks::{AsyncComputeTaskPool, Task},
 };
 
-use fmc_networking::{BlockId, NetworkClient};
+use fmc_networking::BlockId;
 use futures_lite::future;
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     rendering::materials,
     world::{
         blocks::{Block, BlockFace, BlockRotation, BlockState, Blocks, QuadPrimitive},
-        world_map::{Chunk, ChunkMarker, WorldMap},
+        world_map::{WorldMap, chunk::Chunk},
         Origin,
     },
 };
