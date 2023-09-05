@@ -113,12 +113,14 @@ fn update_render_distance(
 }
 
 /// Sent when a player subscribes to a new chunk
+#[derive(Event)]
 pub struct ChunkSubscriptionEvent {
     pub connection_id: ConnectionId,
     pub chunk_pos: IVec3,
 }
 
 // Event sent when the server should unload a chunk and its associated entities.
+#[derive(Event)]
 pub struct ChunkUnloadEvent(pub IVec3);
 
 // TODO: Add reverse, and remove on player disconnect BEFORE systems have access to it.

@@ -43,8 +43,8 @@ impl Plugin for BlockPlugin {
         // resource and then at the end of startup move it.
         //let database = app.world.resource::<DatabaseArc>();
         //Blocks::load(database.as_ref());
-        app.add_plugin(water::WaterPlugin);
-        //.add_plugin(furnace::FurnacePlugin);
+        app.add_plugins(water::WaterPlugin);
+        //.add_plugins(furnace::FurnacePlugin);
     }
 }
 

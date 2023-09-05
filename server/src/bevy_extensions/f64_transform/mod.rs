@@ -82,7 +82,7 @@ impl Plugin for TransformPlugin {
 
         app.register_type::<F64Transform>()
             .register_type::<F64GlobalTransform>()
-            .add_plugin(ValidParentCheckPlugin::<F64GlobalTransform>::default())
+            .add_plugins(ValidParentCheckPlugin::<F64GlobalTransform>::default())
             .configure_set(
                 PostStartup,
                 PropagateTransformsSet.in_set(TransformSystem::TransformPropagate),

@@ -1,5 +1,5 @@
 use bevy::{
-    app::{RunMode, ScheduleRunnerSettings},
+    app::ScheduleRunnerPlugin,
     prelude::*,
 };
 
@@ -23,26 +23,24 @@ fn main() {
     // Ideally I would want to just cram everything into Startup and mark each loading function
     // with a .run_if(this_or_that_resource.exists()) and have them magically ordered by bevy.
     App::new()
-        .insert_resource(ScheduleRunnerSettings {
-            run_mode: RunMode::Loop {
-                // Run at ~60 ticks a second
-                wait: Some(std::time::Duration::from_millis(16)),
-            },
-        })
-        .add_plugins(MinimalPlugins)
-        .add_plugin(bevy::hierarchy::HierarchyPlugin::default())
-        .add_plugin(bevy_extensions::f64_transform::TransformPlugin)
-        .add_plugin(bevy::log::LogPlugin::default())
+        // Run at ~60 ticks a second
+        .add_plugins(ScheduleRunnerPlugin::run_loop(std::time::Duration::from_millis(16)))
+        .add_plugins(bevy::core::TaskPoolPlugin::default())
+        //.add_plugins(bevy::core::TypeRegistrationPlugin::default())
+        .add_plugins(bevy::time::TimePlugin::default())
+        .add_plugins(bevy::hierarchy::HierarchyPlugin::default())
+        .add_plugins(bevy::log::LogPlugin::default())
+        .add_plugins(bevy_extensions::f64_transform::TransformPlugin)
         //.add_plugin(bevy::diagnostic::DiagnosticsPlugin::default())
         //.add_plugin(LogDiagnosticsPlugin::default())
         //.add_plugin(FrameTimeDiagnosticsPlugin::default())
         // Server specific
         .insert_resource(settings::ServerSettings::load())
-        .add_plugin(assets::AssetPlugin)
-        .add_plugin(database::DatabasePlugin)
-        .add_plugin(networking::ServerPlugin)
-        .add_plugin(world::WorldPlugin)
-        .add_plugin(physics::PhysicsPlugin)
-        .add_plugin(players::PlayersPlugin)
+        .add_plugins(assets::AssetPlugin)
+        .add_plugins(database::DatabasePlugin)
+        .add_plugins(networking::ServerPlugin)
+        .add_plugins(world::WorldPlugin)
+        .add_plugins(physics::PhysicsPlugin)
+        .add_plugins(players::PlayersPlugin)
         .run();
 }

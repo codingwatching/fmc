@@ -19,11 +19,11 @@ pub mod world_map;
 pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(blocks::BlockPlugin)
-            .add_plugin(items::ItemPlugin)
-            .add_plugin(models::ModelPlugin)
-            .add_plugin(world_map::WorldMapPlugin)
-            .add_plugin(sky::SkyPlugin)
+        app.add_plugins(blocks::BlockPlugin)
+            .add_plugins(items::ItemPlugin)
+            .add_plugins(models::ModelPlugin)
+            .add_plugins(world_map::WorldMapPlugin)
+            .add_plugins(sky::SkyPlugin)
             .add_systems(PreStartup, load_world_properties)
             .add_systems(
                 Update,

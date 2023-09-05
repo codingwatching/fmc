@@ -5,7 +5,7 @@ use bevy::ecs::{component::Component, reflect::ReflectComponent};
 use bevy::math::{
     DAffine3 as Affine3A, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3, DVec3 as Vec3A,
 };
-use bevy::reflect::{std_traits::ReflectDefault, FromReflect, Reflect};
+use bevy::reflect::{std_traits::ReflectDefault, Reflect};
 
 /// Describe the position of an entity relative to the reference frame.
 ///
@@ -33,7 +33,7 @@ use bevy::reflect::{std_traits::ReflectDefault, FromReflect, Reflect};
 /// - [`global_vs_local_translation`]
 ///
 /// [`global_vs_local_translation`]: https://github.com/bevyengine/bevy/blob/latest/examples/transforms/global_vs_local_translation.rs
-#[derive(Component, Debug, PartialEq, Clone, Copy, Reflect, FromReflect)]
+#[derive(Component, Debug, PartialEq, Clone, Copy, Reflect)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 #[reflect(Component, Default, PartialEq)]
 pub struct F64GlobalTransform(Affine3A);

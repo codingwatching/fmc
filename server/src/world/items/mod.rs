@@ -30,7 +30,7 @@ impl Plugin for ItemPlugin {
         //let database = app.world.resource::<DatabaseArc>();
         //app.insert_resource(Items::load(database.as_ref()));
 
-        app.add_plugin(crafting::CraftingPlugin)
+        app.add_plugins(crafting::CraftingPlugin)
             .add_systems(PreStartup, load_items)
             .add_systems(
                 Update,

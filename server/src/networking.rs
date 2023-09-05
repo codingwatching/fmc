@@ -14,7 +14,7 @@ pub struct ServerPlugin;
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(fmc_networking::ServerPlugin)
+        app.add_plugins(fmc_networking::ServerPlugin)
             .add_systems(PostStartup, server_setup)
             // Postupdate to ensure all packets from disconnected clients have been handled before
             // the connection is removed.

@@ -1,3 +1,13 @@
+//#import bevy_pbr::mesh_bindings
+
+#import bevy_pbr::pbr_types as pbr_types
+
+
+#import bevy_core_pipeline::tonemapping screen_space_dither, powsafe, tone_mapping
+#import bevy_pbr::mesh_view_bindings    globals, lights, view
+
+//#import bevy_pbr::prepass_utils
+
 // This isn't the bevy's standard material, I just kept the name for some reason I don't remember.
 struct StandardMaterial {
     base_color: vec4<f32>,
@@ -5,29 +15,11 @@ struct StandardMaterial {
     perceptual_roughness: f32,
     metallic: f32,
     reflectance: f32,
-    // 'flags' is a bit field indicating various options. u32 is 32 bits so we have up to 32 options.
+    // 'flags' is a bit field indicating various options from pbr_types
     flags: u32,
     alpha_cutoff: f32,
     animation_frames: u32,
 };
-
-const STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT: u32         = 1u;
-const STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT: u32           = 2u;
-const STANDARD_MATERIAL_FLAGS_METALLIC_ROUGHNESS_TEXTURE_BIT: u32 = 4u;
-const STANDARD_MATERIAL_FLAGS_OCCLUSION_TEXTURE_BIT: u32          = 8u;
-const STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT: u32               = 16u;
-const STANDARD_MATERIAL_FLAGS_UNLIT_BIT: u32                      = 32u;
-const STANDARD_MATERIAL_FLAGS_TWO_COMPONENT_NORMAL_MAP: u32       = 64u;
-const STANDARD_MATERIAL_FLAGS_FLIP_NORMAL_MAP_Y: u32              = 128u;
-const STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT: u32                = 256u;
-const STANDARD_MATERIAL_FLAGS_DEPTH_MAP_BIT: u32                  = 512u;
-const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS: u32       = 3758096384u; // (0b111u32 << 29)
-const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE: u32              = 0u;          // (0u32 << 29)
-const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_MASK: u32                = 536870912u;  // (1u32 << 29)
-const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_BLEND: u32               = 1073741824u; // (2u32 << 29)
-const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_PREMULTIPLIED: u32       = 1610612736u; // (3u32 << 29)
-const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_ADD: u32                 = 2147483648u; // (4u32 << 29)
-const STANDARD_MATERIAL_FLAGS_ALPHA_MODE_MULTIPLY: u32            = 2684354560u; // (5u32 << 29)
 
 fn standard_material_new() -> StandardMaterial {
     var material: StandardMaterial;
@@ -38,24 +30,34 @@ fn standard_material_new() -> StandardMaterial {
     material.perceptual_roughness = 0.089;
     material.metallic = 0.01;
     material.reflectance = 0.5;
-    material.flags = STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE;
+    material.flags = pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE;
     material.alpha_cutoff = 0.5;
 
     return material;
 }
 
-#import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::mesh_bindings
+fn alpha_discard(material: StandardMaterial, output_color: vec4<f32>) -> vec4<f32> {
+    var color = output_color;
+    let alpha_mode = material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS;
+    if alpha_mode == pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE {
+        // NOTE: If rendering as opaque, alpha should be ignored so set to 1.0
+        color.a = 1.0;
+    }
 
-#import bevy_pbr::utils
-#import bevy_pbr::clustered_forward
-#import bevy_pbr::lighting
-#import bevy_pbr::pbr_ambient
-#import bevy_pbr::shadows
-#import bevy_pbr::fog
-#import bevy_pbr::pbr_functions
+#ifdef MAY_DISCARD
+    else if alpha_mode == pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_MASK {
+        if color.a >= material.alpha_cutoff {
+            // NOTE: If rendering as masked alpha and >= the cutoff, render as fully opaque
+            color.a = 1.0;
+        } else {
+            // NOTE: output_color.a < in.material.alpha_cutoff should not be rendered
+            discard;
+        }
+    }
+#endif
 
-#import bevy_pbr::prepass_utils
+    return color;
+}
 
 @group(1) @binding(0)
 var<uniform> material: StandardMaterial;
@@ -126,9 +128,9 @@ fn get_light(light: u32) -> f32 {
 
 @fragment
 fn fragment(
-    @builtin(front_facing) is_front: bool,
+    //@builtin(front_facing) is_front: bool,
     @builtin(position) frag_coord: vec4<f32>,
-    @builtin(sample_index) sample_index: u32,
+    //@builtin(sample_index) sample_index: u32,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
@@ -140,7 +142,7 @@ fn fragment(
 ) -> @location(0) vec4<f32> {
     var output_color: vec4<f32> = material.base_color;
 
-    // For some reason this refuses to take a u32 as the index
+    // TODO: For some reason this refuses to take a u32 as the index
     let fps = 10.0;
     let texture_index: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
     output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index);
@@ -265,7 +267,7 @@ fn fragment(
 //    }
 //
 #ifdef TONEMAP_IN_SHADER
-    //output_color = tone_mapping(output_color);
+    //output_color = tone_mapping(output_color, view.color_grading);
 #ifdef DEBAND_DITHER
     var output_rgb = output_color.rgb;
     output_rgb = powsafe(output_rgb, 1.0 / 2.2);

@@ -1,7 +1,5 @@
-#import bevy_pbr::mesh_view_types
-
-@group(0) @binding(0)
-var<uniform> view: View;
+#import bevy_pbr::mesh_view_bindings view
+#import bevy_pbr::mesh_vertex_output MeshVertexOutput
 
 struct SkyMaterialUniform {
     mieKCoefficient: vec4<f32>,
@@ -67,7 +65,7 @@ struct FragmentInput {
 
 @fragment
 fn fragment(
-    #import bevy_pbr::mesh_vertex_output
+    in: MeshVertexOutput
 ) -> @location(0) vec4<f32> {
     // Rayleigh coefficient
     let sunfade: f32 = 1. - clamp(1. - exp(sky_material_uniform.sunPosition.y / 450000.), 0., 1.);
@@ -78,7 +76,7 @@ fn fragment(
     let betaM: vec3<f32> = totalMie(sky_material_uniform.primaries.rgb, sky_material_uniform.mieKCoefficient.rgb, sky_material_uniform.turbidity) * sky_material_uniform.mieCoefficient;
 
     // Optical length, cutoff angle at 90 to avoid singularity
-    let zenithAngle: f32 = acos(max(0., dot(UP, normalize(world_position.xyz - view.world_position))));
+    let zenithAngle: f32 = acos(max(0., dot(UP, normalize(in.world_position.xyz - view.world_position))));
     let denom: f32 = cos(zenithAngle) + 0.15 * pow(93.885 - zenithAngle * 180. / PI, -1.253);
     let sR: f32 = sky_material_uniform.rayleighZenithLength / denom;
     let sM: f32 = sky_material_uniform.mieZenithLength / denom;
@@ -88,7 +86,7 @@ fn fragment(
 
     // In-scattering
     let sunDirection: vec3<f32> = normalize(sky_material_uniform.sunPosition.xyz);
-    let cosTheta: f32 = dot(normalize(world_position.xyz - view.world_position), sunDirection);
+    let cosTheta: f32 = dot(normalize(in.world_position.xyz - view.world_position), sunDirection);
     let betaRTheta: vec3<f32> = betaR * rayleighPhase(cosTheta * 0.5 + 0.5);
     let betaMTheta: vec3<f32> = betaM * henyeyGreensteinPhase(cosTheta, sky_material_uniform.mieDirectionalG);
     let sunE: f32 = sunIntensity(dot(sunDirection, UP));

@@ -1,8 +1,6 @@
 #import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::mesh_bindings
-
-// NOTE: Bindings must come before functions that use them!
-#import bevy_pbr::mesh_functions
+#import bevy_pbr::mesh_bindings       mesh
+#import bevy_pbr::mesh_functions as mesh_functions
 
 struct Vertex {
 #ifdef VERTEX_POSITIONS
@@ -25,6 +23,7 @@ struct Vertex {
     @location(6) joint_weights: vec4<f32>,
 #endif
     @location(7) packed_bits: u32,
+
 };
 
 struct VertexOutput {
@@ -48,22 +47,22 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
 #ifdef SKINNED
-    var model = skin_model(vertex.joint_indices, vertex.joint_weights);
+    var model = bevy_pbr::skinning::skin_model(vertex.joint_indices, vertex.joint_weights);
 #else
     var model = mesh.model;
 #endif
 
 #ifdef VERTEX_NORMALS
 #ifdef SKINNED
-    out.world_normal = skin_normals(model, vertex.normal);
+    out.world_normal = bevy_pbr::skinning::skin_normals(model, vertex.normal);
 #else
-    out.world_normal = mesh_normal_local_to_world(vertex.normal);
+    out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal);
 #endif
 #endif
 
 #ifdef VERTEX_POSITIONS
-    out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.clip_position = mesh_position_world_to_clip(out.world_position);
+    out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
+    out.clip_position = mesh_functions::mesh_position_world_to_clip(out.world_position);
 #endif
 
 #ifdef VERTEX_UVS
@@ -71,7 +70,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 #endif
 
 #ifdef VERTEX_TANGENTS
-    out.world_tangent = mesh_tangent_local_to_world(model, vertex.tangent);
+    out.world_tangent = mesh_functions::mesh_tangent_local_to_world(model, vertex.tangent);
 #endif
 
 #ifdef VERTEX_COLORS

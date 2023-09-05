@@ -6,10 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#bevy = { version = "0.10.1", features = [], default-features = false }
-bevy = { git = "https://github.com/bevyengine/bevy", rev = "d8102a0", default-features=false, features = ["filesystem_watcher"]}
-fmc_networking = { path = "../lib/fmc_networking" }
+#bevy = { git = "https://github.com/bevyengine/bevy", rev = "d8102a0", default-features=false, features = ["filesystem_watcher"]}
+bevy = { version = "0.11.2", default-features=false, features = ["filesystem_watcher"]}
 
+fmc_networking = { path = "../lib/fmc_networking" }
+serde_json = { path = "../lib/json"}
 # Produces values that are slightly less than 1.0 for simplex noise.
 # Idk if it's bug.
 # I calculated my own scaling factors and they came out to be:
@@ -23,22 +24,21 @@ fmc_networking = { path = "../lib/fmc_networking" }
 #simdnoise = { git = "https://github.com/jackmott/rust-simd-noise", rev = "3a4f3e6" }
 simdnoise = { path = "../lib/rust-simd-noise" }
 
-tar = "0.4.37"
-zstd = "0.12.1+zstd.1.5.2"
-sha-1 = "0.9.8"
-serde = { version = "1.0.130", features = ["derive"] }
+tar = "0.4.40"
+zstd = "0.12.4"
+sha-1 = "0.10.1"
+serde = { version = "1.0.188", features = ["derive"] }
 #serde_json = "1.0.85"
-serde_json = { path = "../lib/json"}
 bincode = "1.3.3"
-typetag = "0.1.7"
-futures-lite = "1.12.0"
-rusqlite = { version = "0.28.0"}
+typetag = "0.2.13"
+futures-lite = "1.13.0"
+rusqlite = { version = "0.29.0"}
 rand = "0.8.5"
-once_cell = "1.17.0"
+once_cell = "1.18.0"
 
 [build-dependencies]
-tar = "0.4.37"
-zstd = "0.12.1+zstd.1.5.2"
+tar = "0.4.40"
+zstd = "0.12.4"
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]

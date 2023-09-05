@@ -31,7 +31,7 @@ impl Plugin for PlayersPlugin {
         app //.add_event::<PlayerDeathEvent>()
             .add_event::<PlayerRespawnEvent>()
             .insert_resource(Players::default())
-            .add_plugin(inventory::InventoryPlugin)
+            .add_plugins(inventory::InventoryPlugin)
             // This has to be preupdate to ensure that all player components are available by the
             // time the first packet handlers might access them.
             .add_systems(PreUpdate, add_players)
@@ -48,6 +48,7 @@ impl Plugin for PlayersPlugin {
     }
 }
 
+#[derive(Event)]
 pub struct PlayerRespawnEvent(pub Entity);
 
 //pub struct PlayerDeathEvent(Entity);

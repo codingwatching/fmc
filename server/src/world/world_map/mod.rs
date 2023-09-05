@@ -27,8 +27,8 @@ impl Plugin for WorldMapPlugin {
             5.0,
             TimerMode::Repeating,
         )))
-        .add_plugin(chunk_manager::ChunkManagerPlugin)
-        .add_plugin(terrain_generation::TerrainGenerationPlugin)
+        .add_plugins(chunk_manager::ChunkManagerPlugin)
+        .add_plugins(terrain_generation::TerrainGenerationPlugin)
         .add_event::<BlockUpdate>()
         .add_event::<ChangedBlockEvent>()
         .add_systems(
@@ -56,6 +56,7 @@ impl Plugin for WorldMapPlugin {
 // to query all the adjacent blocks individually.
 //
 /// Event sent in response to a block update.
+#[derive(Event)]
 pub struct ChangedBlockEvent {
     pub position: IVec3,
     pub to: (BlockId, Option<BlockState>),
@@ -103,6 +104,7 @@ impl Index<[BlockFace; 2]> for ChangedBlockEvent {
     }
 }
 
+#[derive(Event)]
 pub enum BlockUpdate {
     /// Change one block to another. Fields are position/block id/block state
     Change {
