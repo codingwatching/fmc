@@ -27,7 +27,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: Val::Percent(1.5),
+                row_gap: Val::Px(4.0),
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 position_type: PositionType::Absolute,
@@ -38,10 +38,10 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
         .with_children(|parent| {
             // Singleplayer button
             parent
-                .spawn_button(41.5, "SinglePlayer")
+                .spawn_button(42.0, "Singleplayer")
                 .insert(SinglePlayerButton);
             parent
-                .spawn_button(41.5, "MultiPlayer")
+                .spawn_button(42.0, "Multiplayer")
                 .insert(MultiPlayerButton);
         })
         .id();
