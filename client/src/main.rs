@@ -47,21 +47,21 @@ fn main() {
 
 fn setup() {
     // TODO: These are gui assets, move to UiPlugin if there aren't more things needed.
-    let assets = include_bytes!(concat!(env!("OUT_DIR"), "/assets.tar.zstd"));
-    let uncompressed = zstd::stream::decode_all(assets.as_slice()).unwrap();
-    let mut archive = tar::Archive::new(uncompressed.as_slice());
-    for entry in archive.entries().unwrap() {
-        let mut file = entry.unwrap();
-        let path = file.path().unwrap();
-        if !path.exists() {
-            match file.unpack_in(".") {
-                Err(e) => panic!(
-                    "Failed to extract default assets to the resource directory.\nError: {e}"
-                ),
-                _ => (),
-            }
-        }
-    }
+    //let assets = include_bytes!(concat!(env!("OUT_DIR"), "/assets.tar.zstd"));
+    //let uncompressed = zstd::stream::decode_all(assets.as_slice()).unwrap();
+    //let mut archive = tar::Archive::new(uncompressed.as_slice());
+    //for entry in archive.entries().unwrap() {
+    //    let mut file = entry.unwrap();
+    //    let path = file.path().unwrap();
+    //    if !path.exists() {
+    //        match file.unpack_in(".") {
+    //            Err(e) => panic!(
+    //                "Failed to extract default assets to the resource directory.\nError: {e}"
+    //            ),
+    //            _ => (),
+    //        }
+    //    }
+    //}
 }
 
 // https://github.com/bevyengine/bevy/issues/4049

@@ -1,17 +1,24 @@
 use std::collections::HashMap;
 
 use bevy::{
+    asset::load_internal_binary_asset,
     prelude::*,
+    reflect::TypeUuid,
+    ui::FocusPolicy,
     window::{CursorGrabMode, PrimaryWindow},
 };
 
 use crate::game_state::GameState;
 
 mod main_menu;
-mod text;
+mod multiplayer;
+mod widgets;
+
+const DEFAULT_FONT_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(Font::TYPE_UUID, 1491772431825224041);
 
 // These interfaces serve as the client gui and are separate from the in-game interfaces sent by
-// the server, these can be found in the 'player' directory.
+// the server, these can be found in the 'player' module.
 pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
@@ -19,7 +26,8 @@ impl Plugin for UiPlugin {
             .insert_resource(Interfaces::default());
 
         app.add_plugins(main_menu::MainMenuPlugin)
-            .add_plugins(text::TextPlugin)
+            .add_plugins(multiplayer::MultiPlayerPlugin)
+            .add_plugins(widgets::WidgetPlugin)
             .add_systems(Startup, player_cursor_setup)
             .add_systems(Update, change_interface.run_if(state_changed::<UiState>()))
             .add_systems(OnExit(GameState::MainMenu), enter_exit_ui)
@@ -27,6 +35,16 @@ impl Plugin for UiPlugin {
                 OnEnter(GameState::MainMenu),
                 (enter_exit_ui, release_cursor),
             );
+
+        // TODO: It would be nice to overwrite bevy's DEFAULT_FONT_HANDLE instead, so it never has
+        // to be specified by any entity. Doing it increases compile time by a lot because it
+        // reaches into the bevy crate I think.
+        load_internal_binary_asset!(
+            app,
+            DEFAULT_FONT_HANDLE,
+            "../../assets/ui/font.otf",
+            |bytes: &[u8], _path: String| { Font::try_from_bytes(bytes.to_vec()).unwrap() }
+        );
     }
 }
 
@@ -34,20 +52,74 @@ impl Plugin for UiPlugin {
 // of the main GameState?
 #[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
 enum UiState {
-    None,
     #[default]
+    None,
     MainMenu,
+    MultiPlayer,
 }
 
 #[derive(Resource, Deref, DerefMut, Default)]
 struct Interfaces(HashMap<UiState, Entity>);
 
+#[derive(Component)]
+struct InterfaceMarker;
+
+#[derive(Bundle)]
+struct InterfaceBundle {
+    /// Describes the logical size of the node
+    pub node: Node,
+    /// Styles which control the layout (size and position) of the node and it's children
+    /// In some cases these styles also affect how the node drawn/painted.
+    pub style: Style,
+    /// The background color, which serves as a "fill" for this node
+    pub background_color: BackgroundColor,
+    /// The color of the Node's border
+    pub border_color: BorderColor,
+    /// Whether this node should block interaction with lower nodes
+    pub focus_policy: FocusPolicy,
+    /// The transform of the node
+    ///
+    /// This field is automatically managed by the UI layout system.
+    /// To alter the position of the `NodeBundle`, use the properties of the [`Style`] component.
+    pub transform: Transform,
+    /// The global transform of the node
+    ///
+    /// This field is automatically managed by the UI layout system.
+    /// To alter the position of the `NodeBundle`, use the properties of the [`Style`] component.
+    pub global_transform: GlobalTransform,
+    /// Describes the visibility properties of the node
+    pub visibility: Visibility,
+    /// Algorithmically-computed indication of whether an entity is visible and should be extracted for rendering
+    pub computed_visibility: ComputedVisibility,
+    /// Indicates the depth at which the node should appear in the UI
+    pub z_index: ZIndex,
+    /// Marker for interfaces
+    interface_marker: InterfaceMarker,
+}
+
+impl Default for InterfaceBundle {
+    fn default() -> Self {
+        InterfaceBundle {
+            // Transparent background
+            background_color: Color::NONE.into(),
+            border_color: Color::NONE.into(),
+            node: Default::default(),
+            style: Default::default(),
+            focus_policy: Default::default(),
+            transform: Default::default(),
+            global_transform: Default::default(),
+            visibility: Default::default(),
+            computed_visibility: Default::default(),
+            z_index: Default::default(),
+            interface_marker: InterfaceMarker,
+        }
+    }
+}
+
 fn change_interface(
     state: Res<State<UiState>>,
     interfaces: Res<Interfaces>,
-    // TODO: Maybe this should be made explicit by a UiRoot component. It's probably going to pick
-    // up something that wasn't intended.
-    mut interface_query: Query<(Entity, &mut Style), (With<Node>, Without<Parent>)>,
+    mut interface_query: Query<(Entity, &mut Style), With<InterfaceMarker>>,
 ) {
     let new_interface_entity = interfaces.get(state.get());
     for (interface_entity, mut style) in interface_query.iter_mut() {

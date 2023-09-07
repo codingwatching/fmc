@@ -1,39 +1,33 @@
 use bevy::prelude::*;
-use fmc_networking::NetworkSettings;
 
-use crate::game_state::GameState;
+use crate::ui::InterfaceBundle;
 
-use super::{text::TextBoxBundle, Interfaces, UiState};
+use super::{widgets::*, Interfaces, UiState};
 
 pub(super) struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
             Update,
-            press_play_button.run_if(in_state(UiState::MainMenu)),
+            press_multiplayer.run_if(in_state(UiState::MainMenu)),
         );
     }
 }
 
 #[derive(Component)]
-struct PlayButtonMarker;
-
+struct SinglePlayerButton;
 #[derive(Component)]
-struct ServerIpMarker;
+struct MultiPlayerButton;
 
-fn setup(
-    mut commands: Commands,
-    mut interfaces: ResMut<Interfaces>,
-    asset_server: Res<AssetServer>,
-) {
+fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
-        .spawn(NodeBundle {
-            background_color: Color::BLACK.into(),
+        .spawn(InterfaceBundle {
+            background_color: Color::DARK_GRAY.into(),
             style: Style {
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: Val::Percent(2.0),
+                row_gap: Val::Percent(1.5),
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 position_type: PositionType::Absolute,
@@ -42,115 +36,36 @@ fn setup(
             ..default()
         })
         .with_children(|parent| {
+            // Singleplayer button
             parent
-                .spawn(NodeBundle {
-                    background_color: Color::WHITE.into(),
-                    style: Style {
-                        width: Val::Percent(30.0),
-                        height: Val::Percent(5.0),
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                    ..default()
-                })
-                .with_children(|parent| {
-                    parent
-                        .spawn(TextBoxBundle {
-                            background_color: Color::BLACK.into(),
-                            style: Style {
-                                align_items: AlignItems::Center,
-                                margin: UiRect::all(Val::Px(1.0)),
-                                flex_grow: 1.0,
-                                ..default()
-                            },
-                            ..default()
-                        })
-                        .with_children(|parent| {
-                            parent
-                                .spawn(TextBundle {
-                                    text: Text::from_section(
-                                        "127.0.0.1",
-                                        TextStyle {
-                                            font: asset_server.load("assets/ui/font.otf"),
-                                            font_size: 6.0,
-                                            color: Color::WHITE,
-                                        },
-                                    ),
-                                    style: Style {
-                                        margin: UiRect::all(Val::Px(4.0)),
-                                        ..default()
-                                    },
-                                    ..default()
-                                })
-                                .insert(ServerIpMarker);
-                        });
-                });
-
-            // Play button
+                .spawn_button(41.5, "SinglePlayer")
+                .insert(SinglePlayerButton);
             parent
-                .spawn(NodeBundle {
-                    background_color: Color::WHITE.into(),
-                    style: Style {
-                        width: Val::Percent(30.0),
-                        height: Val::Percent(5.0),
-                        ..default()
-                    },
-                    ..default()
-                })
-                .with_children(|parent| {
-                    parent
-                        .spawn(ButtonBundle {
-                            background_color: Color::BLACK.into(),
-                            style: Style {
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                margin: UiRect::all(Val::Px(1.0)),
-                                flex_grow: 1.0,
-                                ..default()
-                            },
-                            ..default()
-                        })
-                        .with_children(|parent| {
-                            parent.spawn(TextBundle {
-                                text: Text::from_section(
-                                    "PLAY",
-                                    TextStyle {
-                                        font: asset_server.load("assets/ui/font.otf"),
-                                        font_size: 6.0,
-                                        color: Color::WHITE,
-                                    },
-                                ),
-                                style: Style {
-                                    align_self: AlignSelf::Center,
-                                    margin: UiRect::all(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                ..default()
-                            });
-                        })
-                        .insert(PlayButtonMarker);
-                });
+                .spawn_button(41.5, "MultiPlayer")
+                .insert(MultiPlayerButton);
         })
         .id();
     interfaces.insert(UiState::MainMenu, entity);
 }
 
-fn press_play_button(
-    mut net: ResMut<fmc_networking::NetworkClient>,
-    server_ip: Query<&Text, With<ServerIpMarker>>,
-    play_button: Query<&Interaction, (Changed<Interaction>, With<PlayButtonMarker>)>,
-    mut game_state: ResMut<NextState<GameState>>,
+fn press_singleplayer(
+    mut ui_state: ResMut<NextState<UiState>>,
+    button_query: Query<&Interaction, (Changed<Interaction>, With<SinglePlayerButton>)>,
 ) {
-    for interaction in play_button.iter() {
+    if let Ok(interaction) = button_query.get_single() {
         if *interaction == Interaction::Pressed {
-            let mut ip = server_ip.single().sections[0].value.to_owned();
+            ui_state.set(UiState::MultiPlayer);
+        }
+    }
+}
 
-            if !ip.contains(":") {
-                ip.push_str(":42069");
-            }
-
-            net.connect(ip.clone(), NetworkSettings::default());
-            game_state.set(GameState::Connecting);
+fn press_multiplayer(
+    mut ui_state: ResMut<NextState<UiState>>,
+    button_query: Query<&Interaction, (Changed<Interaction>, With<MultiPlayerButton>)>,
+) {
+    if let Ok(interaction) = button_query.get_single() {
+        if *interaction == Interaction::Pressed {
+            ui_state.set(UiState::MultiPlayer);
         }
     }
 }

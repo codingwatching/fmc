@@ -196,9 +196,9 @@ fn frustum_chunk_loading(
     // surrounding =   left      right       top      bottom
     //                 /  \      /  \       /  \       /  \
     // orthogonal  = [top,bot] [top,bot] [top,bot] [top, bottom]
-    let forward_face = ChunkFace::convert_vector(&view_vector);
-    let surrounding = forward_face.surrounding();
-    let orthogonal = forward_face.orthogonal(&surrounding);
+    let forward_dir = ChunkFace::convert_vector(&view_vector);
+    let surrounding = forward_dir.surrounding();
+    let orthogonal = forward_dir.orthogonal(&surrounding);
 
     let mut forward_queue = Vec::with_capacity(settings.render_distance as usize);
     let mut surr_queue = Vec::with_capacity(settings.render_distance as usize);
@@ -342,7 +342,7 @@ fn frustum_chunk_loading(
                         traverse_direction(
                             ortho_pos,
                             &ortho_entry_face,
-                            &forward_face,
+                            &forward_dir,
                             ortho_faces,
                             &mut ortho_queue,
                         );
@@ -365,7 +365,7 @@ fn frustum_chunk_loading(
                 traverse_direction(
                     surr_pos,
                     &surr_entry_face,
-                    &forward_face,
+                    &forward_dir,
                     surr_faces,
                     &mut surr_queue,
                 );
@@ -382,7 +382,7 @@ fn frustum_chunk_loading(
         traverse_direction(
             forward_pos,
             &forward_entry_face,
-            &forward_face,
+            &forward_dir,
             forward_faces,
             &mut forward_queue,
         );

@@ -2,7 +2,7 @@ use bevy::{
     asset::Handle,
     pbr::{AlphaMode, MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    reflect::{TypeUuid, TypePath},
+    reflect::{TypePath, TypeUuid},
     render::{
         color::Color, mesh::MeshVertexBufferLayout, render_asset::RenderAssets, render_resource::*,
         texture::Image,

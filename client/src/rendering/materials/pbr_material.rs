@@ -5,7 +5,7 @@ use bevy::{
         MAX_CASCADES_PER_LIGHT, MAX_DIRECTIONAL_LIGHTS,
     },
     prelude::*,
-    reflect::{TypeUuid, TypePath},
+    reflect::{TypePath, TypeUuid},
     render::{
         mesh::{MeshVertexBufferLayout, VertexAttributeValues},
         render_asset::RenderAssets,

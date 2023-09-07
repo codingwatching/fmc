@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use bevy::{
     prelude::*,
-    render::{
-        mesh::Indices, render_resource::PrimitiveTopology, view::NoFrustumCulling,
-    },
+    render::{mesh::Indices, render_resource::PrimitiveTopology, view::NoFrustumCulling},
     tasks::{AsyncComputeTaskPool, Task},
 };
 
@@ -17,7 +15,7 @@ use crate::{
     rendering::materials,
     world::{
         blocks::{Block, BlockFace, BlockRotation, BlockState, Blocks, QuadPrimitive},
-        world_map::{WorldMap, chunk::Chunk},
+        world_map::{chunk::Chunk, WorldMap},
         Origin,
     },
 };

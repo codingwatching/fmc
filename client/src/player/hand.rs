@@ -177,7 +177,7 @@ fn equip_item(
                     Keyframes::Rotation(frames) => {
                         new_transform.rotation = *frames.last().unwrap();
                     }
-                    _ => continue
+                    _ => continue,
                 }
             }
 
