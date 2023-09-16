@@ -322,7 +322,7 @@ fn trigger_physics_update_on_block_change(
     mut dropped_items: Query<&mut F64Transform, With<DroppedItem>>,
     mut block_updates: EventReader<BlockUpdate>,
 ) {
-    for block_update in block_updates.iter() {
+    for block_update in block_updates.read() {
         let position = match block_update {
             BlockUpdate::Change { position, .. } => *position,
             _ => continue,

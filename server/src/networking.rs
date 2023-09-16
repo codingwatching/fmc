@@ -53,7 +53,7 @@ fn handle_network_events(
     mut network_events: EventReader<ServerNetworkEvent>,
     player_query: Query<&PlayerName>,
 ) {
-    for event in network_events.iter() {
+    for event in network_events.read() {
         match event {
             ServerNetworkEvent::Connected {
                 connection,

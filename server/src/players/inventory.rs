@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::{PlayerEquipment, PlayerEquippedItem, PlayerInventoryCraftingTable, PlayerMarker};
+use super::{PlayerEquipment, PlayerEquippedItem, PlayerMarker};
 
 pub struct InventoryPlugin;
 impl Plugin for InventoryPlugin {
@@ -387,7 +387,7 @@ fn show_hotbar(
     players: Res<Players>,
     mut events: EventReader<NetworkData<messages::ClientFinishedLoading>>,
 ) {
-    for event in events.iter() {
+    for event in events.read() {
         net.send_one(
             event.source,
             messages::InterfaceOpen {
@@ -443,7 +443,7 @@ fn update_inventory_interface(
 
     let mut inventory_query_p0 = inventory_query.p0();
 
-    for take_event in take_events.iter() {
+    for take_event in take_events.read() {
         let player_entity = players.get(&take_event.source);
         let (mut inventory, mut equipment, mut crafting_table, mut held_item) =
             inventory_query_p0.get_mut(player_entity).unwrap();
@@ -472,7 +472,7 @@ fn update_inventory_interface(
         }
     }
 
-    for place_event in place_events.iter() {
+    for place_event in place_events.read() {
         let player_entity = players.get(&place_event.source);
         let (mut inventory, mut equipment, mut crafting_table, mut held_item) =
             inventory_query_p0.get_mut(player_entity).unwrap();
@@ -515,7 +515,7 @@ fn equip_item(
     mut equip_events: EventReader<NetworkData<messages::InterfaceEquipItem>>,
     mut equipped_item_query: Query<&mut PlayerEquippedItem>,
 ) {
-    for equip_event in equip_events.iter() {
+    for equip_event in equip_events.read() {
         if equip_event.interface_path != "hotbar/equipment" {
             return;
         }

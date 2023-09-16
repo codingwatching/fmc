@@ -132,7 +132,7 @@ fn handle_player_position_updates(
     mut player_query: Query<&mut F64Transform, With<PlayerMarker>>,
     mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
 ) {
-    for position_update in position_events.iter() {
+    for position_update in position_events.read() {
         let player_entity = players.get(&position_update.source);
         let mut player_position = player_query.get_mut(player_entity).unwrap();
         player_position.translation = position_update.position;
@@ -147,7 +147,7 @@ fn handle_player_rotation_updates(
     mut player_model_transforms: Query<&mut F64Transform, With<Model>>,
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
 ) {
-    for rotation_update in camera_rotation_events.iter() {
+    for rotation_update in camera_rotation_events.read() {
         let entity = players.get(&rotation_update.source);
         let (mut camera, children) = player_query.get_mut(entity).unwrap();
         camera.rotation = rotation_update.rotation.as_f64();
@@ -174,7 +174,7 @@ fn respawn_players(
     mut respawn_events: EventReader<PlayerRespawnEvent>,
     connection_query: Query<&ConnectionId>,
 ) {
-    for event in respawn_events.iter() {
+    for event in respawn_events.read() {
         let blocks = Blocks::get();
         let air = blocks.get_id("air");
 

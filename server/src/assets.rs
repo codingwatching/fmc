@@ -73,7 +73,7 @@ fn handle_asset_requests(
     mut requests: EventReader<NetworkData<messages::AssetRequest>>,
     net: Res<NetworkServer>,
 ) {
-    for request in requests.iter() {
+    for request in requests.read() {
         info!("sending assets");
         let asset_archive = std::fs::read("resources/assets.tar").unwrap();
         net.send_one(

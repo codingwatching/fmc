@@ -122,7 +122,7 @@ fn handle_block_updates(
     mut block_events: EventReader<BlockUpdate>,
     mut chunked_updates: Local<HashMap<IVec3, Vec<(usize, BlockId, Option<u16>)>>>,
 ) {
-    for event in block_events.iter() {
+    for event in block_events.read() {
         match event {
             BlockUpdate::Change {
                 position,
@@ -209,7 +209,7 @@ fn save_block_updates_to_database(
     exit_events: EventReader<AppExit>,
     mut block_updates: Local<HashMap<IVec3, (BlockId, Option<BlockState>)>>,
 ) {
-    for event in block_events.iter() {
+    for event in block_events.read() {
         match event {
             BlockUpdate::Change {
                 position,
@@ -243,7 +243,7 @@ fn send_changed_block_event(
     mut block_update_events: EventReader<BlockUpdate>,
     mut changed_block_events: EventWriter<ChangedBlockEvent>,
 ) {
-    changed_block_events.send_batch(block_update_events.iter().map(|event| {
+    changed_block_events.send_batch(block_update_events.read().map(|event| {
         match event {
             BlockUpdate::Change {
                 position,

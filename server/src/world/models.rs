@@ -241,12 +241,12 @@ fn remove_models(
     mut chunk_unload_events: EventReader<ChunkUnloadEvent>,
     mut deleted_models: RemovedComponents<Model>,
 ) {
-    for event in chunk_unload_events.iter() {
+    for event in chunk_unload_events.read() {
         // TODO: This just leaves the model entities hanging
         model_map.remove_chunk(&event.0);
     }
 
-    for entity in deleted_models.iter() {
+    for entity in deleted_models.read() {
         let chunk_pos = model_map.remove_model(entity);
         if let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_pos) {
             net.send_many(subs, messages::DeleteModel { id: entity.index() });
@@ -364,7 +364,7 @@ fn send_models_on_chunk_subscription(
     models: Query<(&Model, &F64GlobalTransform, &ModelVisibility)>,
     mut chunk_sub_events: EventReader<ChunkSubscriptionEvent>,
 ) {
-    for chunk_sub in chunk_sub_events.iter() {
+    for chunk_sub in chunk_sub_events.read() {
         if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_pos) {
             for entity in model_entities.iter() {
                 let (model, transform, visibility) = models

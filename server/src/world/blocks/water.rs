@@ -558,7 +558,7 @@ fn pread_water(
     let blocks = Blocks::get();
     let air = blocks.get_id("air");
 
-    for changed_block in changed_blocks.iter() {
+    for changed_block in changed_blocks.read() {
         // If there's an update waiting to be sent, but the block is changed, the update is stale
         updates.remove(&changed_block.position);
 

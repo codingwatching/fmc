@@ -105,7 +105,7 @@ fn update_render_distance(
     mut player_query: Query<&mut PlayerRenderDistance>,
     mut render_distance_events: EventReader<NetworkData<messages::RenderDistance>>,
 ) {
-    for event in render_distance_events.iter() {
+    for event in render_distance_events.read() {
         let entity = players.get(&event.source);
         let mut render_distance = player_query.get_mut(entity).unwrap();
         render_distance.0 = event.render_distance.min(server_settings.render_distance);
@@ -203,7 +203,7 @@ fn handle_subscribers(
     mut network_events: EventReader<ServerNetworkEvent>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
 ) {
-    for event in network_events.iter() {
+    for event in network_events.read() {
         match event {
             ServerNetworkEvent::Connected { connection, .. } => {
                 chunk_subscriptions.add_subscriber(*connection);
@@ -235,7 +235,7 @@ fn handle_chunk_requests(
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
-    for request in requests.iter() {
+    for request in requests.read() {
         let mut chunk_response = messages::ChunkResponse::new();
 
         for chunk_pos in &request.chunks {
@@ -393,7 +393,7 @@ fn unload_chunks(
     mut world_map: ResMut<WorldMap>,
     mut unload_chunk_events: EventReader<ChunkUnloadEvent>,
 ) {
-    for event in unload_chunk_events.iter() {
+    for event in unload_chunk_events.read() {
         world_map.remove_chunk(&event.0);
     }
 }

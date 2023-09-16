@@ -28,9 +28,6 @@ pub struct PlayerEquipment([ItemStack; 4]);
 #[derive(Component, Default, Serialize, Deserialize)]
 pub struct PlayerEquippedItem(pub usize);
 
-#[derive(Component, Default, Deref, DerefMut)]
-pub struct PlayerInventoryCraftingTable([ItemStack; 4]);
-
 ///// Custom spawn point, not used unless explicitly set
 //#[derive(Component)]
 //pub struct PlayerSpawnPoint(Vec3);

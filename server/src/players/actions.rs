@@ -49,7 +49,7 @@ pub fn handle_left_clicks(
 ) {
     let now = std::time::Instant::now();
 
-    for click in clicks.iter() {
+    for click in clicks.read() {
         let player_entity = players.get(&click.source);
         let (player_position, player_camera) = player_query.get(player_entity).unwrap();
 
@@ -223,7 +223,7 @@ pub fn handle_right_clicks(
     >,
     mut block_update_writer: EventWriter<BlockUpdate>,
 ) {
-    for right_click in clicks.iter() {
+    for right_click in clicks.read() {
         let player_entity = players.get(&right_click.source);
         let (mut inventory, equipped_item, player_position, player_camera) =
             player_query.get_mut(player_entity).unwrap();
