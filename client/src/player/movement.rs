@@ -75,7 +75,7 @@ fn handle_position_updates_from_server(
     mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
     mut player_query: Query<&mut Transform, With<Player>>,
 ) {
-    for event in position_events.iter() {
+    for event in position_events.read() {
         let mut transform = player_query.single_mut();
         transform.translation = (event.position - origin.as_dvec3()).as_vec3();
     }

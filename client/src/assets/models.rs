@@ -6,13 +6,15 @@ use fmc_networking::{messages::ServerConfig, NetworkClient};
 
 const MODEL_PATH: &str = "server_assets/textures/models/";
 
+pub type ModelId = u32;
+
 /// A map from server model id to model asset handle
 #[derive(Resource)]
 pub struct Models {
     // id -> model
-    inner: HashMap<u32, Model>,
+    inner: HashMap<ModelId, Model>,
     // filename -> id
-    reverse: HashMap<String, u32>,
+    reverse: HashMap<String, ModelId>,
 }
 
 impl Models {

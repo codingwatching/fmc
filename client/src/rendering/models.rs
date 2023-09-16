@@ -48,7 +48,7 @@ fn handle_model_add_delete(
     mut new_models: EventReader<NetworkData<messages::NewModel>>,
     player_aabb: Query<(&Aabb, &Transform), With<Player>>,
 ) {
-    for model in deleted_models.iter() {
+    for model in deleted_models.read() {
         if let Some(entity) = model_entities.remove(&model.id) {
             // BUG: Every time the model's scene handle changes, a new child entity is attached to
             // this entity. Presumably for the gltf meshes etc. These are not cleaned up when the
@@ -61,7 +61,7 @@ fn handle_model_add_delete(
         }
     }
 
-    for new_model in new_models.iter() {
+    for new_model in new_models.read() {
         let model = if let Some(model) = models.get(&new_model.asset) {
             model
         } else {
@@ -195,7 +195,7 @@ fn update_transforms(
     mut transform_updates: EventReader<NetworkData<messages::ModelUpdateTransform>>,
     mut model_query: Query<&mut Transform, With<ModelMarker>>,
 ) {
-    for transform_update in transform_updates.iter() {
+    for transform_update in transform_updates.read() {
         if let Some(entity) = model_entities.get(&transform_update.id) {
             // I think this should be bug, server should not send model same tick it sends
             // transform updated. But there is 1-frame delay for model entity spawn for command
@@ -218,7 +218,7 @@ fn update_model_asset(
     mut asset_updates: EventReader<NetworkData<messages::ModelUpdateAsset>>,
     mut model_query: Query<&mut Handle<Scene>, With<ModelMarker>>,
 ) {
-    for asset_update in asset_updates.iter() {
+    for asset_update in asset_updates.read() {
         if let Some(entity) = model_entities.get(&asset_update.id) {
             let mut handle = model_query.get_mut(*entity).unwrap();
 

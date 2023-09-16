@@ -24,7 +24,7 @@ use super::{
     camera::PlayerCameraMarker,
     interfaces::{
         items::{ItemStack, Items},
-        Interface, ItemBox, SelectedItemBox,
+        InterfacePath, ItemBox, ItemBoxSection, SelectedItemBox,
     },
     Player,
 };
@@ -32,7 +32,8 @@ use super::{
 pub struct HandPlugin;
 impl Plugin for HandPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SwitchAnimation::default()).add_systems(
+        app.insert_resource(SwitchAnimation::default())
+            .add_systems(
             Update,
             (
                 equip_item,
@@ -59,16 +60,6 @@ struct EquippedItem;
 #[derive(Component, Default)]
 struct HandMarker;
 
-pub fn hand_setup(commands: &mut Commands) -> Entity {
-    let entity = commands
-        .spawn(SceneBundle::default())
-        .insert(AnimationPlayer::default())
-        .insert(HandMarker)
-        .id();
-
-    return entity;
-}
-
 #[derive(Resource, Default)]
 struct SwitchAnimation {
     elapsed: f32,
@@ -91,21 +82,24 @@ fn equip_item(
     meshes: Res<Assets<Mesh>>,
     animation_clips: Res<Assets<AnimationClip>>,
     mut switch_animation: ResMut<SwitchAnimation>,
-    changed_interface_query: Query<(&Interface, &SelectedItemBox), Changed<SelectedItemBox>>,
+    changed_interface_query: Query<
+        (&InterfacePath, &ItemBoxSection, &SelectedItemBox),
+        Changed<SelectedItemBox>,
+    >,
     item_box_query: Query<&ItemBox>,
     equipped_entity_query: Query<Entity, With<EquippedItem>>,
     changed_equipped_item_query: Query<
-        &ItemStack,
+        &ItemBox,
         (
-            Or<(Changed<ItemStack>, Added<EquippedItem>)>,
+            Or<(Changed<ItemBox>, Added<EquippedItem>)>,
             With<EquippedItem>,
         ),
     >,
     hand_scene_query: Query<&Handle<Scene>, With<HandMarker>>,
 ) {
     // equip and unequip when the equipment interface is hidden/shown or the selected box changes
-    for (interface, selected) in changed_interface_query.iter() {
-        if !interface.config.is_equipment {
+    for (interface_path, item_box_section, selected) in changed_interface_query.iter() {
+        if !item_box_section.is_equipment {
             continue;
         }
 
@@ -115,8 +109,7 @@ fn equip_item(
 
         let item_box = item_box_query.get(selected.0).unwrap();
         net.send_message(messages::InterfaceEquipItem {
-            name: "hotbar".to_owned(),
-            section: item_box.section_index as u32,
+            interface_path: interface_path.0.to_owned(),
             index: item_box.index as u32,
         });
 
@@ -124,7 +117,7 @@ fn equip_item(
     }
 
     // equip new item when the selected item changes.
-    for item_stack in changed_equipped_item_query.iter() {
+    for item_box in changed_equipped_item_query.iter() {
         let scene = hand_scene_query.single();
 
         switch_animation.old_transform = switch_animation.new_transform;
@@ -132,7 +125,7 @@ fn equip_item(
 
         let mut new_transform = Transform::default();
 
-        if let Some(item_id) = item_stack.item {
+        if let Some(item_id) = item_box.item_stack.item {
             let item = items.get(&item_id);
             let model = models.get(&item.model_id).unwrap();
             let gltf = gltf_assets.get(&model.handle).unwrap();
@@ -259,7 +252,7 @@ fn play_use_animation(
 
     if mouse_button_input.pressed(MouseButton::Left) {
         let animation_handle = gltf.named_animations.get("left_click").unwrap();
-        let animation_clip = animation_clips.get(&animation_handle).unwrap();
+        let animation_clip = animation_clips.get(animation_handle).unwrap();
         if mouse_button_input.just_pressed(MouseButton::Left) {
             player.start_with_transition(animation_handle.clone(), Duration::from_millis(10));
         } else if player.elapsed() >= animation_clip.duration() {

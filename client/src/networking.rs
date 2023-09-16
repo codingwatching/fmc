@@ -18,7 +18,7 @@ fn handle_connection(
     mut network_events: EventReader<ClientNetworkEvent>,
     mut game_state: ResMut<NextState<GameState>>,
 ) {
-    for event in network_events.iter() {
+    for event in network_events.read() {
         match event {
             ClientNetworkEvent::Connected => {
                 net.send_message(messages::ClientIdentification {
@@ -42,7 +42,7 @@ fn handle_server_config(
     mut commands: Commands,
     mut server_config_events: EventReader<NetworkData<messages::ServerConfig>>,
 ) {
-    for event in server_config_events.iter() {
+    for event in server_config_events.read() {
         let server_config: messages::ServerConfig = (*event).clone();
         commands.insert_resource(server_config);
     }

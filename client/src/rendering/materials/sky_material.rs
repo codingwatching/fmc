@@ -5,7 +5,7 @@ use bevy::{
     render::{mesh::MeshVertexBufferLayout, render_resource::*},
 };
 
-#[derive(AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
+#[derive(Asset, AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
 #[uuid = "3035b6eb-0716-4980-8ed9-6d4308900e30"]
 //#[bind_group_data(BlockMaterialKey)]
 #[uniform(0, SkyMaterialUniform)]

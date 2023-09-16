@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use bevy::{
     asset::load_internal_binary_asset,
     prelude::*,
-    reflect::TypeUuid,
     ui::FocusPolicy,
-    window::{CursorGrabMode, PrimaryWindow},
+    window::{CursorGrabMode, PrimaryWindow, WindowResized},
+    winit::WinitWindows,
 };
 
 use crate::game_state::GameState;
@@ -14,8 +14,10 @@ mod main_menu;
 mod multiplayer;
 mod widgets;
 
-const DEFAULT_FONT_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Font::TYPE_UUID, 1491772431825224041);
+const DEFAULT_FONT_HANDLE: Handle<Font> =
+    Handle::weak_from_u128(1491772431825224041);
+
+const UI_SCALE: f64 = 4.0;
 
 // These interfaces serve as the client gui and are separate from the in-game interfaces sent by
 // the server, these can be found in the 'player' module.
@@ -28,8 +30,14 @@ impl Plugin for UiPlugin {
         app.add_plugins(main_menu::MainMenuPlugin)
             .add_plugins(multiplayer::MultiPlayerPlugin)
             .add_plugins(widgets::WidgetPlugin)
-            .add_systems(Startup, player_cursor_setup)
-            .add_systems(Update, change_interface.run_if(state_changed::<UiState>()))
+            .add_systems(Startup, setup)
+            .add_systems(
+                Update,
+                (
+                    change_interface.run_if(state_changed::<UiState>()),
+                    scale_ui.run_if(on_event::<WindowResized>()),
+                ),
+            )
             .add_systems(OnExit(GameState::MainMenu), enter_exit_ui)
             .add_systems(
                 OnEnter(GameState::MainMenu),
@@ -46,6 +54,49 @@ impl Plugin for UiPlugin {
             |bytes: &[u8], _path: String| { Font::try_from_bytes(bytes.to_vec()).unwrap() }
         );
     }
+}
+
+fn setup(
+    mut commands: Commands,
+    mut interfaces: ResMut<Interfaces>,
+    winit_windows: NonSend<WinitWindows>,
+    windows: Query<Entity, &Window>,
+) {
+    let entity = windows.single();
+    let id = winit_windows.entity_to_winit.get(&entity).unwrap();
+    let monitor = winit_windows
+        .windows
+        .get(id)
+        .unwrap()
+        .current_monitor()
+        .unwrap();
+    let resolution = monitor.size().to_logical(monitor.scale_factor());
+    commands.insert_resource(LogicalDisplayWidth {
+        width: resolution.width,
+    });
+
+    // In-game cursor
+    let entity = commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Px(3.0),
+                height: Val::Px(3.0),
+                position_type: PositionType::Absolute,
+                left: Val::Percent(50.0),
+                bottom: Val::Percent(50.0),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::rgba(0.9, 0.9, 0.9, 0.3)),
+            ..Default::default()
+        })
+        .id();
+
+    interfaces.insert(UiState::None, entity);
+}
+
+#[derive(Resource)]
+struct LogicalDisplayWidth {
+    width: f64,
 }
 
 // TODO: Make sub states(https://github.com/bevyengine/bevy/issues/8187)
@@ -88,9 +139,7 @@ struct InterfaceBundle {
     /// To alter the position of the `NodeBundle`, use the properties of the [`Style`] component.
     pub global_transform: GlobalTransform,
     /// Describes the visibility properties of the node
-    pub visibility: Visibility,
-    /// Algorithmically-computed indication of whether an entity is visible and should be extracted for rendering
-    pub computed_visibility: ComputedVisibility,
+    pub visibility_bundle: VisibilityBundle,
     /// Indicates the depth at which the node should appear in the UI
     pub z_index: ZIndex,
     /// Marker for interfaces
@@ -108,8 +157,7 @@ impl Default for InterfaceBundle {
             focus_policy: Default::default(),
             transform: Default::default(),
             global_transform: Default::default(),
-            visibility: Default::default(),
-            computed_visibility: Default::default(),
+            visibility_bundle: Default::default(),
             z_index: Default::default(),
             interface_marker: InterfaceMarker,
         }
@@ -139,30 +187,21 @@ fn enter_exit_ui(game_state: Res<State<GameState>>, mut ui_state: ResMut<NextSta
     }
 }
 
-// The cross placed in the middle while playing
-// TODO: Make it a cross instead of a dot, and white transparent
-fn player_cursor_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
-    // red dot cursor
-    let entity = commands
-        .spawn(NodeBundle {
-            style: Style {
-                width: Val::Px(3.0),
-                height: Val::Px(3.0),
-                position_type: PositionType::Absolute,
-                left: Val::Percent(50.0),
-                bottom: Val::Percent(50.0),
-                ..default()
-            },
-            background_color: BackgroundColor(Color::rgba(0.9, 0.9, 0.9, 0.3)),
-            ..Default::default()
-        })
-        .id();
-
-    interfaces.insert(UiState::None, entity);
-}
-
 fn release_cursor(mut window: Query<&mut Window, With<PrimaryWindow>>) {
     let mut window = window.single_mut();
     window.cursor.grab_mode = CursorGrabMode::None;
     window.cursor.visible = true;
+}
+
+// TODO: Scaling like this uses a lot of memory because of how fonts sizes are stored.
+// https://github.com/bevyengine/bevy/issues/5636
+// It was fixed, but then revered. Haven't found anyone discussing it afterwards.
+fn scale_ui(
+    mut ui_scale: ResMut<UiScale>,
+    resolution: Res<LogicalDisplayWidth>,
+    window: Query<&Window>,
+) {
+    let window = window.single();
+    let scale = window.resolution.width() as f64 / resolution.width;
+    ui_scale.0 = UI_SCALE * scale;
 }

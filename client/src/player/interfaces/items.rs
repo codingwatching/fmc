@@ -197,13 +197,9 @@ impl ItemStack {
             other.subtract(amount);
             return amount;
         } else {
-            self.swap(other);
+            std::mem::swap(self, other);
             return self.size;
         }
-    }
-
-    pub fn swap(&mut self, other: &mut ItemStack) {
-        std::mem::swap(self, other);
     }
 
     pub fn is_empty(&self) -> bool {

@@ -72,7 +72,7 @@ fn set_render_distance(
     mut settings: ResMut<Settings>,
     mut server_config_events: EventReader<NetworkData<messages::ServerConfig>>,
 ) {
-    for server_config in server_config_events.iter() {
+    for server_config in server_config_events.read() {
         settings.render_distance = settings.render_distance.min(server_config.render_distance);
         net.send_message(messages::RenderDistance {
             render_distance: settings.render_distance,

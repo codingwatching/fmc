@@ -39,7 +39,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
         })
         .with_children(|parent| {
             parent.spawn_textbox(41.5, "127.0.0.1").insert(ServerIp);
-            parent.spawn_button(41.5, "PLAY").insert(PlayButton);
+            parent.spawn_button(200.0, "PLAY").insert(PlayButton);
         })
         .id();
     interfaces.insert(UiState::MultiPlayer, entity);

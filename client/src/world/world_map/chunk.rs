@@ -41,7 +41,7 @@ fn spawn_visiblity_tasks(
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
-    for position in find_visible_sides_events.iter() {
+    for position in find_visible_sides_events.read() {
         if let Some(chunk) = world_map.get_chunk(&position.0) {
             if let Some(entity) = chunk.entity {
                 let task = thread_pool.spawn(VisibleChunkFaces::new(chunk.clone()));

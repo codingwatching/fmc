@@ -397,7 +397,7 @@ fn send_chunk_requests(
     net: Res<NetworkClient>,
 ) {
     let mut chunk_request = messages::ChunkRequest::new();
-    for chunk_pos in request_events.iter() {
+    for chunk_pos in request_events.read() {
         if !requested.chunks.contains(&chunk_pos.0) {
             requested.chunks.insert(chunk_pos.0);
             chunk_request.chunks.push(chunk_pos.0);
@@ -427,7 +427,7 @@ fn handle_chunk_responses(
     mut visibility_task_events: EventWriter<ComputeVisibleChunkFacesEvent>,
     //mut amount: Local<usize>, //chunk_query: Query<(&Chunk, &chunk::Blocks)>,
 ) {
-    for response in chunk_responses.iter() {
+    for response in chunk_responses.read() {
         let blocks = Blocks::get();
 
         for chunk in response.chunks.iter() {
@@ -499,7 +499,7 @@ fn handle_block_updates(
     mut visibility_task_events: EventWriter<ComputeVisibleChunkFacesEvent>,
     mut block_updates_events: EventReader<NetworkData<messages::BlockUpdates>>,
 ) {
-    for event in block_updates_events.iter() {
+    for event in block_updates_events.read() {
         let chunk = if let Some(c) = world_map.get_chunk_mut(&event.chunk_position) {
             c
         } else {

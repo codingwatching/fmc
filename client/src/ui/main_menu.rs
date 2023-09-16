@@ -38,26 +38,26 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
         .with_children(|parent| {
             // Singleplayer button
             parent
-                .spawn_button(42.0, "Singleplayer")
+                .spawn_button(200.0, "Singleplayer (Not implemented)")
                 .insert(SinglePlayerButton);
             parent
-                .spawn_button(42.0, "Multiplayer")
+                .spawn_button(200.0, "Multiplayer")
                 .insert(MultiPlayerButton);
         })
         .id();
     interfaces.insert(UiState::MainMenu, entity);
 }
 
-fn press_singleplayer(
-    mut ui_state: ResMut<NextState<UiState>>,
-    button_query: Query<&Interaction, (Changed<Interaction>, With<SinglePlayerButton>)>,
-) {
-    if let Ok(interaction) = button_query.get_single() {
-        if *interaction == Interaction::Pressed {
-            ui_state.set(UiState::MultiPlayer);
-        }
-    }
-}
+//fn press_singleplayer(
+//    mut ui_state: ResMut<NextState<UiState>>,
+//    button_query: Query<&Interaction, (Changed<Interaction>, With<SinglePlayerButton>)>,
+//) {
+//    if let Ok(interaction) = button_query.get_single() {
+//        if *interaction == Interaction::Pressed {
+//            ui_state.set(UiState::MultiPlayer);
+//        }
+//    }
+//}
 
 fn press_multiplayer(
     mut ui_state: ResMut<NextState<UiState>>,

@@ -1,7 +1,7 @@
 use bevy::{
     prelude::*,
     render::{color::Color, render_resource::Face},
-    utils::HashMap,
+    utils::HashMap
 };
 use fmc_networking::NetworkClient;
 use serde::Deserialize;
@@ -12,15 +12,15 @@ use crate::{assets::BlockTextures, rendering::materials::BlockMaterial};
 /// They can be accessed by the filename the material was loaded from.
 #[derive(Resource, Default)]
 pub struct Materials {
-    inner: HashMap<String, HandleUntyped>,
+    inner: HashMap<String, UntypedHandle>,
 }
 
 impl Materials {
-    pub fn get(&self, name: &str) -> Option<&HandleUntyped> {
+    pub fn get(&self, name: &str) -> Option<&UntypedHandle> {
         return self.inner.get(name);
     }
 
-    pub fn insert(&mut self, name: String, handle: HandleUntyped) {
+    pub fn insert(&mut self, name: String, handle: UntypedHandle) {
         self.inner.insert(name, handle);
     }
 }
@@ -191,7 +191,7 @@ pub fn load_materials(
                 texture_array: Some(block_textures.handle.clone()),
                 animation_frames: config.animation_frames,
             };
-            block_materials.add(material).clone_untyped()
+            block_materials.add(material).untyped()
         } else if config.r#type == "standard" {
             // TODO: Maybe this can be removed, nothing uses it. I can't quite remember what the
             // plan was. Think I thought mobs were to use it.
@@ -212,7 +212,7 @@ pub fn load_materials(
                 alpha_mode,
                 ..default()
             };
-            standard_materials.add(material).clone_untyped()
+            standard_materials.add(material).untyped()
         } else {
             net.disconnect(format!(
                 "Misconfigured material, path: {}\n 'type' field is wrong, should be one

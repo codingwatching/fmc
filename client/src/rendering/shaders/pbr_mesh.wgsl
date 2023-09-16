@@ -3,6 +3,7 @@
 #import bevy_pbr::mesh_functions as mesh_functions
 
 struct Vertex {
+    @builtin(instance_index) instance_index: u32,
 #ifdef VERTEX_POSITIONS
     @location(0) position: vec3<f32>,
 #endif
@@ -49,14 +50,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 #ifdef SKINNED
     var model = bevy_pbr::skinning::skin_model(vertex.joint_indices, vertex.joint_weights);
 #else
-    var model = mesh.model;
+    var model = mesh_functions::get_model_matrix(vertex.instance_index);
 #endif
 
 #ifdef VERTEX_NORMALS
 #ifdef SKINNED
     out.world_normal = bevy_pbr::skinning::skin_normals(model, vertex.normal);
 #else
-    out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal);
+    out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #endif
 #endif
 

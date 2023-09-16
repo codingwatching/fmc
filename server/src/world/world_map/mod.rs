@@ -42,7 +42,6 @@ impl Plugin for WorldMapPlugin {
     }
 }
 
-
 // TODO: All of the below feels like it belongs in its own module, but I don't really see what to
 // file it under...
 

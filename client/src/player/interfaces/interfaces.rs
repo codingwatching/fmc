@@ -1,10 +1,7 @@
-// TODO:
-use std::{
-    collections::{HashMap, HashSet},
-    io::Read,
-};
+use std::collections::{HashMap, HashSet};
 
 use bevy::{
+    ecs::system::EntityCommands,
     prelude::*,
     render::texture::CompressedImageFormats,
     window::{CursorGrabMode, PrimaryWindow},
@@ -15,26 +12,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::game_state::GameState;
 
-use super::items::{ItemStack, Items};
+use super::items::{ItemConfig, ItemStack, Items};
 
 const INTERFACE_CONFIG_PATH: &str = "server_assets/interfaces/";
+const INTERFACE_TEXTURE_PATH: &str = "server_assets/textures/interfaces/";
 
 // TODO: I decided to use "take/place" instead of "swap" to move items around interfaces. This was
 // to limit the frustration of the players if several were to use the same interface at once. This
 // would lead to "stealing" items from each other when several hold the same item. I'm beginning to
 // think it was a bad idea. It would have simpler code in exchange for some slightly weird
 // behaviour. Do a think about this.
-
+//
 // TODO: The item grid in the inventory can only have 7 columns, if more the layout breaks.
-
-// TODO: Makes no sense to have this under crate::player::interfaces? This only covers in-game
-// interfaces that are defined by the server at runtime, separate from the hardcoded ui used for
-// the main menu and settings. Can't come up with a good name to separate the two.
 pub struct InterfacePlugin;
 impl Plugin for InterfacePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(UiScale { scale: 4.0 })
-            .insert_resource(InterfaceStack::default())
+        app.insert_resource(InterfaceStack::default())
             .add_event::<InterfaceToggleEvent>()
             .add_systems(
                 Update,
@@ -55,183 +48,284 @@ impl Plugin for InterfacePlugin {
     }
 }
 
+// A map from 'InterfacePath' to entity.
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct Interfaces(HashMap<String, Entity>);
+
+// Nodes of an interface that can be interacted with are referenced by their path in the ui
+// hierarchy. The path is formatted "parent/child/grandchild" by the names given in the config. For
+// example an inventory will have a root node named "inventory" with sections named
+// "inventory/equipment", "inventory/crafting", "inventory/storage" etc.
+// When interacting with an interface e.g. moving items, this name is sent to the server to
+// identify which interface and which section is being interacted with.
+#[derive(Component)]
+pub struct InterfacePath(pub String);
+
+// Marker struct only for interface roots.
+#[derive(Component)]
+struct InterfaceRoot;
+
 /// Event used by keybindings to toggle an interface open or closed.
 #[derive(Event)]
 pub struct InterfaceToggleEvent(pub Entity);
 
 #[derive(Component)]
-struct ItemBoxSectionMarker;
-
-#[derive(Component)]
 pub struct ItemBox {
-    // Interface it belongs to
-    pub interface_entity: Entity,
-    // Section index in the interface config
-    pub section_index: usize,
+    pub item_stack: ItemStack,
     // Box index in the section
     pub index: usize,
 }
 
-#[derive(Resource, Deref, DerefMut, Default)]
-pub struct Interfaces(HashMap<String, Entity>);
-
-// Interfaces that are open and allow other interfaces to take focus are stored here while the
-// focused one is visible. This is temporary as only one interface can be open at a time right now.
-// TODO: This is a constraint of bevy having one common root UI node. EDIT: Looking at this later
-// seems to me can just switch from using Visibility::Hidden to Display::None
-#[derive(Resource, Deref, DerefMut, Default)]
-struct InterfaceStack(Vec<Entity>);
-
-#[derive(Component)]
-pub struct Interface {
-    pub config: InterfaceConfig,
-    // Sections item boxes can use as parents.
-    item_box_section_entities: Vec<Entity>,
-}
-
-pub struct InterfaceConfig {
-    /// Interface name
-    pub name: String,
-    /// If it should overlap(non exclusive) and replace(exclusive) interfaces when opened.
-    pub is_exclusive: bool,
-    // TODO: This is too bespoke?, see if there isn't a more general way to do it.
-    /// Equip item when it is selected.
-    pub is_equipment: bool,
-    /// Sections where item boxes can be put.
-    item_box_sections: Vec<ItemBoxSectionConfig>,
-    /// The image used as the interface background.
-    image_path: String,
-    /// The root position of the interface in percent. [Left, Top]
-    position: UiRect,
-    /// Margin used to position the interface if there is no position given for an axis.
-    margin: UiRect,
-}
-
-#[derive(Serialize, Deserialize)]
-struct InterfaceConfigJson {
-    name: String,
-    exclusive: Option<bool>,
-    equipment: Option<bool>,
-    item_box_sections: Vec<ItemBoxSectionConfigJson>,
-    image: String,
-    position: Option<Rect>,
-}
-
-impl From<InterfaceConfigJson> for InterfaceConfig {
-    fn from(value: InterfaceConfigJson) -> Self {
-        let position = match value.position {
-            Some(position) => UiRect {
-                left: match position.left {
-                    Some(l) => Val::Percent(l),
-                    None => Val::Auto,
-                },
-                right: match position.right {
-                    Some(r) => Val::Percent(r),
-                    None => Val::Auto,
-                },
-                top: match position.top {
-                    Some(t) => Val::Percent(t),
-                    None => Val::Auto,
-                },
-                bottom: match position.bottom {
-                    Some(b) => Val::Percent(b),
-                    None => Val::Auto,
-                },
-            },
-            None => UiRect::all(Val::Auto),
-        };
-
-        // TODO: Idk if all this is necessary it was just leftover from some previous code. And
-        // this ui stuff is a mess to make display correctly.
-        let left = if let Val::Percent(left) = position.left {
-            Val::Vw(left)
-        } else {
-            Val::Auto
-        };
-        let right = if let Val::Percent(right) = position.right {
-            Val::Vw(right)
-        } else {
-            Val::Auto
-        };
-        let top = if let Val::Percent(top) = position.top {
-            Val::Vh(top)
-        } else {
-            Val::Auto
-        };
-        let bottom = if let Val::Percent(bottom) = position.bottom {
-            Val::Vh(bottom)
-        } else {
-            Val::Auto
-        };
-
-        let margin = UiRect {
-            left,
-            right,
-            top,
-            bottom,
-        };
-
-        Self {
-            name: value.name,
-            is_exclusive: value.exclusive.unwrap_or(false),
-            is_equipment: value.equipment.unwrap_or(false),
-            item_box_sections: value
-                .item_box_sections
-                .into_iter()
-                .map(ItemBoxSectionConfig::from)
-                .collect(),
-            image_path: "server_assets/textures/interfaces/".to_owned() + &value.image,
-            position,
-            margin,
-        }
+impl ItemBox {
+    fn is_empty(&self) -> bool {
+        self.item_stack.is_empty()
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct Rect {
-    left: Option<f32>,
-    right: Option<f32>,
-    top: Option<f32>,
-    bottom: Option<f32>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ItemBoxSectionConfig {
+#[derive(Deserialize, Component, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct ItemBoxSection {
     /// If it is allowed to quick move to this section.
     allow_quick_place: bool,
     /// Which item types can be placed in this section.
     allowed_item_types: Option<HashSet<String>>,
-    /// Position of section relative to top left corner of the ui image in pixels.
-    position: [f32; 2],
-    /// Size of the section in pixels. Needs to be a multiple of 15 (the size of an item box)
-    size: [f32; 2],
+    /// If the items can be moved by mouse/keyboard interaction
+    movable_items: bool,
+    /// Whether items should be equipped by the hand on selection.
+    #[serde(rename = "equipment")]
+    pub is_equipment: bool,
 }
 
-#[derive(Serialize, Deserialize)]
-struct ItemBoxSectionConfigJson {
-    allow_quick_place: Option<bool>,
-    allowed_item_types: Option<HashSet<String>>,
-    position: [f32; 2],
-    size: [f32; 2],
-}
-
-impl From<ItemBoxSectionConfigJson> for ItemBoxSectionConfig {
-    fn from(value: ItemBoxSectionConfigJson) -> Self {
-        ItemBoxSectionConfig {
-            allow_quick_place: value.allow_quick_place.unwrap_or(true),
-            allowed_item_types: value.allowed_item_types,
-            position: value.position,
-            size: value.size,
+impl ItemBoxSection {
+    fn can_contain(&self, item_config: &ItemConfig) -> bool {
+        if let Some(allowed) = &self.allowed_item_types {
+            if let Some(categories) = &item_config.categories {
+                if allowed.is_disjoint(categories) {
+                    false
+                } else {
+                    true
+                }
+            } else {
+                false
+            }
+        } else {
+            true
         }
     }
 }
 
+impl Default for ItemBoxSection {
+    fn default() -> Self {
+        Self {
+            allow_quick_place: false,
+            allowed_item_types: None,
+            movable_items: true,
+            is_equipment: false,
+        }
+    }
+}
+
+#[derive(Default, Deserialize, Component, Clone)]
+#[serde(default, deny_unknown_fields)]
+struct NodeConfig {
+    /// Optional name, the server uses this when referring to an interfaces.
+    name: Option<String>,
+    /// Style used to render the interface node.
+    style: NodeStyle,
+    /// Content contained by the node.
+    content: NodeContent,
+    /// Image displayed in the node.
+    image: Option<String>,
+    /// If it should overlap(non exclusive) or replace(exclusive) interfaces when opened.
+    #[serde(rename = "exclusive", default)]
+    pub is_exclusive: bool,
+}
+
+// TODO: As json I want to to be like "content: [..]" for Nodes, but all others should be
+// adjacently tagged like "content: {type: item_box_section, fields...}". Maybe the adjacently
+// tagged ones need to be another enum that is wrapped by one of this enums variants.
+#[derive(Default, Deserialize, Clone)]
+enum NodeContent {
+    #[default]
+    None,
+    Nodes(Vec<NodeConfig>),
+    ItemSection(ItemBoxSection),
+}
+
+#[derive(Deserialize, Default, Clone, Debug)]
+#[serde(default)]
+struct Rect {
+    left: Option<Val>,
+    right: Option<Val>,
+    top: Option<Val>,
+    bottom: Option<Val>,
+}
+
+impl From<Rect> for UiRect {
+    fn from(value: Rect) -> Self {
+        UiRect {
+            left: value.left.unwrap_or(Val::Px(0.0)),
+            right: value.right.unwrap_or(Val::Px(0.0)),
+            top: value.top.unwrap_or(Val::Px(0.0)),
+            bottom: value.bottom.unwrap_or(Val::Px(0.0)),
+        }
+    }
+}
+
+// TODO: Maybe open issue in bevy see if Style can be made de/se. Missing for UiRect, but
+// the rest have it.
+//
+// Deserializable Style
+#[derive(Deserialize, Clone, Debug)]
+#[serde(default, deny_unknown_fields)]
+struct NodeStyle {
+    pub display: Display,
+    pub position_type: PositionType,
+    pub overflow: Overflow,
+    pub direction: Direction,
+    pub left: Val,
+    pub right: Val,
+    pub top: Val,
+    pub bottom: Val,
+    pub width: Val,
+    pub height: Val,
+    pub min_width: Val,
+    pub min_height: Val,
+    pub max_width: Val,
+    pub max_height: Val,
+    pub aspect_ratio: Option<f32>,
+    pub align_items: AlignItems,
+    pub justify_items: JustifyItems,
+    pub align_self: AlignSelf,
+    pub justify_self: JustifySelf,
+    pub align_content: AlignContent,
+    pub justify_content: JustifyContent,
+    pub margin: Rect,
+    pub padding: Rect,
+    pub border: Rect,
+    pub flex_direction: FlexDirection,
+    pub flex_wrap: FlexWrap,
+    pub flex_grow: f32,
+    pub flex_shrink: f32,
+    pub flex_basis: Val,
+    pub row_gap: Val,
+    pub column_gap: Val,
+    pub grid_auto_flow: GridAutoFlow,
+    pub grid_template_rows: Vec<RepeatedGridTrack>,
+    pub grid_template_columns: Vec<RepeatedGridTrack>,
+    pub grid_auto_rows: Vec<GridTrack>,
+    pub grid_auto_columns: Vec<GridTrack>,
+    pub grid_row: GridPlacement,
+    pub grid_column: GridPlacement,
+}
+
+impl Default for NodeStyle {
+    fn default() -> Self {
+        Self {
+            display: Display::DEFAULT,
+            position_type: PositionType::default(),
+            left: Val::Auto,
+            right: Val::Auto,
+            top: Val::Auto,
+            bottom: Val::Auto,
+            direction: Direction::default(),
+            flex_direction: FlexDirection::default(),
+            flex_wrap: FlexWrap::default(),
+            align_items: AlignItems::default(),
+            justify_items: JustifyItems::DEFAULT,
+            align_self: AlignSelf::DEFAULT,
+            justify_self: JustifySelf::DEFAULT,
+            align_content: AlignContent::DEFAULT,
+            justify_content: JustifyContent::DEFAULT,
+            margin: Rect::default(),
+            padding: Rect::default(),
+            border: Rect::default(),
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            flex_basis: Val::Auto,
+            width: Val::Auto,
+            height: Val::Auto,
+            min_width: Val::Auto,
+            min_height: Val::Auto,
+            max_width: Val::Auto,
+            max_height: Val::Auto,
+            aspect_ratio: None,
+            overflow: Overflow::DEFAULT,
+            row_gap: Val::Px(0.0),
+            column_gap: Val::Px(0.0),
+            grid_auto_flow: GridAutoFlow::default(),
+            grid_template_rows: Vec::new(),
+            grid_template_columns: Vec::new(),
+            grid_auto_rows: Vec::new(),
+            grid_auto_columns: Vec::new(),
+            grid_column: GridPlacement::default(),
+            grid_row: GridPlacement::default(),
+        }
+    }
+}
+
+impl From<NodeStyle> for Style {
+    fn from(value: NodeStyle) -> Self {
+        Style {
+            display: value.display,
+            position_type: value.position_type,
+            overflow: value.overflow,
+            direction: value.direction,
+            left: value.left,
+            right: value.right,
+            top: value.top,
+            bottom: value.bottom,
+            width: value.width,
+            height: value.height,
+            min_width: value.min_width,
+            min_height: value.min_height,
+            max_width: value.max_width,
+            max_height: value.max_height,
+            aspect_ratio: value.aspect_ratio,
+            align_items: value.align_items,
+            justify_items: value.justify_items,
+            align_self: value.align_self,
+            justify_self: value.justify_self,
+            align_content: value.align_content,
+            justify_content: value.justify_content,
+            margin: value.margin.into(),
+            padding: value.padding.into(),
+            border: value.border.into(),
+            flex_direction: value.flex_direction,
+            flex_wrap: value.flex_wrap,
+            flex_grow: value.flex_grow,
+            flex_shrink: value.flex_shrink,
+            flex_basis: value.flex_basis,
+            row_gap: value.row_gap,
+            column_gap: value.column_gap,
+            grid_auto_flow: value.grid_auto_flow,
+            grid_template_rows: value.grid_template_rows,
+            grid_template_columns: value.grid_template_columns,
+            grid_auto_rows: value.grid_auto_rows,
+            grid_auto_columns: value.grid_auto_columns,
+            grid_row: value.grid_row,
+            grid_column: value.grid_column,
+        }
+    }
+}
+
+// Interfaces that are open and allow other interfaces to take focus are stored here while the
+// focused one is visible.
+#[derive(Resource, Deref, DerefMut, Default)]
+struct InterfaceStack(Vec<Entity>);
+
 // The item stack is unique, and shared between all interfaces(since only one can be open at a
 // time). When the interface is closed, the item is returned to the interface it was taken from.
-//
-/// Marker for the item stack that is held by the mouse cursor when an interface is open.
-#[derive(Component)]
-struct CursorItemStackMarker;
+#[derive(Component, Default)]
+struct CursorItemBox {
+    item_stack: ItemStack,
+}
+
+impl CursorItemBox {
+    fn is_empty(&self) -> bool {
+        self.item_stack.is_empty()
+    }
+}
 
 // Called when loading assets.
 pub fn load_interfaces(
@@ -268,7 +362,7 @@ pub fn load_interfaces(
             Ok(f) => f,
             Err(e) => {
                 net.disconnect(&format!(
-                    "Misconfigured resource pack: Failed to read interface configuration at: '{}'\n\
+                    "Misconfigured resource pack: Failed to open interface configuration at: '{}'\n\
                     Error: {}",
                     &file_path.display(),
                     e
@@ -276,151 +370,169 @@ pub fn load_interfaces(
                 return;
             }
         };
-        let interface_config_json: InterfaceConfigJson = match serde_json::from_reader(&file) {
+        let node_config: NodeConfig = match serde_json::from_reader(&file) {
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
-                    "Misconfigured resource pack: Failed to read interface configuration at: '{}'\n\
-                    Error: {}",
-                    &file_path.display(),
-                    e
-                ));
+                "Misconfigured resource pack: Failed to read interface configuration at: '{}'\n\
+                Error: {}",
+                &file_path.display(),
+                e
+            ));
                 return;
             }
         };
 
-        let interface_config = InterfaceConfig::from(interface_config_json);
-        let mut interface = Interface {
-            config: interface_config,
-            item_box_section_entities: Vec::new(),
-        };
+        // NOTE(WORKAROUND): When spawning an ImageBundle, the dimensions of the image are
+        // inferred, but if it has children it's discarded and it uses the size of the children
+        // instead. Images must therefore be spawned with defined width/height to display correctly.
+        fn read_image_dimensions(image_path: &str) -> Vec2 {
+            let image_data = match std::fs::read(INTERFACE_TEXTURE_PATH.to_owned() + image_path) {
+                Ok(i) => i,
+                Err(_) => {
+                    return Vec2::ZERO;
+                }
+            };
 
-        // TODO: We have to read the size of the image manually, it would be great if bevy could
-        // just do this automatically when Size has Val::Undefined (default). Written at bevy
-        // version  0.8.
-        let mut file = match std::fs::File::open(&interface.config.image_path) {
-            Ok(f) => f,
-            Err(e) => {
-                net.disconnect(format!(
-                    "Misconfigured resource pack: No interface image found at {}\nError: {}",
-                    &interface.config.image_path, e
-                ));
-                return;
-            }
-        };
+            let image = match Image::from_buffer(
+                &image_data,
+                bevy::render::texture::ImageType::Extension("png"),
+                CompressedImageFormats::NONE,
+                false,
+            ) {
+                Ok(i) => i,
+                Err(_) => {
+                    return Vec2::ZERO;
+                }
+            };
 
-        let mut image_data = Vec::new();
-        match file.read_to_end(&mut image_data) {
-            Ok(..) => (),
-            Err(e) => {
-                net.disconnect(format!(
-                    "Misconfigured resource pack: Failed to read interface image found at {}\nError: {}",
-                    &interface.config.image_path, e
-                ));
-                return;
+            return image.size();
+        }
+
+        // TODO: The server needs to validate that no interfaces share a name. The client doesn't
+        // need to care, it will just overwrite. It is hard to do with this recursion too.
+        fn spawn_interface(
+            entity_commands: &mut EntityCommands,
+            parent_path: String,
+            config: &NodeConfig,
+            interfaces: &mut Interfaces,
+            asset_server: &AssetServer,
+        ) {
+            let path = if let Some(interface_name) = &config.name {
+                let path = if parent_path == "" {
+                    interface_name.to_owned()
+                } else {
+                    parent_path + "/" + interface_name
+                };
+
+                entity_commands.insert(InterfacePath(path.clone()));
+                interfaces.insert(path.clone(), entity_commands.id());
+
+                path
+            } else {
+                parent_path
+            };
+
+            let style = if let Some(image_path) = &config.image {
+                let dimensions = read_image_dimensions(&image_path);
+                let mut style = Style::from(config.style.clone());
+                style.width = Val::Px(dimensions.x);
+                style.height = Val::Px(dimensions.y);
+                style
+            } else {
+                config.style.clone().into()
+            };
+
+            entity_commands.insert((
+                ImageBundle {
+                    style,
+                    background_color: config
+                        .image
+                        .as_ref()
+                        .map_or(Color::NONE.into(), |_| Color::WHITE.into()),
+                    image: config.image.as_ref().map_or(UiImage::default(), |path| {
+                        asset_server
+                            .load(INTERFACE_TEXTURE_PATH.to_owned() + &path)
+                            .into()
+                    }),
+                    ..default()
+                },
+                config.clone(),
+            ));
+
+            match &config.content {
+                NodeContent::Nodes(nodes) => {
+                    entity_commands.with_children(|parent| {
+                        for child_config in nodes.iter() {
+                            let mut parent_entity_commands = parent.spawn_empty();
+                            spawn_interface(
+                                &mut parent_entity_commands,
+                                path.clone(),
+                                child_config,
+                                interfaces,
+                                asset_server,
+                            )
+                        }
+                    });
+                }
+                NodeContent::ItemSection(section) => {
+                    entity_commands.insert(section.clone());
+                }
+                NodeContent::None => ()
             }
         }
 
-        let image = match Image::from_buffer(
-            &image_data,
-            bevy::render::texture::ImageType::Extension("png"),
-            CompressedImageFormats::NONE,
-            false,
-        ) {
-            Ok(i) => i,
-            Err(e) => {
-                net.disconnect(format!(
-                    "Misconfigured resource pack: Failed to read image data found at {}\nError: {}",
-                    &interface.config.image_path, e
-                ));
-                return;
-            }
-        };
-
-        let entity = commands
-            // Root node
+        commands
             .spawn(NodeBundle {
                 style: Style {
+                    position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
-                    position_type: PositionType::Absolute,
                     ..default()
                 },
-                visibility: Visibility::Hidden,
                 ..default()
             })
             .with_children(|parent| {
-                // ui image
-                parent
-                    .spawn(ImageBundle {
-                        style: Style {
-                            width: Val::Px(image.texture_descriptor.size.width as f32),
-                            height: Val::Px(image.texture_descriptor.size.height as f32),
-                            left: interface.config.position.left,
-                            right: interface.config.position.right,
-                            top: interface.config.position.top,
-                            bottom: interface.config.position.bottom,
-                            // TODO: This is not supposed to be here, added to make hotbar go to
-                            // bottom.
-                            align_self: AlignSelf::FlexEnd,
-                            margin: interface.config.margin,
-                            ..default()
-                        },
-                        image: asset_server.load(&interface.config.image_path).into(),
-                        ..default()
-                    })
-                    // item box sections
-                    .with_children(|parent| {
-                        for section_config in interface.config.item_box_sections.iter() {
-                            let entity = parent
-                                .spawn(NodeBundle {
-                                    style: Style {
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Px(section_config.position[0]),
-                                        top: Val::Px(section_config.position[1]),
-                                        width: Val::Px(section_config.size[0]),
-                                        height: Val::Px(section_config.size[1]),
-                                        flex_wrap: FlexWrap::WrapReverse,
-                                        justify_content: JustifyContent::SpaceBetween,
-                                        align_content: AlignContent::SpaceBetween,
-                                        ..default()
-                                    },
-                                    ..default()
-                                })
-                                .insert(ItemBoxSectionMarker)
-                                .id();
-                            interface.item_box_section_entities.push(entity);
-                        }
-                    });
-            })
-            .insert(interface)
-            .id();
+                let mut entity_commands = parent.spawn_empty();
+                spawn_interface(
+                    &mut entity_commands,
+                    String::new(),
+                    &node_config,
+                    &mut interfaces,
+                    &asset_server,
+                );
 
-        let name = file_path.file_stem().unwrap().to_str().unwrap().to_owned();
-        interfaces.insert(name, entity);
+                entity_commands.insert((
+                    InterfaceRoot,
+                    VisibilityBundle {
+                        visibility: Visibility::Hidden,
+                        ..default()
+                    },
+                ));
+            });
     }
 
     commands.insert_resource(interfaces);
 
-    // Cursor item stack / held item
     commands
-        .spawn(ImageBundle {
-            style: Style {
-                width: Val::Px(16.0),
-                height: Val::Px(16.0),
-                position_type: PositionType::Absolute,
-                flex_direction: FlexDirection::ColumnReverse,
-                align_items: AlignItems::FlexEnd,
+        .spawn((
+            ImageBundle {
+                style: Style {
+                    width: Val::Px(15.0),
+                    height: Val::Px(16.0),
+                    position_type: PositionType::Absolute,
+                    flex_direction: FlexDirection::ColumnReverse,
+                    align_items: AlignItems::FlexEnd,
+                    ..default()
+                },
+                z_index: ZIndex::Global(1),
                 ..default()
             },
-            z_index: ZIndex::Global(1),
-            ..default()
-        })
+            CursorItemBox::default(),
+        ))
         .with_children(|parent| {
             parent.spawn(TextBundle::default());
-        })
-        .insert(ItemStack::default())
-        .insert(CursorItemStackMarker);
+        });
 }
 
 // Add content to the interface sent from the server.
@@ -429,135 +541,49 @@ fn handle_interface_item_box_updates(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
     items: Res<Items>,
-    interface_query: Query<&Interface>,
-    // Option<Children> here because there's a delay between adding the interface and receiving the
-    // item boxes.
-    item_box_section_query: Query<(Entity, Option<&Children>), With<ItemBoxSectionMarker>>,
-    mut interface_updates: EventReader<NetworkData<messages::InterfaceItemBoxUpdate>>,
+    interface_item_box_query: Query<Option<&Children>, With<ItemBoxSection>>,
+    mut item_box_update_events: EventReader<NetworkData<messages::InterfaceItemBoxUpdate>>,
 ) {
-    for interface_update in interface_updates.iter() {
-        let interface_entity = match interfaces.get(&interface_update.name) {
-            Some(i) => *i,
-            None => {
-                net.disconnect(&format!(
-                    "Server sent update for interface with name: {}, but there is no such interface defined.",
-                    &interface_update.name
-                ));
-                return;
-            }
-        };
-        let interface = interface_query.get(interface_entity).unwrap();
+    for item_box_update in item_box_update_events.read() {
+        for (interface_name, new_item_boxes) in item_box_update.updates.iter() {
+            let interface_entity = match interfaces.get(interface_name) {
+                Some(i) => *i,
+                None => {
+                    net.disconnect(&format!(
+                        "Server sent item box update for interface with name: {}, but there is no interface by that name.",
+                        &interface_name
+                    ));
+                    return;
+                }
+            };
 
-        // For each item box in the update we need to either get an existing or insert a new entity, then we
-        // replace/insert the ui node
-        for (section_id, item_box_updates) in interface_update.item_box_sections.iter() {
-            let (section_entity, section_item_box_entities) = match item_box_section_query
-                .get(interface.item_box_section_entities[*section_id as usize])
+            let children = match interface_item_box_query.get(interface_entity)
             {
-                Ok(q) => q,
+                Ok(c) => c,
                 Err(_) => {
-                    net.disconnect(format!(
-                        "Server sent interface section that doesn't exist. The section '{}', does not exist in the '{}' interface.",
-                        section_id,
-                        &interface.config.name)
-                    );
+                    net.disconnect(&format!(
+                        "Server sent item box update for interface with name: {}, but the interface is not configured to contain item boxes.",
+                        &interface_name
+                    ));
                     return;
                 }
             };
 
             // TODO: This breaks the interface. Item images dissapear. I think it is a bug in the
-            // AssetServer, when all handles to an image is dropped, the image is unloaded. If a
+            // AssetServer, when all handles to an image are dropped, the image is unloaded. If a
             // new handle is then created it will not load the image again.
-            if interface_update.replace {
-                commands.entity(section_entity).despawn_descendants();
+            if item_box_update.replace {
+                commands.entity(interface_entity).despawn_descendants();
             }
 
-            for (i, item_box_update) in item_box_updates.iter().enumerate() {
-                let mut box_entity_commands = if interface_update.replace
-                    || section_item_box_entities.is_none()
-                {
-                    if i != item_box_update.item_box_id as usize {
-                        net.disconnect(format!(
-                            "Server sent interface item box update in incorrect order. Interface \
-                            '{}', section '{}', box '{}' was received, but the section only has '{}' boxes. \
-                            All previous boxes need to be added first.",
-                            &interface.config.name,
-                            section_id,
-                            item_box_update.item_box_id,
-                            i)
-                        );
-                        return;
-                    }
-                    let mut entity_commands = commands.spawn_empty();
-                    let entity = entity_commands.id();
-                    // Add item box to section
-                    entity_commands
-                        .commands()
-                        .entity(section_entity)
-                        .add_child(entity);
-
-                    // Image set in update_item_box_images
-                    entity_commands
-                        .insert(ImageBundle {
-                            // TODO: This doesn't actually block? Can't highlight items because of it.
-                            focus_policy: bevy::ui::FocusPolicy::Block,
-                            style: Style {
-                                width: Val::Px(16.0),
-                                height: Val::Px(16.0),
-                                // https://github.com/bevyengine/bevy/issues/6879
-                                //padding: UiRect {
-                                //    left: Val::Px(1.0),
-                                //    right: Val::Auto,
-                                //    top: Val::Px(1.0),
-                                //    bottom: Val::Auto,
-                                //},
-                                // puts item count text in the bottom right corner
-                                flex_direction: FlexDirection::ColumnReverse,
-                                align_items: AlignItems::FlexEnd,
-                                ..default()
-                            },
-                            background_color: BackgroundColor(Color::NONE),
-                            ..default()
-                        })
-                        .insert(Interaction::default())
-                        .insert(ItemBox {
-                            interface_entity,
-                            section_index: *section_id as usize,
-                            index: item_box_update.item_box_id as usize,
-                        })
-                        // Item text
-                        .with_children(|parent| {
-                            parent.spawn(TextBundle::default());
-                        });
-
-                    entity_commands
-                } else {
-                    let section_item_box_entities = section_item_box_entities.unwrap();
-
-                    match section_item_box_entities.get(item_box_update.item_box_id as usize) {
-                        Some(e) => commands.entity(*e),
-                        None => {
-                            net.disconnect(format!(
-                                "Server sent malformed interface item box update. Interface \
-                                '{}', section '{}', box '{}' was received, but the section only has \
-                                '{}' boxes.",
-                                &interface.config.name,
-                                section_id,
-                                item_box_update.item_box_id,
-                                section_item_box_entities.len() + i)
-                            );
-                            return;
-                        }
-                    }
-                };
-
-                let item_stack = if let Some(item_id) = &item_box_update.item_stack.item_id {
+            for item_box in new_item_boxes.iter() {
+                let item_stack = if let Some(item_id) = &item_box.item_stack.item_id {
                     let item_config = match items.configs.get(item_id) {
                         Some(i) => i,
                         None => {
                             net.disconnect(&format!(
-                                "While updating the {} interface the server sent an unrecognized item id {}",
-                                &interface_update.name,
+                                "While updating the '{}' interface the server sent an unrecognized item id {}",
+                                &interface_name,
                                 item_id
                             ));
                             return;
@@ -566,13 +592,64 @@ fn handle_interface_item_box_updates(
                     ItemStack::new(
                         *item_id,
                         item_config.stack_size,
-                        item_box_update.item_stack.quantity,
+                        item_box.item_stack.quantity,
                     )
                 } else {
                     ItemStack::default()
                 };
 
-                box_entity_commands.insert(item_stack);
+                let mut entity_commands = if item_box_update.replace || children.is_none() {
+                    let mut entity_commands = commands.spawn_empty();
+                    entity_commands.set_parent(interface_entity);
+                    entity_commands
+                } else if let Some(child_entity) = children.unwrap().get(item_box.index as usize) {
+                    let mut entity_commands = commands.entity(*child_entity);
+                    entity_commands.despawn_descendants();
+                    entity_commands
+                } else {
+                    let mut entity_commands = commands.spawn_empty();
+                    entity_commands.set_parent(interface_entity);
+                    entity_commands
+                };
+
+
+                entity_commands
+                    .insert(ImageBundle {
+                        // TODO: This doesn't actually block? Can't highlight items because of it.
+                        focus_policy: bevy::ui::FocusPolicy::Block,
+                        style: Style {
+                            width: Val::Px(15.0),
+                            height: Val::Px(15.8),
+                            margin: UiRect {
+                                left: Val::Px(0.5),
+                                right: Val::Px(0.5),
+                                top: Val::Px(0.1),
+                                bottom: Val::Px(0.1)
+                            },
+                            // https://github.com/bevyengine/bevy/issues/6879
+                            //padding: UiRect {
+                            //    left: Val::Px(1.0),
+                            //    right: Val::Auto,
+                            //    top: Val::Px(1.0),
+                            //    bottom: Val::Auto,
+                            //},
+                            // puts item count text in the bottom right corner
+                            flex_direction: FlexDirection::ColumnReverse,
+                            align_items: AlignItems::FlexEnd,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::NONE),
+                        ..default()
+                    })
+                    .insert(Interaction::default())
+                    .insert(ItemBox {
+                        item_stack,
+                        index: item_box.index as usize,
+                    })
+                    // Item text
+                    .with_children(|parent| {
+                        parent.spawn(TextBundle::default());
+                    });
             }
         }
     }
@@ -583,104 +660,99 @@ fn handle_interface_toggle_events(
     items: Res<Items>,
     net: Res<NetworkClient>,
     mut interface_stack: ResMut<InterfaceStack>,
-    mut interface_toggle_events: EventReader<InterfaceToggleEvent>,
-    mut interface_query: Query<(Entity, &Interface, &mut Visibility), With<Interface>>,
-    item_box_section_query: Query<&Children, With<ItemBoxSectionMarker>>,
-    mut held_item_stack_query: Query<
-        &mut ItemStack,
-        (With<CursorItemStackMarker>, Without<ItemBox>),
+    mut interface_query: Query<
+        (Entity, &NodeConfig, &mut Visibility),
+        With<InterfaceRoot>,
     >,
-    mut item_box_query: Query<(&mut ItemStack, &ItemBox)>,
+    item_box_section_query: Query<(
+        &ItemBoxSection,
+        Option<&Children>,
+        &ViewVisibility,
+        &InterfacePath,
+    )>,
+    mut cursor_item_box_query: Query<&mut CursorItemBox>,
+    mut item_box_query: Query<&mut ItemBox>,
+    mut interface_toggle_events: EventReader<InterfaceToggleEvent>,
 ) {
-    for event in interface_toggle_events.iter() {
-        for (entity, interface, mut visibility) in interface_query.iter_mut() {
-            if entity == event.0 {
-                continue;
-            } else if *visibility == Visibility::Visible {
-                *visibility = Visibility::Hidden;
-
-                if !interface.config.is_exclusive {
-                    interface_stack.push(entity);
+    for event in interface_toggle_events.read() {
+        let mut cursor_box = cursor_item_box_query.single_mut();
+        if !cursor_box.is_empty() {
+            'outer: for (item_box_section, children, view_visibility, interface_path) in
+                item_box_section_query.iter()
+            {
+                // Test that the item box section is part of the currently open interface
+                if !view_visibility.get() {
+                    continue;
                 }
-            }
-        }
 
-        // Yes this could be inserted above, but there's so much indentation
-        let (_, interface, mut visibility) = interface_query.get_mut(event.0).unwrap();
+                let item_config = items.get(&cursor_box.item_stack.item.unwrap());
+                if !item_box_section.can_contain(item_config) {
+                    continue;
+                }
 
-        if *visibility == Visibility::Visible {
-            *visibility = Visibility::Hidden;
-
-            // TODO: Which box it puts the item into is random-ish, it needs to be specific. First
-            // check the box it was taken from, if that is full, choose the first available spot by
-            // the order of the item box sections defined in the config.
-            //
-            // Put the item that is held back into the interface.
-            let mut held_item_stack = held_item_stack_query.single_mut();
-            if !held_item_stack.is_empty() {
-                'outer: for (i, section_config) in
-                    interface.config.item_box_sections.iter().enumerate()
-                {
-                    if let Some(allowed) = &section_config.allowed_item_types {
-                        let item_config = items.get(&held_item_stack.item.unwrap());
-                        if let Some(categories) = &item_config.categories {
-                            if allowed.is_disjoint(categories) {
-                                continue;
-                            }
-                        }
-                    }
-
-                    let section_entity = interface.item_box_section_entities[i];
-                    for item_box_entity in item_box_section_query.iter_descendants(section_entity) {
-                        let (mut item_stack, item_box) =
-                            item_box_query.get_mut(item_box_entity).unwrap();
-                        if item_stack.item == held_item_stack.item {
-                            let size = held_item_stack.size;
-                            let transfered = item_stack.transfer(&mut held_item_stack, size);
-
+                if let Some(children) = children {
+                    for item_box_entity in children.iter() {
+                        let mut item_box = item_box_query.get_mut(*item_box_entity).unwrap();
+                        if item_box.item_stack.item == cursor_box.item_stack.item {
+                            let transfered = item_box
+                                .item_stack
+                                .transfer(&mut cursor_box.item_stack, u32::MAX);
                             net.send_message(messages::InterfacePlaceItem {
-                                name: interface.config.name.clone(),
-                                section: i as u32,
+                                interface_path: interface_path.0.clone(),
                                 to_box: item_box.index as u32,
                                 quantity: transfered,
                             })
                         }
 
-                        if held_item_stack.is_empty() {
+                        if cursor_box.is_empty() {
                             break 'outer;
                         }
                     }
 
                     // Has to be split from above because we first want it to fill up any existing
                     // stacks before it begins on empty stacks.
-                    for item_box_entity in item_box_section_query.iter_descendants(section_entity) {
-                        let (mut item_stack, item_box) =
-                            item_box_query.get_mut(item_box_entity).unwrap();
-                        if item_stack.is_empty() {
-                            let size = held_item_stack.size;
-                            let transfered = item_stack.transfer(&mut held_item_stack, size);
-
+                    for item_box_entity in children.iter() {
+                        let mut item_box = item_box_query.get_mut(*item_box_entity).unwrap();
+                        if item_box.is_empty() {
+                            let transfered = item_box
+                                .item_stack
+                                .transfer(&mut cursor_box.item_stack, u32::MAX);
                             net.send_message(messages::InterfacePlaceItem {
-                                name: interface.config.name.clone(),
-                                section: i as u32,
+                                interface_path: interface_path.0.clone(),
                                 to_box: item_box.index as u32,
                                 quantity: transfered,
-                            })
-                        }
+                            });
 
-                        if held_item_stack.is_empty() {
                             break 'outer;
                         }
                     }
                 }
             }
+        }
 
-            if let Some(entity) = interface_stack.pop() {
-                let (_, _, mut visibility) = interface_query.get_mut(entity).unwrap();
+        let mut was_exclusive = false;
+        for (entity, interface_config, mut visibility) in interface_query.iter_mut() {
+            if entity == event.0 {
+                if *visibility == Visibility::Visible {
+                    *visibility = Visibility::Hidden;
+                    was_exclusive = interface_config.is_exclusive;
+                } else {
+                    *visibility = Visibility::Visible;
+                }
+            } else if *visibility == Visibility::Visible {
+                *visibility = Visibility::Hidden;
+
+                if !interface_config.is_exclusive {
+                    interface_stack.push(entity);
+                }
+            }
+        }
+
+        if was_exclusive {
+            for interface_entity in interface_stack.drain(..) {
+                let (_, _, mut visibility) = interface_query.get_mut(interface_entity).unwrap();
                 *visibility = Visibility::Visible;
             }
-        } else {
-            *visibility = Visibility::Visible;
         }
     }
 }
@@ -689,10 +761,10 @@ fn handle_interface_toggle_events(
 fn handle_interface_open_request(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
-    mut interface_query: Query<&mut Visibility, With<Interface>>,
+    mut interface_query: Query<&mut Visibility, With<InterfaceRoot>>,
     mut interface_open_events: EventReader<NetworkData<messages::InterfaceOpen>>,
 ) {
-    for event in interface_open_events.iter() {
+    for event in interface_open_events.read() {
         let interface_entity = match interfaces.get(&event.name) {
             Some(e) => e,
             None => {
@@ -710,10 +782,10 @@ fn handle_interface_open_request(
 fn handle_interface_close_request(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
-    mut interface_query: Query<&mut Visibility, With<Interface>>,
+    mut interface_query: Query<&mut Visibility, With<InterfaceRoot>>,
     mut interface_open_events: EventReader<NetworkData<messages::InterfaceClose>>,
 ) {
-    for event in interface_open_events.iter() {
+    for event in interface_open_events.read() {
         let interface_entity = match interfaces.get(&event.name) {
             Some(e) => e,
             None => {
@@ -734,14 +806,11 @@ fn item_box_mouse_interaction(
     mut commands: Commands,
     net: Res<NetworkClient>,
     items: Res<Items>,
-    interface_query: Query<&Interface>,
     mouse_button_input: Res<Input<MouseButton>>,
     keyboard_input: Res<Input<KeyCode>>,
-    mut item_box_query: Query<(&mut ItemStack, &Interaction, &ItemBox), Changed<Interaction>>,
-    mut held_item_stack_query: Query<
-        &mut ItemStack,
-        (With<CursorItemStackMarker>, Without<ItemBox>),
-    >,
+    item_box_section_query: Query<(&ItemBoxSection, &InterfacePath)>,
+    mut item_box_query: Query<(&mut ItemBox, &Interaction, &Parent), Changed<Interaction>>,
+    mut cursor_item_box_query: Query<&mut CursorItemBox>,
     interaction_query: Query<(Entity, &Interaction), (Changed<Interaction>, With<ItemBox>)>,
     mut highlighted_item_box: Local<Option<Entity>>,
 ) {
@@ -792,51 +861,47 @@ fn item_box_mouse_interaction(
 
     // TODO: It should only pick up when the button is released. But the clicked Interaction does
     // not sync up with just_released, only just_pressed
-    for (mut box_item_stack, interaction, item_box) in item_box_query.iter_mut() {
+    for (mut item_box, interaction, parent) in item_box_query.iter_mut() {
         if *interaction != Interaction::Pressed {
             return;
         }
         if mouse_button_input.just_pressed(MouseButton::Left)
             && !keyboard_input.pressed(KeyCode::ShiftLeft)
         {
-            let mut held_item_stack = held_item_stack_query.single_mut();
-            let interface = interface_query.get(item_box.interface_entity).unwrap();
+            let mut cursor_box = cursor_item_box_query.single_mut();
+            let (item_box_section, interface_path) =
+                item_box_section_query.get(parent.get()).unwrap();
 
-            if held_item_stack.is_empty() && !box_item_stack.is_empty() {
+            if cursor_box.is_empty() && !item_box.is_empty() {
                 // Take item from box
-                let item_config = items.get(&box_item_stack.item.unwrap());
+                let item_config = items.get(&item_box.item_stack.item.unwrap());
 
-                held_item_stack.transfer(&mut box_item_stack, item_config.stack_size);
+                let transfered = cursor_box
+                    .item_stack
+                    .transfer(&mut item_box.item_stack, item_config.stack_size);
 
                 net.send_message(messages::InterfaceTakeItem {
-                    name: interface.config.name.clone(),
-                    section: item_box.section_index as u32,
+                    interface_path: interface_path.0.clone(),
                     from_box: item_box.index as u32,
-                    quantity: held_item_stack.size,
+                    quantity: transfered,
                 })
-            } else if !held_item_stack.is_empty() {
+            } else if !cursor_box.is_empty() {
                 // place held item, swap if box is not empty
-                let section_config = &interface.config.item_box_sections[item_box.section_index];
-                let item_config = items.get(&held_item_stack.item.unwrap());
+                let item_config = items.get(&cursor_box.item_stack.item.unwrap());
 
-                if let Some(allowed) = &section_config.allowed_item_types {
-                    if let Some(categories) = &item_config.categories {
-                        if allowed.is_disjoint(categories) {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
+                if !item_box_section.can_contain(item_config) {
+                    continue;
                 }
 
                 // TODO: When used directly in the function the borrow checker say bad, even though
                 // good
-                let size = held_item_stack.size;
-                let transfered = box_item_stack.transfer(&mut held_item_stack, size);
+                let size = cursor_box.item_stack.size;
+                let transfered = item_box
+                    .item_stack
+                    .transfer(&mut cursor_box.item_stack, size);
 
                 net.send_message(messages::InterfacePlaceItem {
-                    name: interface.config.name.clone(),
-                    section: item_box.section_index as u32,
+                    interface_path: interface_path.0.clone(),
                     to_box: item_box.index as u32,
                     quantity: transfered,
                 })
@@ -846,73 +911,69 @@ fn item_box_mouse_interaction(
         if mouse_button_input.just_pressed(MouseButton::Left)
             && keyboard_input.pressed(KeyCode::ShiftLeft)
         {
-            let mut held_item_stack = held_item_stack_query.single_mut();
-            let interface = interface_query.get(item_box.interface_entity).unwrap();
-            let section_config = &interface.config.item_box_sections[item_box.section_index];
+            let mut cursor_box = cursor_item_box_query.single_mut();
+            let (item_box_section, interface_path) =
+                item_box_section_query.get(parent.get()).unwrap();
 
-            if held_item_stack.is_empty() && !box_item_stack.is_empty() {
+            if cursor_box.is_empty() && !item_box.is_empty() {
                 // TODO: This is a special condition for item boxes that are considered
                 // output-only. e.g. crafting output. Given all the different actions that can
                 // be intended by a click I think it should be configured through the interface
                 // config. (Some key combo) -> "place/take" etc
-                let transfered = if section_config.allowed_item_types.is_some()
-                    && section_config
+                let transfered = if item_box_section.allowed_item_types.is_some()
+                    && item_box_section
                         .allowed_item_types
                         .as_ref()
                         .unwrap()
                         .is_empty()
                 {
-                    let size = box_item_stack.size;
-                    held_item_stack.transfer(&mut box_item_stack, size)
+                    let size = item_box.item_stack.size;
+                    cursor_box
+                        .item_stack
+                        .transfer(&mut item_box.item_stack, size)
                 } else {
                     // If even take half, if odd take half + 1
-                    let size = (box_item_stack.size + 1) / 2;
-                    held_item_stack.transfer(&mut box_item_stack, size)
+                    let size = (item_box.item_stack.size + 1) / 2;
+                    cursor_box
+                        .item_stack
+                        .transfer(&mut item_box.item_stack, size)
                 };
 
                 net.send_message(messages::InterfaceTakeItem {
-                    name: interface.config.name.clone(),
-                    section: item_box.section_index as u32,
+                    interface_path: interface_path.0.clone(),
                     from_box: item_box.index as u32,
                     quantity: transfered,
                 })
-            } else if !held_item_stack.is_empty() {
+            } else if !cursor_box.is_empty() {
                 // place held item, swap if box is not empty
-                let section_config = &interface.config.item_box_sections[item_box.section_index];
-                let item_config = items.get(&held_item_stack.item.unwrap());
+                let item_config = items.get(&cursor_box.item_stack.item.unwrap());
 
-                if section_config.allowed_item_types.is_some()
-                    && section_config
+                if item_box_section.allowed_item_types.is_some()
+                    && item_box_section
                         .allowed_item_types
                         .as_ref()
                         .unwrap()
                         .is_empty()
-                    && held_item_stack.item == box_item_stack.item
+                    && cursor_box.item_stack.item == item_box.item_stack.item
                 {
-                    let size = box_item_stack.size;
-                    let transfered = held_item_stack.transfer(&mut box_item_stack, size);
+                    let size = item_box.item_stack.size;
+                    let transfered = cursor_box
+                        .item_stack
+                        .transfer(&mut item_box.item_stack, size);
                     net.send_message(messages::InterfaceTakeItem {
-                        name: interface.config.name.clone(),
-                        section: item_box.section_index as u32,
+                        interface_path: interface_path.0.clone(),
                         from_box: item_box.index as u32,
                         quantity: transfered,
                     });
                 } else {
-                    if let Some(allowed) = &section_config.allowed_item_types {
-                        if let Some(categories) = &item_config.categories {
-                            if allowed.is_disjoint(categories) {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
+                    if !item_box_section.can_contain(item_config) {
+                        continue;
                     }
 
-                    let transfered = box_item_stack.transfer(&mut held_item_stack, 1);
+                    let transfered = item_box.item_stack.transfer(&mut cursor_box.item_stack, 1);
 
                     net.send_message(messages::InterfacePlaceItem {
-                        name: interface.config.name.clone(),
-                        section: item_box.section_index as u32,
+                        interface_path: interface_path.0.clone(),
                         to_box: item_box.index as u32,
                         quantity: transfered,
                     })
@@ -925,12 +986,12 @@ fn item_box_mouse_interaction(
 fn update_cursor_item_stack_position(
     ui_scale: Res<UiScale>,
     mut cursor_move_event: EventReader<CursorMoved>,
-    mut held_item_stack_query: Query<&mut Style, With<CursorItemStackMarker>>,
+    mut held_item_stack_query: Query<&mut Style, With<CursorItemBox>>,
 ) {
-    for cursor_movement in cursor_move_event.iter() {
+    for cursor_movement in cursor_move_event.read() {
         let mut style = held_item_stack_query.single_mut();
-        style.left = Val::Px(cursor_movement.position.x / ui_scale.scale as f32 - 8.0);
-        style.top = Val::Px(cursor_movement.position.y / ui_scale.scale as f32 - 8.0);
+        style.left = Val::Px(cursor_movement.position.x / ui_scale.0 as f32 - 8.0);
+        style.top = Val::Px(cursor_movement.position.y / ui_scale.0 as f32 - 8.0);
     }
 }
 
@@ -938,17 +999,15 @@ fn update_item_box_images(
     asset_server: Res<AssetServer>,
     items: Res<Items>,
     mut item_box_query: Query<
-        (&mut UiImage, &ItemStack, &mut BackgroundColor, &Children),
-        (With<ItemBox>, Changed<ItemStack>),
+        (&mut UiImage, &ItemBox, &mut BackgroundColor, &Children),
+        (Changed<ItemBox>, Without<CursorItemBox>),
     >,
-    mut cursor_item_query: Query<
-        (&mut UiImage, &ItemStack, &mut BackgroundColor, &Children),
-        (
-            With<CursorItemStackMarker>,
-            Without<ItemBox>,
-            Changed<ItemStack>,
-        ),
-    >,
+    mut cursor_item_query: Query<(
+        &mut UiImage,
+        &CursorItemBox,
+        &mut BackgroundColor,
+        &Children,
+    )>,
     // TODO: I think there's something about relations being added, this can have parent ==
     // Itembox/CursorItemStackMarker if that will be possible
     mut text_query: Query<&mut Text>,
@@ -990,21 +1049,24 @@ fn update_item_box_images(
         }
     };
 
-    for (mut image, item_stack, mut color, children) in item_box_query.iter_mut() {
-        update_image(&mut image, item_stack, &mut color, children);
+    for (mut image, item_box, mut color, children) in item_box_query.iter_mut() {
+        update_image(&mut image, &item_box.item_stack, &mut color, children);
     }
 
-    for (mut image, item_stack, mut color, children) in cursor_item_query.iter_mut() {
-        update_image(&mut image, item_stack, &mut color, children);
+    for (mut image, cursor_box, mut color, children) in cursor_item_query.iter_mut() {
+        update_image(&mut image, &cursor_box.item_stack, &mut color, children);
     }
 }
 
 fn cursor_visibility(
     mut window: Query<&mut Window, With<PrimaryWindow>>,
-    changed_interfaces: Query<(&Interface, &Visibility), Changed<Visibility>>,
+    changed_interfaces: Query<
+        (&NodeConfig, &Visibility),
+        (Changed<Visibility>, With<InterfaceRoot>),
+    >,
 ) {
-    for (interface, visibility) in changed_interfaces.iter() {
-        if interface.item_box_section_entities.len() > 0 && !interface.config.is_equipment {
+    for (interface_config, visibility) in changed_interfaces.iter() {
+        if interface_config.is_exclusive {
             let mut window = window.single_mut();
 
             if visibility == Visibility::Visible {
@@ -1024,46 +1086,48 @@ fn cursor_visibility(
     }
 }
 
+// TODO: Getting ahead of myself, but the idea here is to append one of these to all interfaces
+// that contain item boxes. This way it can be used both for equipping items and for navigating
+// the item boxes through keyboard input.
+
+//
 // All interfaces with this component will render an outline around the selected item.
 // An item is always selected, and it persists on open/close of the interface.
 #[derive(Component)]
 pub struct SelectedItemBox(pub Entity);
 
-// Add a SelectedItemBox component to all interfaces that have item boxes.
 fn initial_select_item_box(
     mut commands: Commands,
-    added_itembox_query: Query<(Entity, &ItemBox), Added<ItemBox>>,
+    item_box_section_query: Query<&ItemBoxSection>,
+    added_itembox_query: Query<(Entity, &ItemBox, &Parent), Added<ItemBox>>,
 ) {
-    for (box_entity, item_box) in added_itembox_query.iter() {
+    for (box_entity, item_box, parent) in added_itembox_query.iter() {
         if item_box.index == 0 {
-            commands
-                .entity(item_box.interface_entity)
-                .insert(SelectedItemBox(box_entity));
+            let item_box_section = item_box_section_query.get(parent.get()).unwrap();
+            if item_box_section.is_equipment {
+                commands
+                    .entity(parent.get())
+                    .insert(SelectedItemBox(box_entity));
+            }
         }
     }
 }
 
 fn keyboard_select_item_box(
     keyboard: Res<Input<KeyCode>>,
-    mut interface_query: Query<(&Interface, &Visibility, &mut SelectedItemBox)>,
-    item_box_section_query: Query<Option<&Children>, With<ItemBoxSectionMarker>>,
+    mut item_box_section_query: Query<(
+        &Children,
+        &Visibility,
+        &mut SelectedItemBox,
+    ), With<ItemBoxSection>>,
 ) {
     for key in keyboard.get_just_pressed() {
-        for (interface, visibility, mut selected) in interface_query.iter_mut() {
+        for (children, visibility, mut selected) in
+            item_box_section_query.iter_mut()
+        {
             if visibility == Visibility::Hidden {
                 continue;
             }
-            // Make sure the interface has an item box section, and that the item boxes have been
-            // received from the server.
-            let children = if let Some(section_entity) = interface.item_box_section_entities.get(0)
-            {
-                match item_box_section_query.get(*section_entity).unwrap() {
-                    Some(children) => children,
-                    None => continue,
-                }
-            } else {
-                continue;
-            };
 
             *selected = match key {
                 KeyCode::Key1 => match children.get(0) {

@@ -1,7 +1,4 @@
-use bevy::{
-    app::ScheduleRunnerPlugin,
-    prelude::*,
-};
+use bevy::{app::ScheduleRunnerPlugin, prelude::*};
 
 mod api;
 mod assets;
@@ -24,7 +21,9 @@ fn main() {
     // with a .run_if(this_or_that_resource.exists()) and have them magically ordered by bevy.
     App::new()
         // Run at ~60 ticks a second
-        .add_plugins(ScheduleRunnerPlugin::run_loop(std::time::Duration::from_millis(16)))
+        .add_plugins(ScheduleRunnerPlugin::run_loop(
+            std::time::Duration::from_millis(16),
+        ))
         .add_plugins(bevy::core::TaskPoolPlugin::default())
         //.add_plugins(bevy::core::TypeRegistrationPlugin::default())
         .add_plugins(bevy::time::TimePlugin::default())

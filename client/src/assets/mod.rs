@@ -1,7 +1,7 @@
 use sha1::Digest;
 use std::io::prelude::*;
 
-use bevy::{gltf::Gltf, prelude::*};
+use bevy::{gltf::Gltf, prelude::*, asset::LoadState};
 use fmc_networking::{messages, NetworkData};
 
 mod block_textures;
@@ -83,18 +83,23 @@ fn test_finished_load_state_one(
     asset_server: Res<AssetServer>,
     mut loading_state: ResMut<NextState<LoadingState>>,
 ) {
-    match asset_server.get_group_load_state(models.iter().map(|model| model.handle.id())) {
-        bevy::asset::LoadState::Failed => {
-            net.disconnect(&format!(
-                "Misconfigured resource pack: Failed to load a model, check console for error."
-            ));
-            loading_state.set(LoadingState::Inactive);
+    for model in models.iter() {
+        match asset_server.get_load_state(&model.handle).unwrap() {
+            bevy::asset::LoadState::Failed => {
+                net.disconnect(&format!(
+                    "Misconfigured resource pack: Failed to load a model, check console for error."
+                ));
+                loading_state.set(LoadingState::Inactive);
+                return
+            }
+            bevy::asset::LoadState::Loaded => {
+                continue;
+            }
+            _ => return,
         }
-        bevy::asset::LoadState::Loaded => {
-            loading_state.set(LoadingState::Two);
-        }
-        _ => (),
     }
+
+    loading_state.set(LoadingState::Two);
 }
 
 fn start_loading(mut loading_state: ResMut<NextState<LoadingState>>) {
@@ -117,7 +122,7 @@ fn start_asset_loading(
     mut server_config_event: EventReader<NetworkData<messages::ServerConfig>>,
     mut asset_state: ResMut<NextState<AssetState>>,
 ) {
-    for config in server_config_event.iter() {
+    for config in server_config_event.read() {
         if !has_assets(&config.assets_hash) {
             info!("Downloading assets from the server...");
             net.send_message(messages::AssetRequest);
@@ -135,7 +140,7 @@ fn handle_assets_response(
     // TODO: Does this need an explicit timeout? Don't want to let the server be able to leave the
     // client in limbo without the player being able to quit.
     // TODO: Unpacking stores tarball in extraction directory, delete it.
-    for tarball in asset_events.iter() {
+    for tarball in asset_events.read() {
         info!("Received assets from server...");
         // Remove old assets if they exist.
         std::fs::remove_dir_all("server_assets").ok();

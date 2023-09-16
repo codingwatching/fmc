@@ -67,7 +67,7 @@ fn mesh_system(
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
-    for chunk_position in mesh_events.iter().map(|event| event.position).chain(
+    for chunk_position in mesh_events.read().map(|event| event.position).chain(
         new_meshed_chunks
             .iter()
             .map(|global| global.compute_transform().translation.as_ivec3() + origin.0),
@@ -99,7 +99,6 @@ fn mesh_system(
 fn handle_mesh_tasks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    scenes: Res<Assets<Scene>>,
     mut chunk_meshes: Query<(Entity, &mut ChunkMeshTask)>,
 ) {
     for (entity, mut task) in chunk_meshes.iter_mut() {
@@ -122,8 +121,7 @@ fn handle_mesh_tasks(
                 );
             }
 
-            for (mut handle, transform) in block_models.into_iter() {
-                handle.make_strong(&scenes);
+            for (handle, transform) in block_models.into_iter() {
                 children.push(
                     commands
                         .spawn(SceneBundle {
@@ -223,9 +221,9 @@ async fn build_mesh(
     chunk: ExpandedChunk,
     light_chunk: ExpandedLightChunk,
 ) -> (
-    // all blocks of same material combined into same mesh
+    // Blocks that use material to render
     Vec<(Handle<materials::BlockMaterial>, Mesh)>,
-    // all blocks that use models to render, weak handles
+    // Blocks that use Model to render
     Vec<(Handle<Scene>, Transform)>,
 ) {
     let mut mesh_builders = HashMap::new();
@@ -328,14 +326,14 @@ async fn build_mesh(
                         let (handle, mut transform) = if block_state.uses_side_model() {
                             match &model.side {
                                 Some((handle, transform)) => {
-                                    (handle.clone_weak(), transform.clone())
+                                    (handle.clone(), transform.clone())
                                 }
                                 None => panic!("Block state should have been validated at reception of the chunk.")
                             }
                         } else {
                             match &model.center {
                                 Some((handle, transform)) => {
-                                    (handle.clone_weak(), transform.clone())
+                                    (handle.clone(), transform.clone())
                                 }
                                 None => panic!("Block state should have been validated at reception of the chunk.")
                             }

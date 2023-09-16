@@ -63,12 +63,12 @@ impl PlayerInventoryInterface<'_> {
     }
 
     fn build_hotbar(&self) -> messages::InterfaceItemBoxUpdate {
-        let mut hotbar = messages::InterfaceItemBoxUpdate::new("hotbar", false);
+        let mut hotbar = messages::InterfaceItemBoxUpdate::new(false);
 
         for (i, item_stack) in self.inventory[0..9].iter().enumerate() {
             if let Some(item) = item_stack.item() {
                 hotbar.add_itembox(
-                    0,
+                    "hotbar/equipment",
                     i as u32,
                     item.id,
                     item_stack.size,
@@ -76,7 +76,7 @@ impl PlayerInventoryInterface<'_> {
                     item.properties["description"].as_str(),
                 );
             } else {
-                hotbar.add_empty_itembox(0, i as u32);
+                hotbar.add_empty_itembox("hotbar/equipment", i as u32);
             }
         }
 
@@ -84,13 +84,13 @@ impl PlayerInventoryInterface<'_> {
     }
 
     fn build_inventory(&self) -> messages::InterfaceItemBoxUpdate {
-        let mut inventory = messages::InterfaceItemBoxUpdate::new("inventory", false);
+        let mut inventory = messages::InterfaceItemBoxUpdate::new(false);
 
-        // hotbar section
+        // Hotbar section
         for (i, item_stack) in self.inventory[0..9].iter().enumerate() {
             if let Some(item) = item_stack.item() {
                 inventory.add_itembox(
-                    0,
+                    "inventory/hotbar",
                     i as u32,
                     item.id,
                     item_stack.size,
@@ -98,11 +98,11 @@ impl PlayerInventoryInterface<'_> {
                     item.properties["description"].as_str(),
                 );
             } else {
-                inventory.add_empty_itembox(0, i as u32);
+                inventory.add_empty_itembox("inventory/hotbar", i as u32);
             }
         }
 
-        // main inventory section
+        // Main inventory section
         for (i, item_stack) in self.inventory[9..36].iter().enumerate() {
             // TODO: There's some kinda bug when in the layout when you stretch two or more lines
             // more than 124 pixels(should be 160 here). So there's 6 missing items slots at the
@@ -112,7 +112,7 @@ impl PlayerInventoryInterface<'_> {
             }
             if let Some(item) = item_stack.item() {
                 inventory.add_itembox(
-                    1,
+                    "inventory/storage",
                     i as u32,
                     item.id,
                     item_stack.size,
@@ -120,7 +120,7 @@ impl PlayerInventoryInterface<'_> {
                     item.properties["description"].as_str(),
                 );
             } else {
-                inventory.add_empty_itembox(1, i as u32);
+                inventory.add_empty_itembox("inventory/storage", i as u32);
                 //inventory.add_itembox(
                 //    1, i as u32, 1, 2, None,
                 //    None,
@@ -128,11 +128,16 @@ impl PlayerInventoryInterface<'_> {
             }
         }
 
-        // equipment section
-        for (i, item_stack) in self.equipment.iter().enumerate() {
+        // Equipment section
+        for (item_stack, interface_path) in self.equipment.iter().zip([
+            "inventory/helmet",
+            "inventory/chestplate",
+            "inventory/leggings",
+            "inventory/boots",
+        ]) {
             if let Some(item) = item_stack.item() {
                 inventory.add_itembox(
-                    i as u32 + 2,
+                    interface_path,
                     0,
                     item.id,
                     item_stack.size,
@@ -140,7 +145,7 @@ impl PlayerInventoryInterface<'_> {
                     item.properties["description"].as_str(),
                 );
             } else {
-                inventory.add_empty_itembox(i as u32 + 2, 0);
+                inventory.add_empty_itembox(interface_path, 0);
             }
         }
 
@@ -148,12 +153,12 @@ impl PlayerInventoryInterface<'_> {
     }
 
     fn build_crafting_table(&self) -> messages::InterfaceItemBoxUpdate {
-        let mut crafting_table = messages::InterfaceItemBoxUpdate::new("inventory", false);
+        let mut crafting_table = messages::InterfaceItemBoxUpdate::new(false);
 
         for (i, item_stack) in self.crafting_table.iter().enumerate() {
             if let Some(item) = item_stack.item() {
                 crafting_table.add_itembox(
-                    6,
+                    "inventory/crafting_input",
                     i as u32,
                     item.id,
                     item_stack.size,
@@ -161,13 +166,13 @@ impl PlayerInventoryInterface<'_> {
                     item.properties["description"].as_str(),
                 );
             } else {
-                crafting_table.add_empty_itembox(6, i as u32);
+                crafting_table.add_empty_itembox("inventory/crafting_input", i as u32);
             }
         }
 
         if let Some((item, amount)) = self.recipes.get_output(&self.crafting_table.as_slice()) {
             crafting_table.add_itembox(
-                7,
+                "inventory/crafting_output",
                 0,
                 item.id,
                 amount,
@@ -175,38 +180,39 @@ impl PlayerInventoryInterface<'_> {
                 item.properties["description"].as_str(),
             );
         } else {
-            crafting_table.add_empty_itembox(7, 0 as u32);
+            crafting_table.add_empty_itembox("inventory/crafting_output", 0);
         }
 
         return crafting_table;
     }
 
+    // TODO: Validation, this will just crash, 
     // Take items out of a stack through the interface, if the index doesn't match the amount, it
     // returns None.
     fn take_item(
         &mut self,
-        section: u32,
+        interface_path: &str,
         index: u32,
         amount: u32,
         held_item_stack: &mut ItemStack,
     ) -> PlayerInterfaceUpdate {
         let mut interface_update = PlayerInterfaceUpdate::default();
 
-        match section {
-            0 => {
+        match interface_path {
+            "inventory/hotbar" => {
                 let item_stack = &mut self.inventory[index as usize];
 
                 held_item_stack.transfer(item_stack, amount);
 
                 // Update hotbar since inventory actions affect it.
-                let mut hotbar_update = messages::InterfaceItemBoxUpdate::new("hotbar", false);
+                let mut hotbar_update = messages::InterfaceItemBoxUpdate::new(false);
                 if item_stack.is_empty() {
-                    hotbar_update.add_empty_itembox(0, index);
+                    hotbar_update.add_empty_itembox("hotbar/equipment", index);
                 } else {
                     let item = item_stack.item().unwrap();
 
                     hotbar_update.add_itembox(
-                        section,
+                        "hotbar/equipment",
                         index,
                         item.id,
                         item_stack.size,
@@ -217,21 +223,33 @@ impl PlayerInventoryInterface<'_> {
 
                 interface_update.hotbar = Some(hotbar_update);
             }
-            1 => {
+            "inventory/storage" => {
                 let item_stack = &mut self.inventory[9 + index as usize];
                 held_item_stack.transfer(item_stack, amount);
             }
-            2..=5 => {
+            "inventory/helmet" => {
                 let item_stack = &mut self.equipment[index as usize];
                 held_item_stack.transfer(item_stack, amount);
             }
-            6 => {
+            "inventory/chestplate" => {
+                let item_stack = &mut self.equipment[index as usize];
+                held_item_stack.transfer(item_stack, amount);
+            }
+            "inventory/leggings" => {
+                let item_stack = &mut self.equipment[index as usize];
+                held_item_stack.transfer(item_stack, amount);
+            }
+            "inventory/boots" => {
+                let item_stack = &mut self.equipment[index as usize];
+                held_item_stack.transfer(item_stack, amount);
+            }
+            "inventory/crafting_input" => {
                 let item_stack = &mut self.crafting_table[index as usize];
                 held_item_stack.transfer(item_stack, amount);
 
                 interface_update.inventory = Some(self.build_crafting_table());
             }
-            7 => {
+            "inventory/crafting_output" => {
                 if let Some(recipe) = self.recipes.get_recipe(&self.crafting_table.as_slice()) {
                     let output_item = recipe.output_item();
                     let item_config = self.item_configs.get_config(&output_item.id);
@@ -268,22 +286,22 @@ impl PlayerInventoryInterface<'_> {
     // there.
     fn place_item(
         &mut self,
-        section: u32,
+        interface_path: &str,
         index: u32,
         amount: u32,
         held_item_stack: &mut ItemStack,
     ) -> PlayerInterfaceUpdate {
         let mut interface_update = PlayerInterfaceUpdate::default();
 
-        match section {
-            0 => {
+        match interface_path {
+            "inventory/hotbar" => {
                 let item_box_stack = &mut self.inventory[index as usize];
                 item_box_stack.transfer(held_item_stack, amount);
 
-                let mut hotbar_update = messages::InterfaceItemBoxUpdate::new("hotbar", false);
+                let mut hotbar_update = messages::InterfaceItemBoxUpdate::new(false);
                 if let Some(item) = item_box_stack.item() {
                     hotbar_update.add_itembox(
-                        section,
+                        "hotbar/equipment",
                         index,
                         item.id,
                         item_box_stack.size(),
@@ -291,37 +309,56 @@ impl PlayerInventoryInterface<'_> {
                         item.properties["description"].as_str(),
                     );
                 } else {
-                    hotbar_update.add_empty_itembox(section, index);
+                    hotbar_update.add_empty_itembox("hotbar/equipment", index);
                 }
 
                 interface_update.hotbar = Some(hotbar_update);
             }
-            1 => {
+            "inventory/storage" => {
                 let item_box_stack = &mut self.inventory[9 + index as usize];
                 item_box_stack.transfer(held_item_stack, amount);
             }
-            2..=5 => {
-                if held_item_stack.size != 1 {
-                    return interface_update;
-                }
-
+            "inventory/helmet" => {
                 let item = held_item_stack.item().unwrap();
                 let categories = match &self.item_configs.get_config(&item.id).categories {
                     Some(c) => c,
                     None => return interface_update,
                 };
-
-                match section {
-                    2 if categories.contains("helmet") => self.equipment[0].swap(held_item_stack),
-                    3 if categories.contains("chestplate") => {
-                        self.equipment[1].swap(held_item_stack)
-                    }
-                    4 if categories.contains("leggings") => self.equipment[2].swap(held_item_stack),
-                    5 if categories.contains("boots") => self.equipment[3].swap(held_item_stack),
-                    _ => return interface_update,
-                };
+                if categories.contains("helmet") {
+                    self.equipment[0].transfer(held_item_stack, 1);
+                }
             }
-            6 => {
+            "inventory/chestplate" => {
+                let item = held_item_stack.item().unwrap();
+                let categories = match &self.item_configs.get_config(&item.id).categories {
+                    Some(c) => c,
+                    None => return interface_update,
+                };
+                if categories.contains("chestplate") {
+                    self.equipment[1].transfer(held_item_stack, 1);
+                }
+            }
+            "inventory/leggings" => {
+                let item = held_item_stack.item().unwrap();
+                let categories = match &self.item_configs.get_config(&item.id).categories {
+                    Some(c) => c,
+                    None => return interface_update,
+                };
+                if categories.contains("leggings") {
+                    self.equipment[2].transfer(held_item_stack, 1);
+                }
+            }
+            "inventory/boots" => {
+                let item = held_item_stack.item().unwrap();
+                let categories = match &self.item_configs.get_config(&item.id).categories {
+                    Some(c) => c,
+                    None => return interface_update,
+                };
+                if categories.contains("boots") {
+                    self.equipment[3].transfer(held_item_stack, 1);
+                }
+            }
+            "inventory/crafting_input" => {
                 let item_box_stack = &mut self.crafting_table[index as usize];
                 item_box_stack.transfer(held_item_stack, amount);
 
@@ -420,7 +457,7 @@ fn update_inventory_interface(
         };
 
         let interface_update = interface.take_item(
-            take_event.section,
+            &take_event.interface_path,
             take_event.from_box,
             take_event.quantity,
             &mut held_item,
@@ -455,7 +492,7 @@ fn update_inventory_interface(
         // Quantity is only respected if the item box is empty, otherwise it replaces the held item
         // with the one in the box, returning what was there before.
         let interface_update = interface.place_item(
-            place_event.section,
+            &place_event.interface_path,
             place_event.to_box,
             place_event.quantity,
             &mut held_item,
@@ -479,7 +516,7 @@ fn equip_item(
     mut equipped_item_query: Query<&mut PlayerEquippedItem>,
 ) {
     for equip_event in equip_events.iter() {
-        if equip_event.name != "hotbar" {
+        if equip_event.interface_path != "hotbar/equipment" {
             return;
         }
 

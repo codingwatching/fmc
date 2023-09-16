@@ -258,7 +258,7 @@ fn queue_block_updates(
     // for it.
     mut failed_lighting_events: EventWriter<FailedLightingEvent>,
 ) {
-    for block_update in block_updates.iter() {
+    for block_update in block_updates.read() {
         let mut chunk_position = block_update.chunk_position;
         while let Some(light_chunk) = light_map.chunks.get(&chunk_position) {
             if matches!(light_chunk, LightChunk::Uniform(light) if light.sunlight() == 0) {
@@ -275,7 +275,7 @@ fn queue_chunk_updates(
     mut chunk_responses: EventReader<NetworkData<messages::ChunkResponse>>,
     mut relight_events: EventWriter<RelightEvent>,
 ) {
-    for response in chunk_responses.iter() {
+    for response in chunk_responses.read() {
         for chunk in response.chunks.iter() {
             relight_events.send(RelightEvent {
                 chunk_position: chunk.position,
@@ -289,7 +289,7 @@ fn handle_failed(
     mut failed_lighting_events: EventReader<FailedLightingEvent>,
     mut relight_events: EventWriter<RelightEvent>,
 ) {
-    for failed in failed_lighting_events.iter() {
+    for failed in failed_lighting_events.read() {
         for x in [1, 0, -1] {
             for y in [1, 0, -1] {
                 for z in [1, 0, -1] {
@@ -312,7 +312,7 @@ fn relight_chunks(
 ) {
     let blocks = Blocks::get();
 
-    for relight_event in relight_events.iter() {
+    for relight_event in relight_events.read() {
         let Some(chunk) = world_map.get_chunk(&relight_event.chunk_position) else {
             continue;
         };
@@ -849,7 +849,7 @@ fn send_chunk_mesh_events(
     mut lighting_events: EventReader<TestFinishedLightingEvent>,
     mut chunk_mesh_events: EventWriter<ChunkMeshEvent>,
 ) {
-    for light_event in lighting_events.iter() {
+    for light_event in lighting_events.read() {
         let position = light_event.0;
         if !light_update_queues.contains_key(&position)
             && !light_update_queues.contains_key(&(position + IVec3::new(0, CHUNK_SIZE as i32, 0)))

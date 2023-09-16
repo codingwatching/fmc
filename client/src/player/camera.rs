@@ -100,7 +100,7 @@ fn camera_rotation(
     // It empties the iterator so it can't access it after loop.
     let should_send = mouse_events.len() > 0;
 
-    for ev in mouse_events.iter() {
+    for ev in mouse_events.read() {
         let (mut camera_state, mut transform) = camera_query.single_mut();
 
         if window.cursor.grab_mode == CursorGrabMode::Locked {
@@ -127,7 +127,7 @@ pub fn handle_camera_rotation_from_server(
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
     mut camera_q: Query<&mut Transform, With<Camera>>,
 ) {
-    for rotation_event in camera_rotation_events.iter() {
+    for rotation_event in camera_rotation_events.read() {
         let mut transform = camera_q.single_mut();
         transform.rotation = rotation_event.rotation;
     }

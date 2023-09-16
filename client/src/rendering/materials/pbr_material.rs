@@ -123,7 +123,7 @@ fn replace_material_and_mesh(
 // This is an identical copy of bevy's StandardMaterial. Its only difference is adding a packed bit
 // field to the vertex attributes so that gltf objects can inherit the light level from the nearest
 // block.
-#[derive(AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
+#[derive(Asset, AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
 #[uuid = "e65799f2-923e-4548-8879-be574f9db988"]
 #[bind_group_data(PbrMaterialKey)]
 #[uniform(0, StandardMaterialUniform)]

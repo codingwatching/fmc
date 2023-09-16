@@ -1,14 +1,10 @@
 use std::collections::HashMap;
 
 use bevy::{app::AppExit, prelude::*};
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_networking::{messages, NetworkClient};
 use serde::Deserialize;
 
-use crate::{
-    assets::AssetState,
-    game_state::GameState,
-    player::interfaces::{Interface, Interfaces},
-};
+use crate::{game_state::GameState, player::interfaces::Interfaces};
 
 use super::interfaces::InterfaceToggleEvent;
 

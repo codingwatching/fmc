@@ -103,7 +103,7 @@ fn handle_player_config(
     mut aabb_query: Query<&mut Aabb, With<Player>>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
 ) {
-    for config in config_events.iter() {
+    for config in config_events.read() {
         let mut aabb = aabb_query.single_mut();
         let mut camera_transform = camera_query.single_mut();
 

@@ -15,8 +15,8 @@ impl Plugin for WidgetPlugin {
                 focus_text_box_on_click,
                 focus_text_box_on_interface_change,
                 hover_button,
-                scale_font.run_if(on_event::<WindowResized>()),
-                scale_borders.run_if(on_event::<WindowResized>()),
+                //scale_font.run_if(on_event::<WindowResized>()),
+                //scale_borders.run_if(on_event::<WindowResized>()),
             ),
         );
     }
@@ -72,8 +72,8 @@ impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
                 background_color: Color::rgb_u8(110, 110, 110).into(),
                 border_color: Color::BLACK.into(),
                 style: Style {
-                    aspect_ratio: Some(width / 4.2),
-                    width: Val::Percent(width),
+                    aspect_ratio: Some(width / 20.0),
+                    width: Val::Px(width),
                     border: UiRect::all(Val::Px(BORDER_SIZE)),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
@@ -140,7 +140,7 @@ impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
                         text,
                         TextStyle {
                             font_size: FONT_SIZE,
-                            font: DEFAULT_FONT_HANDLE.typed(),
+                            font: DEFAULT_FONT_HANDLE.clone(),
                             color: Color::DARK_GRAY,
                             ..default()
                         },
@@ -165,7 +165,7 @@ impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
                         text,
                         TextStyle {
                             font_size: FONT_SIZE,
-                            font: DEFAULT_FONT_HANDLE.typed(),
+                            font: DEFAULT_FONT_HANDLE.clone(),
                             color: Color::WHITE,
                             ..default()
                         },
@@ -212,7 +212,7 @@ impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
                         "",
                         TextStyle {
                             font_size: FONT_SIZE,
-                            font: DEFAULT_FONT_HANDLE.typed(),
+                            font: DEFAULT_FONT_HANDLE.clone(),
                             color: Color::WHITE,
                             ..default()
                         },
@@ -303,7 +303,7 @@ fn edit_text_box(
         // TODO: There is currently no way to read the keyboard input properly. Res<Input<Keycode>> has
         // no utility function for discerning if it is a valid char, you have to match the whole thing,
         // but more importantly is does not consider the repeat properties of the WM.
-        for event in chars.iter() {
+        for event in chars.read() {
             if event.char.is_ascii() {
                 if !event.char.is_control() {
                     text_box.text.push(event.char.to_ascii_lowercase());

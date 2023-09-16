@@ -361,8 +361,7 @@ pub fn load_blocks(
                 let center_model = if let Some(center_model) = center_model {
                     let path = MODEL_PATH.to_owned() + &center_model.name + ".glb#Scene0";
                     Some((
-                        // It struggles with inferring type?
-                        asset_server.load::<Scene, &String>(&path).cast_weak(),
+                        asset_server.load::<Scene>(&path),
                         Transform {
                             translation: center_model.position,
                             rotation: center_model.rotation,
@@ -376,7 +375,7 @@ pub fn load_blocks(
                 let side_model = if let Some(side_model) = side_model {
                     let path = MODEL_PATH.to_owned() + &side_model.name + ".glb#Scene0";
                     Some((
-                        asset_server.load::<Scene, &String>(&path).cast_weak(),
+                        asset_server.load::<Scene>(&path),
                         Transform {
                             translation: side_model.position,
                             rotation: side_model.rotation,
@@ -514,9 +513,9 @@ pub struct Cube {
 pub struct BlockModel {
     /// Name of the block
     pub name: String,
-    /// Model used when centered in the block, weak handle
+    /// Model used when centered in the block
     pub center: Option<(Handle<Scene>, Transform)>,
-    /// Model used when on the side of the block, weak handle
+    /// Model used when on the side of the block
     pub side: Option<(Handle<Scene>, Transform)>,
     /// Friction or drag, applied by closest normal of the textures.
     pub friction: Friction,

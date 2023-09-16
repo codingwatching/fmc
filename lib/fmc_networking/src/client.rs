@@ -369,8 +369,7 @@ pub fn handle_client_network_events(
     mut server_disconnect_events: EventReader<NetworkData<crate::messages::Disconnect>>,
     mut client_network_events: EventWriter<ClientNetworkEvent>,
 ) {
-    // Stop connection if the server disconnected
-    for event in server_disconnect_events.iter() {
+    for event in server_disconnect_events.read() {
         net.network_events
             .sender
             .send(ClientNetworkEvent::Disconnected(event.message.to_owned()))
@@ -378,7 +377,6 @@ pub fn handle_client_network_events(
         break;
     }
 
-    // Stop connection if the client disconnected
     for event in net.network_events.receiver.try_iter() {
         match event {
             ClientNetworkEvent::Error(_) | ClientNetworkEvent::Disconnected(_) => {
@@ -386,7 +384,7 @@ pub fn handle_client_network_events(
                     connection.stop();
                 }
                 client_network_events.send(event);
-                // There will be many errors when something bad happens, so just send the first
+                // There might be many errors when something bad happens, so just send the first
                 // one. The others will be cleared on event buffer rotation at the end of the
                 // update.
                 return;

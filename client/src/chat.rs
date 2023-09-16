@@ -10,7 +10,7 @@ impl Plugin for ChatPlugin {
 }
 
 fn handle_messages(mut messages: EventReader<NetworkData<messages::ChatMessage>>) {
-    for message in messages.iter() {
+    for message in messages.read() {
         info!("{}: {}", message.username, message.message);
     }
 }

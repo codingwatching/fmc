@@ -62,7 +62,7 @@ fn pass_time(
     mut materials: ResMut<Assets<materials::SkyMaterial>>,
     mut server_time_events: EventReader<NetworkData<messages::Time>>,
 ) {
-    let angle = if let Some(t) = server_time_events.iter().last() {
+    let angle = if let Some(t) = server_time_events.read().last() {
         t.angle
     } else {
         return;

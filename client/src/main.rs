@@ -1,7 +1,7 @@
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
-    window::WindowFocused,
+    window::WindowFocused, asset::io::AssetProviders,
 };
 
 mod assets;
@@ -21,12 +21,14 @@ fn main() {
     App::new()
         //.insert_resource(Msaa { samples: 4 })
         .insert_resource(FixedTime::new_from_secs(1.0 / 144.0))
+        // This changes default asset folder to "." from "./assets"
+        .insert_resource(
+            AssetProviders::default()
+                .with_default_file_source("".to_string())
+        )
         .add_plugins(
             DefaultPlugins
-                .set(AssetPlugin {
-                    watch_for_changes: None,
-                    asset_folder: "".to_string(),
-                })
+                .set(AssetPlugin::unprocessed())
                 .set(ImagePlugin::default_nearest()),
         )
         //.add_plugin(LogDiagnosticsPlugin::default())
@@ -70,7 +72,7 @@ fn fix_keys_not_released_on_focus_loss(
     mut focus_events: EventReader<WindowFocused>,
     mut key_input: ResMut<Input<KeyCode>>,
 ) {
-    for event in focus_events.iter() {
+    for event in focus_events.read() {
         if !event.focused {
             key_input.bypass_change_detection().release_all();
         }

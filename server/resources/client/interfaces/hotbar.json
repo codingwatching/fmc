@@ -1,16 +1,149 @@
 {
-    "name": "hotbar",
-    "mouse": false,
-    "keyboard": false,
-    "equipment": true,
-    "position": {
-        "bottom": 0.0
+  "name": "hotbar",
+  "style": {
+    "justify_content": "Center",
+    "width": {
+      "Percent": 100.0
     },
-    "image": "hotbar.png",
-    "item_box_sections": [
-        {
-            "position": [3, 3],
-            "size": [176.0, 16.0]
+    "height": {
+      "Percent": 100.0
+    }
+  },
+  "content": {
+    "Nodes": [
+      {
+        "style": {
+          "flex_direction": "Column",
+          "align_self": "Start",
+          "justify_content": "End",
+          "width": {
+            "Px": 182
+          },
+          "height": {
+            "Percent": 100.0
+          }
+        },
+        "content": {
+          "Nodes": [
+            {
+              "name": "hearts",
+              "image": "healthbar.png",
+              "style": {
+                  "bottom": {
+                      "Px": 1
+                  }
+              },
+              "content": {
+                "Nodes": [
+                  {
+                    "name": "1",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "2",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "3",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "4",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "5",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "6",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "7",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "8",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "9",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "10",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "11",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "12",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "13",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "14",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "15",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "16",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "17",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "18",
+                    "image": "heart_right.png"
+                  },
+                  {
+                    "name": "19",
+                    "image": "heart_left.png"
+                  },
+                  {
+                    "name": "20",
+                    "image": "heart_right.png"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "equipment",
+              "image": "hotbar.png",
+              "style": {
+                "padding": {
+                  "left": {
+                    "Px": 3
+                  },
+                  "top": {
+                    "Px": 3
+                  }
+                },
+                "column_gap": {
+                  "Px": 4
+                }
+              },
+              "content": {
+                "ItemSection": {
+                  "equipment": true,
+                  "movable_items": false
+                }
+              }
+            }
+          ]
         }
+      }
     ]
+  }
 }
