@@ -3,14 +3,15 @@ use bevy::prelude::*;
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 use crate::{
-    players::Players,
+    players::{
+        player::{PlayerEquipment, PlayerMarker, PlayerEquippedItem},
+        Players
+    },
     world::items::{
         crafting::{RecipeCollection, Recipes, CraftingTable},
         ItemStack, ItemStorage, Items,
     },
 };
-
-use super::{PlayerEquipment, PlayerEquippedItem, PlayerMarker};
 
 pub struct InventoryPlugin;
 impl Plugin for InventoryPlugin {

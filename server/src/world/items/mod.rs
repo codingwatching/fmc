@@ -247,13 +247,11 @@ impl ItemStack {
     }
 }
 
-/// Generic component used if an entity needs to hold items. This is for example used as the
-/// player inventory. Coupled with an 'ItemCollector', it will collect items it finds on the
-/// ground.
+/// Generic component used for entities that need to hold items.
 #[derive(Component, Deref, DerefMut, Serialize, Deserialize)]
 pub struct ItemStorage(pub Vec<ItemStack>);
 
-/// An item that can be picked up by an ItemCollector
+/// An item that is dropped on the ground.
 #[derive(Component, Deref, DerefMut)]
 pub struct DroppedItem(pub ItemStack);
 

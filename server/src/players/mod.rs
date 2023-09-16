@@ -10,7 +10,7 @@ mod actions;
 mod inventory;
 mod player;
 
-pub use player::*;
+pub use player::{PlayerName, PlayerMarker, PlayerSave};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
@@ -72,7 +72,6 @@ impl Players {
 fn add_players(
     mut commands: Commands,
     net: Res<NetworkServer>,
-    players: Res<Players>,
     database: Res<DatabaseArc>,
     models: Res<Models>,
     mut respawn_events: EventWriter<PlayerRespawnEvent>,
@@ -80,10 +79,10 @@ fn add_players(
 ) {
     for (player_entity, connection, username) in player_query.iter() {
         let player_bundle = if let Some(saved_player) = database.load_player(username) {
-            PlayerBundle::from(saved_player)
+            player::PlayerBundle::from(saved_player)
         } else {
             respawn_events.send(PlayerRespawnEvent(player_entity));
-            PlayerBundle::default()
+            player::PlayerBundle::default()
         };
 
         net.send_one(
@@ -143,7 +142,7 @@ fn handle_player_position_updates(
 // how the player model should be positioned.
 fn handle_player_rotation_updates(
     players: Res<Players>,
-    mut player_query: Query<(&mut PlayerCamera, &Children)>,
+    mut player_query: Query<(&mut player::PlayerCamera, &Children)>,
     mut player_model_transforms: Query<&mut F64Transform, With<Model>>,
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
 ) {

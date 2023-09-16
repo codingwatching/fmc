@@ -8,19 +8,18 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    physics::{shapes::Aabb, Velocity},
-    players::{PlayerCamera, Players},
-    utils,
+    physics::Velocity,
+    players::Players,
     world::{
         blocks::{BlockFace, BlockRotation, BlockState, Blocks, Friction},
         items::{DroppedItem, Item, ItemStack, ItemStorage, Items},
         //blocks::Blocks,
         models::{Model, ModelBundle, ModelVisibility, Models},
-        world_map::{chunk_manager::ChunkSubscriptions, BlockUpdate, WorldMap},
+        world_map::{BlockUpdate, WorldMap},
     },
 };
 
-use super::{PlayerEquippedItem, PlayerMarker};
+use super::player::{PlayerEquippedItem, PlayerMarker, PlayerCamera};
 
 // Keeps the state of how far along a block is to breaking
 #[derive(Debug)]

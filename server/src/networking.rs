@@ -5,7 +5,7 @@ use fmc_networking::{messages, NetworkData, NetworkServer, ServerNetworkEvent};
 
 use crate::{
     database::DatabaseArc,
-    players::{PlayerBundle, PlayerName, PlayerRespawnEvent, Players},
+    players::{PlayerName, PlayerRespawnEvent, Players},
     settings::ServerSettings,
     world::{blocks::Blocks, items::Items, models::Models},
 };

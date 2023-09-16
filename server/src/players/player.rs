@@ -10,6 +10,11 @@ use crate::{
     world::items::{ItemStack, ItemStorage, crafting::CraftingTable},
 };
 
+// TODO: Mobs would share many of these components, only PlayerMarker is unique really. This could
+// benefit from shared systems. The problem is when something changes about a player it needs to be
+// sent immediately to reduce latency. Waiting for Changed = a tick's worth of lag. Also I don't
+// know where to place the components if they were to be shared.
+
 #[derive(Component, Default)]
 pub struct PlayerMarker;
 
@@ -28,6 +33,9 @@ pub struct PlayerEquipment([ItemStack; 4]);
 #[derive(Component, Default, Serialize, Deserialize)]
 pub struct PlayerEquippedItem(pub usize);
 
+#[derive(Component, Default, Serialize, Deserialize)]
+pub struct PlayerHealth(pub u8);
+
 ///// Custom spawn point, not used unless explicitly set
 //#[derive(Component)]
 //pub struct PlayerSpawnPoint(Vec3);
@@ -42,6 +50,7 @@ pub struct PlayerBundle {
     equipment: PlayerEquipment,
     equipped_item: PlayerEquippedItem,
     crafting_table: CraftingTable,
+    health: PlayerHealth,
     pub aabb: Aabb,
     marker: PlayerMarker,
 }
@@ -62,6 +71,7 @@ impl Default for PlayerBundle {
             equipment: PlayerEquipment::default(),
             equipped_item: PlayerEquippedItem::default(),
             crafting_table: CraftingTable(vec![ItemStack::default(); 4]),
+            health: PlayerHealth(20),
             aabb: Aabb::from_min_max(DVec3::ZERO, DVec3::new(0.6, 1.8, 0.6)),
             marker: PlayerMarker::default(),
         }
@@ -75,6 +85,7 @@ pub struct PlayerSave {
     camera_rotation: DQuat,
     inventory: ItemStorage,
     equipment: PlayerEquipment,
+    health: PlayerHealth,
 }
 
 impl From<PlayerSave> for PlayerBundle {
@@ -88,6 +99,7 @@ impl From<PlayerSave> for PlayerBundle {
             }),
             inventory: save.inventory,
             equipment: save.equipment,
+            health: save.health,
             // TODO: Remember equipped and send to player
             aabb: Aabb::from_min_max(DVec3::ZERO, DVec3::new(0.6, 1.8, 0.6)),
             ..default()
