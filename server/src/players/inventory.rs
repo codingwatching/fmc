@@ -5,7 +5,7 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 use crate::{
     players::Players,
     world::items::{
-        crafting::{RecipeCollection, Recipes},
+        crafting::{RecipeCollection, Recipes, CraftingTable},
         ItemStack, ItemStorage, Items,
     },
 };
@@ -44,7 +44,7 @@ struct HeldItemStack(ItemStack);
 struct PlayerInventoryInterface<'a> {
     inventory: &'a mut ItemStorage,
     equipment: &'a mut PlayerEquipment,
-    crafting_table: &'a mut PlayerInventoryCraftingTable,
+    crafting_table: &'a mut CraftingTable,
     recipes: &'a RecipeCollection,
     item_configs: &'a Items,
 }
@@ -170,7 +170,7 @@ impl PlayerInventoryInterface<'_> {
             }
         }
 
-        if let Some((item, amount)) = self.recipes.get_output(&self.crafting_table.as_slice()) {
+        if let Some((item, amount)) = self.recipes.get_output(&self.crafting_table) {
             crafting_table.add_itembox(
                 "inventory/crafting_output",
                 0,
@@ -250,7 +250,7 @@ impl PlayerInventoryInterface<'_> {
                 interface_update.inventory = Some(self.build_crafting_table());
             }
             "inventory/crafting_output" => {
-                if let Some(recipe) = self.recipes.get_recipe(&self.crafting_table.as_slice()) {
+                if let Some(recipe) = self.recipes.get_recipe(&self.crafting_table) {
                     let output_item = recipe.output_item();
                     let item_config = self.item_configs.get_config(&output_item.id);
 
@@ -263,7 +263,7 @@ impl PlayerInventoryInterface<'_> {
                         };
 
                         if let Some((item, amount)) =
-                            recipe.craft(&mut self.crafting_table.as_mut_slice(), amount)
+                            recipe.craft(&mut self.crafting_table, amount)
                         {
                             // TODO: Clean up when craft return value is converted to ItemStack
                             *held_item_stack = ItemStack::new(
@@ -408,14 +408,14 @@ fn update_inventory_interface(
         Query<(
             &mut ItemStorage,
             &mut PlayerEquipment,
-            &mut PlayerInventoryCraftingTable,
+            &mut CraftingTable,
             &mut HeldItemStack,
         )>,
         Query<
             (
                 &mut ItemStorage,
                 &mut PlayerEquipment,
-                &mut PlayerInventoryCraftingTable,
+                &mut CraftingTable,
                 &ConnectionId,
             ),
             Changed<ItemStorage>,

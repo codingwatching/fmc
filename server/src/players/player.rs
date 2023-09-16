@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
     physics::shapes::Aabb,
-    world::items::{Item, ItemStack, ItemStorage},
+    world::items::{ItemStack, ItemStorage, crafting::CraftingTable},
 };
 
 #[derive(Component, Default)]
@@ -44,7 +44,7 @@ pub struct PlayerBundle {
     inventory: ItemStorage,
     equipment: PlayerEquipment,
     equipped_item: PlayerEquippedItem,
-    crafting_table: PlayerInventoryCraftingTable,
+    crafting_table: CraftingTable,
     pub aabb: Aabb,
     marker: PlayerMarker,
 }
@@ -64,7 +64,7 @@ impl Default for PlayerBundle {
             inventory: ItemStorage(vec![ItemStack::default(); 36]),
             equipment: PlayerEquipment::default(),
             equipped_item: PlayerEquippedItem::default(),
-            crafting_table: PlayerInventoryCraftingTable::default(),
+            crafting_table: CraftingTable(vec![ItemStack::default(); 4]),
             aabb: Aabb::from_min_max(DVec3::ZERO, DVec3::new(0.6, 1.8, 0.6)),
             marker: PlayerMarker::default(),
         }
@@ -83,7 +83,6 @@ pub struct PlayerSave {
 impl From<PlayerSave> for PlayerBundle {
     fn from(save: PlayerSave) -> Self {
         Self {
-            global_transform: F64GlobalTransform::default(),
             transform: F64Transform::from_translation(save.position),
             camera: PlayerCamera(F64Transform {
                 translation: DVec3::new(0.3, 1.8, 0.3),
@@ -93,10 +92,8 @@ impl From<PlayerSave> for PlayerBundle {
             inventory: save.inventory,
             equipment: save.equipment,
             // TODO: Remember equipped and send to player
-            equipped_item: PlayerEquippedItem::default(),
-            crafting_table: PlayerInventoryCraftingTable::default(),
             aabb: Aabb::from_min_max(DVec3::ZERO, DVec3::new(0.6, 1.8, 0.6)),
-            marker: PlayerMarker::default(),
+            ..default()
         }
     }
 }

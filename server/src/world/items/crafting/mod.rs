@@ -120,6 +120,9 @@ fn load_recipes(mut commands: Commands, items: Res<Items>) {
     })
 }
 
+#[derive(Component, Deref, DerefMut)]
+pub struct CraftingTable(pub Vec<ItemStack>);
+
 #[derive(Serialize, Deserialize)]
 struct RecipeJson {
     collection_name: String,
@@ -163,14 +166,14 @@ impl Recipe {
     /// Craft items by consuming the input. Will produce 'amount' times the recipe output amount
     /// items (or as many as possible if amount is more than is possible).
     /// DOES NOT TEST THAT THE INPUT MATCHES
-    pub fn craft(&self, input: &mut [ItemStack], amount: u32) -> Option<(Item, u32)> {
+    pub fn craft(&self, input: &mut CraftingTable, amount: u32) -> Option<(Item, u32)> {
         return match self {
             Recipe::Shaped(r) => r.craft(input, amount),
         };
     }
 
     /// Get how many of the output item can be crafted given the input.
-    fn get_craftable_amount(&self, input: &[ItemStack]) -> u32 {
+    fn get_craftable_amount(&self, input: &CraftingTable) -> u32 {
         return match self {
             Recipe::Shaped(r) => r.get_craftable_amount(input),
         };
@@ -224,16 +227,16 @@ impl RecipeCollection {
         }
     }
 
-    pub fn get_recipe(&self, input: &[ItemStack]) -> Option<&Recipe> {
+    pub fn get_recipe(&self, input: &CraftingTable) -> Option<&Recipe> {
         if self.shaped {
-            let pattern = Pattern::Shaped(shaped::Pattern::from(input));
+            let pattern = Pattern::Shaped(shaped::Pattern::from(input.as_slice()));
             return self.recipes.get(&pattern);
         }
         return None;
     }
 
     /// Get which item and how many can be crafted from the input.
-    pub fn get_output(&self, input: &[ItemStack]) -> Option<(&Item, u32)> {
+    pub fn get_output(&self, input: &CraftingTable) -> Option<(&Item, u32)> {
         if let Some(recipe) = self.get_recipe(input) {
             let can_craft = recipe.get_craftable_amount(input);
             if can_craft > 0 {
