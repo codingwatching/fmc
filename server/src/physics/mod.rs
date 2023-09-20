@@ -23,9 +23,19 @@ impl Plugin for PhysicsPlugin {
     }
 }
 
+/// Enables physics simulation for an entity
+#[derive(Component, Default)]
+pub struct Mass;
+
 /// Speed and direction of an object that should have physics.
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Default, Deref, DerefMut)]
 pub struct Velocity(pub DVec3);
+
+#[derive(Bundle, Default)]
+pub struct PhysicsBundle {
+    pub mass: Mass,
+    pub velocity: Velocity,
+}
 
 // TODO: Friction
 // TODO: The entities will not move if they have come to a standstill, this is to refrain from

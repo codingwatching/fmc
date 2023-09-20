@@ -1,7 +1,8 @@
 use bevy::{
+    asset::io::AssetProviders,
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
-    window::WindowFocused, asset::io::AssetProviders,
+    window::WindowFocused,
 };
 
 mod assets;
@@ -22,10 +23,7 @@ fn main() {
         //.insert_resource(Msaa { samples: 4 })
         .insert_resource(FixedTime::new_from_secs(1.0 / 144.0))
         // This changes default asset folder to "." from "./assets"
-        .insert_resource(
-            AssetProviders::default()
-                .with_default_file_source("".to_string())
-        )
+        .insert_resource(AssetProviders::default().with_default_file_source("".to_string()))
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin::unprocessed())

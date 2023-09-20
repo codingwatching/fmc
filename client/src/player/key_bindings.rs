@@ -175,7 +175,9 @@ fn handle_key_presses(
                     }
                 };
 
-                interface_events.send(InterfaceToggleEvent(*entity));
+                interface_events.send(InterfaceToggleEvent {
+                    interface_entity: *entity,
+                });
             } else {
                 net.send_message(messages::ChatMessage {
                     username: "".to_owned(),

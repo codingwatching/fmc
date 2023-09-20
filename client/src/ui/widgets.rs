@@ -147,10 +147,9 @@ impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
                     ),
                     style: Style {
                         position_type: PositionType::Absolute,
-                        align_self: AlignSelf::Center,
                         margin: UiRect {
-                            left: Val::Percent(0.7),
-                            top: Val::Percent(1.0),
+                            top: Val::Px(1.7),
+                            left: Val::Px(2.0),
                             ..default()
                         },
                         ..default()
@@ -172,7 +171,6 @@ impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
                     ),
                     style: Style {
                         position_type: PositionType::Absolute,
-                        align_self: AlignSelf::Center,
                         ..default()
                     },
                     ..default()

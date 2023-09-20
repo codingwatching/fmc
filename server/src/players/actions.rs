@@ -8,7 +8,7 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    physics::Velocity,
+    physics::{PhysicsBundle, Velocity},
     players::Players,
     world::{
         blocks::{BlockFace, BlockRotation, BlockState, Blocks, Friction},
@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-use super::player::{PlayerEquippedItem, PlayerMarker, PlayerCamera};
+use super::player::{Camera, EquippedItem, PlayerMarker};
 
 // Keeps the state of how far along a block is to breaking
 #[derive(Debug)]
@@ -42,7 +42,7 @@ pub fn handle_left_clicks(
     players: Res<Players>,
     items: Res<Items>,
     models: Res<Models>,
-    player_query: Query<(&F64GlobalTransform, &PlayerCamera)>,
+    player_query: Query<(&F64GlobalTransform, &Camera)>,
     mut model_query: Query<(&mut Model, &mut ModelVisibility), With<BreakingBlockTag>>,
     mut being_broken: Local<HashMap<IVec3, BreakingBlock>>,
 ) {
@@ -158,8 +158,11 @@ pub fn handle_left_clicks(
                                 ..default()
                             },
                         },
+                        PhysicsBundle {
+                            velocity: Velocity(DVec3::new(velocity_x, 5.5, velocity_z)),
+                            ..default()
+                        },
                         // TODO: This velocity feels off
-                        Velocity(DVec3::new(velocity_x, 5.5, velocity_z)),
                         aabb,
                     ));
                 }
@@ -214,9 +217,9 @@ pub fn handle_right_clicks(
     mut player_query: Query<
         (
             &mut ItemStorage,
-            &PlayerEquippedItem,
+            &EquippedItem,
             &F64GlobalTransform,
-            &PlayerCamera,
+            &Camera,
         ),
         With<PlayerMarker>,
     >,

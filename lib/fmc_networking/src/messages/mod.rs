@@ -1,6 +1,9 @@
 /// Everything that happens on connection and disconnection
 mod connection;
-pub use connection::{ClientIdentification, Disconnect, ServerConfig, Time, AssetRequest, AssetResponse, ClientFinishedLoading, RenderDistance};
+pub use connection::{
+    AssetRequest, AssetResponse, ClientFinishedLoading, ClientIdentification, Disconnect,
+    RenderDistance, ServerConfig, Time,
+};
 
 /// Chunk management
 mod chunk;
@@ -17,12 +20,12 @@ pub use models::{DeleteModel, ModelUpdateAsset, ModelUpdateTransform, NewModel};
 /// Changes to the player.
 mod player;
 pub use player::{
-    LeftClick, PlayerCameraRotation, PlayerConfiguration, PlayerPosition, RightClick, ChatMessage
+    ChatMessage, LeftClick, PlayerCameraRotation, PlayerConfiguration, PlayerPosition, RightClick,
 };
 
 /// User interface
 mod interfaces;
 pub use interfaces::{
-    InterfaceClose, InterfaceItemBoxUpdate, InterfaceOpen,
-    InterfacePlaceItem, InterfaceTakeItem, InterfaceEquipItem
+    InterfaceButtonPress, InterfaceClose, InterfaceEquipItem, InterfaceImageUpdate,
+    InterfaceItemBoxUpdate, InterfaceOpen, InterfacePlaceItem, InterfaceTakeItem,
 };

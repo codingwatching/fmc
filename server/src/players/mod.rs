@@ -7,18 +7,21 @@ use std::collections::HashMap;
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 mod actions;
+mod life;
 mod inventory;
+mod movement;
 mod player;
 
-pub use player::{PlayerName, PlayerMarker, PlayerSave};
+pub use player::{PlayerMarker, PlayerName, PlayerSave};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
     constants::CHUNK_SIZE,
     database::DatabaseArc,
+    physics::Velocity,
     utils,
     world::{
-        blocks::{Blocks, Friction},
+        blocks::Blocks,
         models::{Model, ModelBundle, ModelVisibility, Models},
         world_map::{chunk::Chunk, terrain_generation::TerrainGeneratorArc},
         WorldProperties,
@@ -28,10 +31,10 @@ use crate::{
 pub struct PlayersPlugin;
 impl Plugin for PlayersPlugin {
     fn build(&self, app: &mut App) {
-        app //.add_event::<PlayerDeathEvent>()
-            .add_event::<PlayerRespawnEvent>()
+        app .add_event::<RespawnEvent>()
             .insert_resource(Players::default())
             .add_plugins(inventory::InventoryPlugin)
+            .add_plugins(life::LifePlugin)
             // This has to be preupdate to ensure that all player components are available by the
             // time the first packet handlers might access them.
             .add_systems(PreUpdate, add_players)
@@ -49,9 +52,9 @@ impl Plugin for PlayersPlugin {
 }
 
 #[derive(Event)]
-pub struct PlayerRespawnEvent(pub Entity);
-
-//pub struct PlayerDeathEvent(Entity);
+pub struct RespawnEvent{
+    pub entity: Entity
+}
 
 #[derive(Default, Deref, DerefMut, Resource)]
 pub struct Players(HashMap<ConnectionId, Entity>);
@@ -74,14 +77,16 @@ fn add_players(
     net: Res<NetworkServer>,
     database: Res<DatabaseArc>,
     models: Res<Models>,
-    mut respawn_events: EventWriter<PlayerRespawnEvent>,
+    mut respawn_events: EventWriter<RespawnEvent>,
     player_query: Query<(Entity, &ConnectionId, &PlayerName), Added<PlayerName>>,
 ) {
     for (player_entity, connection, username) in player_query.iter() {
         let player_bundle = if let Some(saved_player) = database.load_player(username) {
             player::PlayerBundle::from(saved_player)
         } else {
-            respawn_events.send(PlayerRespawnEvent(player_entity));
+            respawn_events.send(RespawnEvent{
+                entity: player_entity
+            });
             player::PlayerBundle::default()
         };
 
@@ -97,6 +102,7 @@ fn add_players(
             *connection,
             messages::PlayerPosition {
                 position: player_bundle.transform.translation,
+                velocity: DVec3::ZERO,
             },
         );
 
@@ -127,14 +133,17 @@ fn add_players(
 }
 
 fn handle_player_position_updates(
+    net: Res<NetworkServer>,
     players: Res<Players>,
-    mut player_query: Query<&mut F64Transform, With<PlayerMarker>>,
+    mut player_query: Query<(&mut F64Transform, &mut Velocity), With<PlayerMarker>>,
     mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
 ) {
     for position_update in position_events.read() {
         let player_entity = players.get(&position_update.source);
-        let mut player_position = player_query.get_mut(player_entity).unwrap();
+        let (mut player_position, mut player_velocity) =
+            player_query.get_mut(player_entity).unwrap();
         player_position.translation = position_update.position;
+        player_velocity.0 = position_update.velocity;
     }
 }
 
@@ -142,7 +151,7 @@ fn handle_player_position_updates(
 // how the player model should be positioned.
 fn handle_player_rotation_updates(
     players: Res<Players>,
-    mut player_query: Query<(&mut player::PlayerCamera, &Children)>,
+    mut player_query: Query<(&mut player::Camera, &Children)>,
     mut player_model_transforms: Query<&mut F64Transform, With<Model>>,
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
 ) {
@@ -170,7 +179,7 @@ fn respawn_players(
     world_properties: Res<WorldProperties>,
     terrain_generator: Res<TerrainGeneratorArc>,
     database: Res<DatabaseArc>,
-    mut respawn_events: EventReader<PlayerRespawnEvent>,
+    mut respawn_events: EventReader<RespawnEvent>,
     connection_query: Query<&ConnectionId>,
 ) {
     for event in respawn_events.read() {
@@ -224,13 +233,13 @@ fn respawn_players(
             chunk_position.y += CHUNK_SIZE as i32;
         };
 
-        if let Ok(connection_id) = connection_query.get(event.0) {
-            net.send_one(
-                *connection_id,
-                messages::PlayerPosition {
-                    position: spawn_position.as_dvec3(),
-                },
-            );
-        }
+        let connection_id = connection_query.get(event.entity).unwrap();
+        net.send_one(
+            *connection_id,
+            messages::PlayerPosition {
+                position: spawn_position.as_dvec3(),
+                velocity: DVec3::ZERO,
+            },
+        );
     }
 }

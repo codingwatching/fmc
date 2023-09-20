@@ -1,7 +1,8 @@
+use std::collections::HashMap;
+
 use bevy::{
     prelude::*,
     render::{color::Color, render_resource::Face},
-    utils::HashMap
 };
 use fmc_networking::NetworkClient;
 use serde::Deserialize;

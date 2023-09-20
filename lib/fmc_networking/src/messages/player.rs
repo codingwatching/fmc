@@ -11,14 +11,16 @@ pub struct PlayerConfiguration {
     pub aabb_dimensions: Vec3,
 }
 
-// Chesterton: Position and Rotation are separated intentionally. It made for better code
-// ergonomics because the camera transform and the player transform are disjoint. Also saves on
-// bandwidth(although that might be negligible)
+// TODO: This doesn't need to be f64, the server can just convert it. The velocity is also only
+// sent for convenience, it's slightly hard to compute server side, and since I haven't thought
+// about validation it might as well abuse it.
 /// A player's position. Used by client to report its position or for the server to dictate.
 #[derive(NetworkMessage, ClientBound, ServerBound, Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerPosition {
     /// Position of the player.
     pub position: DVec3,
+    /// Velocity of the player
+    pub velocity: DVec3,
 }
 
 /// A player's camera rotation. Used by client to report its facing or for the server to dictate.

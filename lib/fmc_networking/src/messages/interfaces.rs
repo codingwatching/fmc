@@ -16,6 +16,13 @@ pub struct InterfaceClose {
     pub name: String,
 }
 
+/// Notifies the server a button was pressed.
+#[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone)]
+pub struct InterfaceButtonPress {
+    /// Path of the button that was pressed.
+    pub interface_path: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ItemBox {
     /// Index of the item box in the interface.
@@ -68,16 +75,15 @@ impl InterfaceItemBoxUpdate {
             self.updates.insert(name.to_owned(), Vec::new());
         }
 
-        self.updates.get_mut(name).unwrap()
-            .push(ItemBox {
-                index: item_box_id,
-                item_stack: ItemStack {
-                    item_id: Some(item_id),
-                    quantity,
-                    durability,
-                    description: description.map(|x| x.to_owned()),
-                },
-            })
+        self.updates.get_mut(name).unwrap().push(ItemBox {
+            index: item_box_id,
+            item_stack: ItemStack {
+                item_id: Some(item_id),
+                quantity,
+                durability,
+                description: description.map(|x| x.to_owned()),
+            },
+        })
     }
 
     /// Empty the contents of an itembox
@@ -85,22 +91,24 @@ impl InterfaceItemBoxUpdate {
         if !self.updates.contains_key(name) {
             self.updates.insert(name.to_owned(), Vec::new());
         }
-        self.updates.get_mut(name).unwrap()
-            .push(ItemBox {
-                index: item_box_id,
-                item_stack: ItemStack {
-                    item_id: None,
-                    quantity: 0,
-                    durability: None,
-                    description: None,
-                },
-            })
+        self.updates.get_mut(name).unwrap().push(ItemBox {
+            index: item_box_id,
+            item_stack: ItemStack {
+                item_id: None,
+                quantity: 0,
+                durability: None,
+                description: None,
+            },
+        })
     }
 
     pub fn combine(&mut self, other: InterfaceItemBoxUpdate) {
         for (interface_name, mut updates) in other.updates.into_iter() {
             if self.updates.contains_key(&interface_name) {
-                self.updates.get_mut(&interface_name).unwrap().append(&mut updates);
+                self.updates
+                    .get_mut(&interface_name)
+                    .unwrap()
+                    .append(&mut updates);
             } else {
                 self.updates.insert(interface_name, updates);
             }
@@ -140,4 +148,11 @@ pub struct InterfaceEquipItem {
     pub interface_path: String,
     /// Item box index
     pub index: u32,
+}
+
+/// Toggle the visbility of images
+#[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone, Default)]
+pub struct InterfaceImageUpdate {
+    /// List of interface paths of the images and if they should be visible.
+    pub updates: Vec<(String, bool)>,
 }

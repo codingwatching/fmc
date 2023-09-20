@@ -4,13 +4,15 @@ use bevy::{
     ecs::system::EntityCommands,
     prelude::*,
     render::texture::CompressedImageFormats,
+    text::TextLayoutInfo,
+    ui::{widget::TextFlags, ContentSize},
     window::{CursorGrabMode, PrimaryWindow},
 };
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use crate::game_state::GameState;
+use crate::{game_state::GameState, ui::DEFAULT_FONT_HANDLE};
 
 use super::items::{ItemConfig, ItemStack, Items};
 
@@ -33,9 +35,11 @@ impl Plugin for InterfacePlugin {
                 Update,
                 (
                     handle_interface_item_box_updates,
+                    handle_interface_image_updates,
                     handle_interface_toggle_events,
                     handle_interface_open_request,
                     handle_interface_close_request,
+                    button_interaction,
                     item_box_mouse_interaction,
                     update_cursor_item_stack_position,
                     update_item_box_images,
@@ -61,13 +65,23 @@ pub struct Interfaces(HashMap<String, Entity>);
 #[derive(Component)]
 pub struct InterfacePath(pub String);
 
-// Marker struct only for interface roots.
+// Marker struct for interface root nodes.
 #[derive(Component)]
 struct InterfaceRoot;
 
+// Marker struct for interface roots that will only be shown on their own.
+#[derive(Component)]
+struct Exclusive;
+
+// Marker struct for buttons.
+#[derive(Component)]
+struct InterfaceButton;
+
 /// Event used by keybindings to toggle an interface open or closed.
 #[derive(Event)]
-pub struct InterfaceToggleEvent(pub Entity);
+pub struct InterfaceToggleEvent {
+    pub interface_entity: Entity,
+}
 
 #[derive(Component)]
 pub struct ItemBox {
@@ -125,7 +139,7 @@ impl Default for ItemBoxSection {
     }
 }
 
-#[derive(Default, Deserialize, Component, Clone)]
+#[derive(Default, Deserialize, Clone)]
 #[serde(default, deny_unknown_fields)]
 struct NodeConfig {
     /// Optional name, the server uses this when referring to an interfaces.
@@ -136,9 +150,13 @@ struct NodeConfig {
     content: NodeContent,
     /// Image displayed in the node.
     image: Option<String>,
-    /// If it should overlap(non exclusive) or replace(exclusive) interfaces when opened.
-    #[serde(rename = "exclusive", default)]
-    pub is_exclusive: bool,
+    /// Fill color, can be used to tint image
+    background_color: Option<Color>,
+    /// Color used for borders
+    border_color: Option<Color>,
+    /// If it should overlap(false) or replace(true) interfaces when opened, only
+    /// works for interface roots.
+    exclusive: bool,
 }
 
 // TODO: As json I want to to be like "content: [..]" for Nodes, but all others should be
@@ -150,6 +168,12 @@ enum NodeContent {
     None,
     Nodes(Vec<NodeConfig>),
     ItemSection(ItemBoxSection),
+    Button(Vec<NodeConfig>),
+    Text {
+        text: String,
+        font_size: f32,
+        color: Color,
+    },
 }
 
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -443,21 +467,22 @@ pub fn load_interfaces(
                 config.style.clone().into()
             };
 
+            let background_color = if let Some(background_color) = config.background_color {
+                background_color
+            } else if config.image.is_some() {
+                Color::WHITE
+            } else {
+                Color::NONE
+            };
+
             entity_commands.insert((
-                ImageBundle {
-                    style,
-                    background_color: config
-                        .image
-                        .as_ref()
-                        .map_or(Color::NONE.into(), |_| Color::WHITE.into()),
-                    image: config.image.as_ref().map_or(UiImage::default(), |path| {
-                        asset_server
-                            .load(INTERFACE_TEXTURE_PATH.to_owned() + &path)
-                            .into()
-                    }),
+                NodeBundle {
+                    style: style.clone(),
+                    background_color: background_color.into(),
+                    border_color: config.border_color.unwrap_or(Color::NONE).into(),
                     ..default()
                 },
-                config.clone(),
+                config.image.as_ref().map_or(UiImage::default(), |path| asset_server.load(INTERFACE_TEXTURE_PATH.to_owned() + &path).into()),
             ));
 
             match &config.content {
@@ -478,7 +503,74 @@ pub fn load_interfaces(
                 NodeContent::ItemSection(section) => {
                     entity_commands.insert(section.clone());
                 }
-                NodeContent::None => ()
+                NodeContent::Button(nodes) => {
+                    entity_commands.insert((Interaction::default(), Button, InterfaceButton));
+                    entity_commands.with_children(|parent| {
+                        for child_config in nodes.iter() {
+                            let mut parent_entity_commands = parent.spawn_empty();
+                            spawn_interface(
+                                &mut parent_entity_commands,
+                                path.clone(),
+                                child_config,
+                                interfaces,
+                                asset_server,
+                            )
+                        }
+                    });
+                }
+                NodeContent::Text {
+                    text,
+                    font_size,
+                    color,
+                } => {
+                    entity_commands.with_children(|parent| {
+                        parent.spawn(
+                            TextBundle {
+                                text: Text::from_section(text, TextStyle {
+                                    font_size: *font_size,
+                                    font: DEFAULT_FONT_HANDLE,
+                                    color: Color::BLACK,
+                                    ..default()
+                                }),
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    margin: UiRect {
+                                        top: Val::Px(font_size / 5.3),
+                                        left: Val::Px(font_size / 4.5),
+                                        ..default()
+                                    },
+                                    ..default()
+                                },
+                                ..default()
+                                
+                            });
+                        parent.spawn(
+                            TextBundle {
+                                text: Text::from_section(text, TextStyle {
+                                    font_size: *font_size,
+                                    font: DEFAULT_FONT_HANDLE,
+                                    color: *color,
+                                    ..default()
+                                }),
+                                ..default()
+                                
+                            });
+                    });
+                    //entity_commands.insert((
+                    //    Text::from_section(
+                    //        text,
+                    //        TextStyle {
+                    //            font_size: *font_size,
+                    //            font: DEFAULT_FONT_HANDLE,
+                    //            color: *color,
+                    //        },
+                    //    ),
+                    //    TextLayoutInfo::default(),
+                    //    TextFlags::default(),
+                    //    ContentSize::default(),
+                    //));
+                }
+                NodeContent::None => (),
             }
         }
 
@@ -501,6 +593,10 @@ pub fn load_interfaces(
                     &mut interfaces,
                     &asset_server,
                 );
+
+                if node_config.exclusive {
+                    entity_commands.insert(Exclusive);
+                }
 
                 entity_commands.insert((
                     InterfaceRoot,
@@ -535,11 +631,50 @@ pub fn load_interfaces(
         });
 }
 
+fn handle_interface_image_updates(
+    net: Res<NetworkClient>,
+    interfaces: Res<Interfaces>,
+    mut image_visibility_query: Query<&mut Visibility, With<UiImage>>,
+    mut item_box_update_events: EventReader<NetworkData<messages::InterfaceImageUpdate>>,
+) {
+    for image_updates in item_box_update_events.read() {
+        for (interface_name, new_visibility) in image_updates.updates.iter() {
+            let interface_entity = match interfaces.get(interface_name) {
+                Some(i) => *i,
+                None => {
+                    net.disconnect(&format!(
+                        "Server sent an update for the interface: '{}', but there is no interface by that name.",
+                        &interface_name
+                    ));
+                    return;
+                }
+            };
+
+            let mut visibility = match image_visibility_query.get_mut(interface_entity) {
+                Ok(i) => i,
+                Err(_) => {
+                    net.disconnect(&format!(
+                        "Server sent an image update for the interface: '{}', but the interface doesn't contain images.",
+                        &interface_name
+                    ));
+                    return;
+                }
+            };
+
+            if *new_visibility == true {
+                *visibility = Visibility::Inherited;
+            } else {
+                *visibility = Visibility::Hidden;
+            }
+        }
+    }
+}
+
 // Add content to the interface sent from the server.
 fn handle_interface_item_box_updates(
     mut commands: Commands,
-    interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
+    interfaces: Res<Interfaces>,
     items: Res<Items>,
     interface_item_box_query: Query<Option<&Children>, With<ItemBoxSection>>,
     mut item_box_update_events: EventReader<NetworkData<messages::InterfaceItemBoxUpdate>>,
@@ -557,8 +692,7 @@ fn handle_interface_item_box_updates(
                 }
             };
 
-            let children = match interface_item_box_query.get(interface_entity)
-            {
+            let children = match interface_item_box_query.get(interface_entity) {
                 Ok(c) => c,
                 Err(_) => {
                     net.disconnect(&format!(
@@ -612,7 +746,6 @@ fn handle_interface_item_box_updates(
                     entity_commands
                 };
 
-
                 entity_commands
                     .insert(ImageBundle {
                         // TODO: This doesn't actually block? Can't highlight items because of it.
@@ -624,7 +757,7 @@ fn handle_interface_item_box_updates(
                                 left: Val::Px(0.5),
                                 right: Val::Px(0.5),
                                 top: Val::Px(0.1),
-                                bottom: Val::Px(0.1)
+                                bottom: Val::Px(0.1),
                             },
                             // https://github.com/bevyengine/bevy/issues/6879
                             //padding: UiRect {
@@ -660,10 +793,7 @@ fn handle_interface_toggle_events(
     items: Res<Items>,
     net: Res<NetworkClient>,
     mut interface_stack: ResMut<InterfaceStack>,
-    mut interface_query: Query<
-        (Entity, &NodeConfig, &mut Visibility),
-        With<InterfaceRoot>,
-    >,
+    mut interface_query: Query<(Entity, &mut Visibility, Has<Exclusive>), With<InterfacePath>>,
     item_box_section_query: Query<(
         &ItemBoxSection,
         Option<&Children>,
@@ -675,6 +805,35 @@ fn handle_interface_toggle_events(
     mut interface_toggle_events: EventReader<InterfaceToggleEvent>,
 ) {
     for event in interface_toggle_events.read() {
+        let (_, mut visibility, toggled_is_exclusive) =
+            interface_query.get_mut(event.interface_entity).unwrap();
+        if *visibility == Visibility::Visible {
+            *visibility = Visibility::Hidden;
+        } else {
+            *visibility = Visibility::Visible;
+        }
+
+        if toggled_is_exclusive {
+            if *visibility == Visibility::Visible {
+                for (entity, mut visibility, is_exclusive) in interface_query.iter_mut() {
+                    if entity != event.interface_entity && *visibility == Visibility::Visible {
+                        *visibility = Visibility::Hidden;
+                        if !is_exclusive {
+                            interface_stack.push(entity);
+                        }
+                    }
+                }
+            } else if *visibility == Visibility::Hidden {
+                for interface_entity in interface_stack.drain(..) {
+                    let (_, mut visibility, _) = interface_query.get_mut(interface_entity).unwrap();
+                    *visibility = Visibility::Visible;
+                }
+            }
+        }
+
+        // TODO: This is a crude 'If any interface changes visibility, return the item'. It will
+        // fail if there is no room. And I don't know what should happen if it's not an interface
+        // root that is toggled.
         let mut cursor_box = cursor_item_box_query.single_mut();
         if !cursor_box.is_empty() {
             'outer: for (item_box_section, children, view_visibility, interface_path) in
@@ -729,31 +888,6 @@ fn handle_interface_toggle_events(
                 }
             }
         }
-
-        let mut was_exclusive = false;
-        for (entity, interface_config, mut visibility) in interface_query.iter_mut() {
-            if entity == event.0 {
-                if *visibility == Visibility::Visible {
-                    *visibility = Visibility::Hidden;
-                    was_exclusive = interface_config.is_exclusive;
-                } else {
-                    *visibility = Visibility::Visible;
-                }
-            } else if *visibility == Visibility::Visible {
-                *visibility = Visibility::Hidden;
-
-                if !interface_config.is_exclusive {
-                    interface_stack.push(entity);
-                }
-            }
-        }
-
-        if was_exclusive {
-            for interface_entity in interface_stack.drain(..) {
-                let (_, _, mut visibility) = interface_query.get_mut(interface_entity).unwrap();
-                *visibility = Visibility::Visible;
-            }
-        }
     }
 }
 
@@ -761,29 +895,35 @@ fn handle_interface_toggle_events(
 fn handle_interface_open_request(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
-    mut interface_query: Query<&mut Visibility, With<InterfaceRoot>>,
+    interface_query: Query<&Visibility, With<InterfacePath>>,
     mut interface_open_events: EventReader<NetworkData<messages::InterfaceOpen>>,
+    mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
 ) {
     for event in interface_open_events.read() {
         let interface_entity = match interfaces.get(&event.name) {
             Some(e) => e,
             None => {
                 net.disconnect(&format!(
-                    "Server sent an interface with name '{}', but there is no interface known by this name.",
+                    "Server sent open request for an interface with name: '{}', but there is no interface known by this name.",
                     event.name
                 ));
                 return;
             }
         };
-        *interface_query.get_mut(*interface_entity).unwrap() = Visibility::Visible;
+        if *interface_query.get(*interface_entity).unwrap() == Visibility::Hidden {
+            interface_toggle_events.send(InterfaceToggleEvent {
+                interface_entity: *interface_entity,
+            });
+        }
     }
 }
 
 fn handle_interface_close_request(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
-    mut interface_query: Query<&mut Visibility, With<InterfaceRoot>>,
+    interface_query: Query<&Visibility, With<InterfacePath>>,
     mut interface_open_events: EventReader<NetworkData<messages::InterfaceClose>>,
+    mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
 ) {
     for event in interface_open_events.read() {
         let interface_entity = match interfaces.get(&event.name) {
@@ -796,7 +936,11 @@ fn handle_interface_close_request(
                 return;
             }
         };
-        *interface_query.get_mut(*interface_entity).unwrap() = Visibility::Hidden;
+        if *interface_query.get(*interface_entity).unwrap() == Visibility::Visible {
+            interface_toggle_events.send(InterfaceToggleEvent {
+                interface_entity: *interface_entity,
+            });
+        }
     }
 }
 
@@ -1061,12 +1205,12 @@ fn update_item_box_images(
 fn cursor_visibility(
     mut window: Query<&mut Window, With<PrimaryWindow>>,
     changed_interfaces: Query<
-        (&NodeConfig, &Visibility),
+        (&Visibility, Has<Exclusive>),
         (Changed<Visibility>, With<InterfaceRoot>),
     >,
 ) {
-    for (interface_config, visibility) in changed_interfaces.iter() {
-        if interface_config.is_exclusive {
+    for (visibility, is_exclusive) in changed_interfaces.iter() {
+        if is_exclusive {
             let mut window = window.single_mut();
 
             if visibility == Visibility::Visible {
@@ -1115,16 +1259,13 @@ fn initial_select_item_box(
 
 fn keyboard_select_item_box(
     keyboard: Res<Input<KeyCode>>,
-    mut item_box_section_query: Query<(
-        &Children,
-        &Visibility,
-        &mut SelectedItemBox,
-    ), With<ItemBoxSection>>,
+    mut item_box_section_query: Query<
+        (&Children, &Visibility, &mut SelectedItemBox),
+        With<ItemBoxSection>,
+    >,
 ) {
     for key in keyboard.get_just_pressed() {
-        for (children, visibility, mut selected) in
-            item_box_section_query.iter_mut()
-        {
+        for (children, visibility, mut selected) in item_box_section_query.iter_mut() {
             if visibility == Visibility::Hidden {
                 continue;
             }
@@ -1169,5 +1310,35 @@ fn keyboard_select_item_box(
                 _ => continue,
             };
         }
+    }
+}
+
+fn button_interaction(
+    net: Res<NetworkClient>,
+    mut button_query: Query<
+        (Ref<Interaction>, &InterfacePath, &mut BackgroundColor),
+        (Changed<Interaction>, With<InterfaceButton>),
+    >,
+) {
+    for (interaction, interface_path, mut background_color) in button_query.iter_mut() {
+        // TODO: This is needed because color is changed in a relative way. May be better to just
+        // store the nodeconfig with the node.
+        if interaction.is_added() {
+            continue;
+        }
+        match *interaction {
+            Interaction::Pressed => {
+                net.send_message(messages::InterfaceButtonPress {
+                    interface_path: interface_path.0.clone(),
+                })
+            }
+            Interaction::Hovered => {
+                background_color.0 *= Vec3::splat(139.0/110.0)
+            }
+            Interaction::None => {
+                background_color.0 *= Vec3::splat(110.0/139.0);
+            }
+        }
+
     }
 }

@@ -4,11 +4,11 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 use crate::{
     players::{
-        player::{PlayerEquipment, PlayerMarker, PlayerEquippedItem},
-        Players
+        player::{Equipment, EquippedItem, PlayerMarker},
+        Players,
     },
     world::items::{
-        crafting::{RecipeCollection, Recipes, CraftingTable},
+        crafting::{CraftingTable, RecipeCollection, Recipes},
         ItemStack, ItemStorage, Items,
     },
 };
@@ -44,7 +44,7 @@ struct HeldItemStack(ItemStack);
 // with the inventory.
 struct PlayerInventoryInterface<'a> {
     inventory: &'a mut ItemStorage,
-    equipment: &'a mut PlayerEquipment,
+    equipment: &'a mut Equipment,
     crafting_table: &'a mut CraftingTable,
     recipes: &'a RecipeCollection,
     item_configs: &'a Items,
@@ -187,7 +187,7 @@ impl PlayerInventoryInterface<'_> {
         return crafting_table;
     }
 
-    // TODO: Validation, this will just crash, 
+    // TODO: Validation, this will just crash,
     // Take items out of a stack through the interface, if the index doesn't match the amount, it
     // returns None.
     fn take_item(
@@ -263,8 +263,7 @@ impl PlayerInventoryInterface<'_> {
                             std::cmp::min(held_item_stack.capacity(), amount)
                         };
 
-                        if let Some((item, amount)) =
-                            recipe.craft(&mut self.crafting_table, amount)
+                        if let Some((item, amount)) = recipe.craft(&mut self.crafting_table, amount)
                         {
                             // TODO: Clean up when craft return value is converted to ItemStack
                             *held_item_stack = ItemStack::new(
@@ -408,14 +407,14 @@ fn update_inventory_interface(
     mut inventory_query: ParamSet<(
         Query<(
             &mut ItemStorage,
-            &mut PlayerEquipment,
+            &mut Equipment,
             &mut CraftingTable,
             &mut HeldItemStack,
         )>,
         Query<
             (
                 &mut ItemStorage,
-                &mut PlayerEquipment,
+                &mut Equipment,
                 &mut CraftingTable,
                 &ConnectionId,
             ),
@@ -514,7 +513,7 @@ fn equip_item(
     net: Res<NetworkServer>,
     players: Res<Players>,
     mut equip_events: EventReader<NetworkData<messages::InterfaceEquipItem>>,
-    mut equipped_item_query: Query<&mut PlayerEquippedItem>,
+    mut equipped_item_query: Query<&mut EquippedItem>,
 ) {
     for equip_event in equip_events.read() {
         if equip_event.interface_path != "hotbar/equipment" {

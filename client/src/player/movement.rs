@@ -368,6 +368,7 @@ fn simulate_player_physics(
         *last_position_sent_to_server = transform.translation;
         net.send_message(messages::PlayerPosition {
             position: transform.translation.as_dvec3() + origin.as_dvec3(),
+            velocity: player.velocity.as_dvec3(),
         });
     }
 }

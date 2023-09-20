@@ -32,8 +32,7 @@ use super::{
 pub struct HandPlugin;
 impl Plugin for HandPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SwitchAnimation::default())
-            .add_systems(
+        app.insert_resource(SwitchAnimation::default()).add_systems(
             Update,
             (
                 equip_item,

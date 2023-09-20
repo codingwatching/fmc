@@ -1,7 +1,7 @@
 use sha1::Digest;
 use std::io::prelude::*;
 
-use bevy::{gltf::Gltf, prelude::*, asset::LoadState};
+use bevy::{asset::LoadState, gltf::Gltf, prelude::*};
 use fmc_networking::{messages, NetworkData};
 
 mod block_textures;
@@ -90,7 +90,7 @@ fn test_finished_load_state_one(
                     "Misconfigured resource pack: Failed to load a model, check console for error."
                 ));
                 loading_state.set(LoadingState::Inactive);
-                return
+                return;
             }
             bevy::asset::LoadState::Loaded => {
                 continue;

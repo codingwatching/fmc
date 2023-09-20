@@ -26,7 +26,7 @@
         "content": {
           "Nodes": [
             {
-              "name": "hearts",
+              "name": "health",
               "image": "healthbar.png",
               "style": {
                   "bottom": {

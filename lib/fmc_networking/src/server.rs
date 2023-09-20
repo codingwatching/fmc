@@ -18,8 +18,9 @@ use tokio::{
 
 use crate::{
     error::ServerNetworkError,
+    messages::ClientIdentification,
     network_message::{ClientBound, NetworkMessage, ServerBound},
-    ConnectionId, NetworkData, NetworkPacket, NetworkSettings, ServerNetworkEvent, SyncChannel, messages::ClientIdentification,
+    ConnectionId, NetworkData, NetworkPacket, NetworkSettings, ServerNetworkEvent, SyncChannel,
 };
 
 struct NewConnection {
@@ -92,10 +93,7 @@ impl NetworkServer {
     ///
     /// ## Note
     /// If you are already listening for new connections, then this will disconnect existing connections first
-    pub fn listen(
-        &mut self,
-        addr: impl ToSocketAddrs + Send + 'static,
-    ) {
+    pub fn listen(&mut self, addr: impl ToSocketAddrs + Send + 'static) {
         self.stop();
 
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -221,7 +219,9 @@ impl NetworkServer {
         }
 
         self.established_connections.clear();
-        self.recv_message_map.iter_mut().for_each(|mut messages| messages.clear());
+        self.recv_message_map
+            .iter_mut()
+            .for_each(|mut messages| messages.clear());
         self.new_connections.receiver.try_iter().for_each(|_| ());
     }
 
@@ -240,7 +240,12 @@ async fn verify_connection(
     mut socket: TcpStream,
     new_connections: crossbeam_channel::Sender<NewConnection>,
 ) {
-    let length = match tokio::time::timeout(std::time::Duration::from_millis(500),socket.read_u32()).await {
+    let length = match tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        socket.read_u32(),
+    )
+    .await
+    {
         Ok(Ok(len)) => len as usize,
         _ => return,
     };
@@ -249,7 +254,9 @@ async fn verify_connection(
     if length > MAX_LENGTH {
         error!(
             "Received too large packet from [{}]: {} > {}",
-            socket.peer_addr().unwrap(), length, MAX_LENGTH
+            socket.peer_addr().unwrap(),
+            length,
+            MAX_LENGTH
         );
         return;
     }
@@ -261,7 +268,9 @@ async fn verify_connection(
         Err(err) => {
             error!(
                 "Encountered error while reading stream of length {} from [{}]: {}",
-                length, socket.peer_addr().unwrap(), err
+                length,
+                socket.peer_addr().unwrap(),
+                err
             );
             return;
         }
@@ -272,7 +281,8 @@ async fn verify_connection(
         Err(err) => {
             error!(
                 "Failed to decode network packet from [{}]: {}",
-                socket.peer_addr().unwrap(), err
+                socket.peer_addr().unwrap(),
+                err
             );
             return;
         }
@@ -285,12 +295,11 @@ async fn verify_connection(
 
     if let Err(err) = new_connections.send(NewConnection {
         socket,
-        username: identity.name
+        username: identity.name,
     }) {
         error!("Cannot accept new connections, channel closed: {}", err);
         return;
     }
-
 }
 
 async fn recv_task(

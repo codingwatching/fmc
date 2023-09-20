@@ -14,8 +14,7 @@ mod main_menu;
 mod multiplayer;
 mod widgets;
 
-const DEFAULT_FONT_HANDLE: Handle<Font> =
-    Handle::weak_from_u128(1491772431825224041);
+pub const DEFAULT_FONT_HANDLE: Handle<Font> = Handle::weak_from_u128(1491772431825224041);
 
 const UI_SCALE: f64 = 4.0;
 
