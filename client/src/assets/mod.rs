@@ -53,7 +53,7 @@ impl Plugin for AssetPlugin {
             (
                 block_textures::load_block_textures,
                 models::load_models,
-                crate::player::key_bindings::load_key_bindings,
+                crate::ui::server::key_bindings::load_key_bindings,
             ),
         )
         .add_systems(
@@ -67,8 +67,8 @@ impl Plugin for AssetPlugin {
                 apply_deferred,
                 crate::world::blocks::load_blocks,
                 apply_deferred,
-                crate::player::interfaces::load_items,
-                crate::player::interfaces::load_interfaces,
+                crate::ui::server::items::load_items,
+                crate::ui::server::load_interfaces,
                 apply_deferred,
                 finish,
             )

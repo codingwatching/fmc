@@ -4,9 +4,10 @@ use bevy::{app::AppExit, prelude::*};
 use fmc_networking::{messages, NetworkClient};
 use serde::Deserialize;
 
-use crate::{game_state::GameState, player::interfaces::Interfaces};
-
-use super::interfaces::InterfaceToggleEvent;
+use crate::{
+    game_state::GameState,
+    ui::server::{InterfaceToggleEvent, Interfaces},
+};
 
 pub struct KeyBindingsPlugin;
 impl Plugin for KeyBindingsPlugin {
@@ -15,7 +16,7 @@ impl Plugin for KeyBindingsPlugin {
             Update,
             (
                 handle_key_presses.run_if(in_state(GameState::Playing)),
-                escape_key.run_if(in_state(GameState::Playing)),
+                //escape_key.run_if(in_state(GameState::Playing)),
             ),
         );
     }
@@ -179,10 +180,10 @@ fn handle_key_presses(
                     interface_entity: *entity,
                 });
             } else {
-                net.send_message(messages::ChatMessage {
-                    username: "".to_owned(),
-                    message: command.to_owned(),
-                })
+                net.send_message(messages::InterfaceTextInput {
+                    interface_path: "key".to_owned(),
+                    text: command.clone(),
+                });
             }
         }
     }

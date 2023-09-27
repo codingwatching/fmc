@@ -135,7 +135,7 @@
                 }
               },
               "content": {
-                "ItemSection": {
+                "Items": {
                   "equipment": true,
                   "movable_items": false
                 }

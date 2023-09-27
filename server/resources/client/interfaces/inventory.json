@@ -33,7 +33,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allow_quick_place": true
                     }
                 }
@@ -63,7 +63,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allow_quick_place": true
                     }
                 }
@@ -86,7 +86,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allowed_item_types": ["helmet"]
                     }
                 }
@@ -109,7 +109,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allowed_item_types": ["chestplate"]
                     }
                 }
@@ -132,7 +132,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allowed_item_types": ["leggings"]
                     }
                 }
@@ -155,7 +155,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allowed_item_types": ["boots"]
                     }
                 }
@@ -185,7 +185,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allow_quick_place": false
                     }
                 }
@@ -208,7 +208,7 @@
                     }
                 },
                 "content": {
-                    "ItemSection": {
+                    "Items": {
                         "allowed_item_types": []
                     }
                 }

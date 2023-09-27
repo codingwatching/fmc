@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 mod actions;
-mod life;
+mod health;
 mod inventory;
 mod movement;
 mod player;
@@ -31,10 +31,10 @@ use crate::{
 pub struct PlayersPlugin;
 impl Plugin for PlayersPlugin {
     fn build(&self, app: &mut App) {
-        app .add_event::<RespawnEvent>()
+        app.add_event::<RespawnEvent>()
             .insert_resource(Players::default())
             .add_plugins(inventory::InventoryPlugin)
-            .add_plugins(life::LifePlugin)
+            .add_plugins(health::HealthPlugin)
             // This has to be preupdate to ensure that all player components are available by the
             // time the first packet handlers might access them.
             .add_systems(PreUpdate, add_players)
@@ -52,8 +52,8 @@ impl Plugin for PlayersPlugin {
 }
 
 #[derive(Event)]
-pub struct RespawnEvent{
-    pub entity: Entity
+pub struct RespawnEvent {
+    pub entity: Entity,
 }
 
 #[derive(Default, Deref, DerefMut, Resource)]
@@ -84,8 +84,8 @@ fn add_players(
         let player_bundle = if let Some(saved_player) = database.load_player(username) {
             player::PlayerBundle::from(saved_player)
         } else {
-            respawn_events.send(RespawnEvent{
-                entity: player_entity
+            respawn_events.send(RespawnEvent {
+                entity: player_entity,
             });
             player::PlayerBundle::default()
         };

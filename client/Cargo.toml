@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 #bevy = { version = "0.11.2", features = []}
-bevy = { git = "https://github.com/bevyengine/bevy", rev = "462d2ff", features = []}
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "bc1f33d", features = []}
 
 fmc_networking = { path = "../lib/fmc_networking" }
 serde_json = { path = "../lib/json"}

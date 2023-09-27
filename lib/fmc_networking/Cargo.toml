@@ -8,7 +8,7 @@ resolver = "2"
 
 [dependencies]
 #bevy = { version = "0.11.2", features = [], default-features = false }
-bevy = { git = "https://github.com/bevyengine/bevy", rev = "462d2ff", features = [], default-features = false }
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "bc1f33d", features = [], default-features = false }
 bincode = "1.3.3"
 crossbeam-channel = "0.5.8"
 dashmap = "5.5.3"

@@ -29,6 +29,17 @@ pub struct PlayerName(pub String);
 #[derive(Component, Deref, DerefMut)]
 pub struct Camera(pub F64Transform);
 
+impl Default for Camera {
+    fn default() -> Self {
+        Self(
+            F64Transform {
+                translation: DVec3::new(0.3, 1.75, 0.3),
+                ..default()
+            }
+        )
+    }
+}
+
 /// Helmet, chestplate, leggings, boots in order
 #[derive(Component, Default, Deref, DerefMut, Serialize, Deserialize)]
 pub struct Equipment([ItemStack; 4]);
@@ -43,33 +54,35 @@ pub struct Health {
 }
 
 impl Health {
-    pub fn take_damage(&mut self, damage: u32) -> messages::InterfaceImageUpdate {
+    pub fn take_damage(&mut self, damage: u32) -> messages::InterfaceVisibilityUpdate {
         let old_hearts = self.hearts;
         self.hearts = self.hearts.saturating_sub(damage);
 
-        let mut image_update = messages::InterfaceImageUpdate::default();
+        let mut image_update = messages::InterfaceVisibilityUpdate::default();
         for i in self.hearts..old_hearts {
-            image_update
-                .updates
-                .push((format!("hotbar/health/{}", i+1), false));
+            image_update.set_hidden(format!("hotbar/health/{}", i + 1));
         }
 
         image_update
     }
 
-    pub fn heal(&mut self, healing: u32) -> messages::InterfaceImageUpdate {
+    pub fn heal(&mut self, healing: u32) -> messages::InterfaceVisibilityUpdate {
         let old_hearts = self.hearts;
         self.hearts = self.hearts.saturating_add(healing).min(self.max);
 
-        let mut image_update = messages::InterfaceImageUpdate::default();
+        let mut image_update = messages::InterfaceVisibilityUpdate::default();
         for i in old_hearts..self.hearts {
-            image_update
-                .updates
-                .push((format!("hotbar/health/{}", i+1), true));
+            image_update.set_visible(format!("hotbar/health/{}", i + 1));
         }
 
         image_update
     }
+}
+
+#[derive(Component)]
+enum GameMode {
+    Survival,
+    Creative,
 }
 
 ///// Custom spawn point, not used unless explicitly set
@@ -89,6 +102,7 @@ pub struct PlayerBundle {
     velocity: Velocity,
     health: Health,
     pub aabb: Aabb,
+    gamemode: GameMode,
     marker: PlayerMarker,
 }
 
@@ -98,12 +112,7 @@ impl Default for PlayerBundle {
             global_transform: F64GlobalTransform::default(),
             // Put the player somewhere high while it is waiting to be spawned for the first time.
             transform: F64Transform::from_xyz(0.0, 10000.0, 0.0),
-            camera: Camera(F64Transform {
-                // XXX: This is hardcoded until a system for changing the player orientation is
-                // set up. Also hardcoded in From<PlayerSave>
-                translation: DVec3::new(0.3, 1.75, 0.3),
-                ..default()
-            }),
+            camera: Camera::default(),
             inventory: ItemStorage(vec![ItemStack::default(); 36]),
             equipment: Equipment::default(),
             equipped_item: EquippedItem::default(),
@@ -114,6 +123,7 @@ impl Default for PlayerBundle {
                 max: 20,
             },
             aabb: Aabb::from_min_max(DVec3::ZERO, DVec3::new(0.6, 1.8, 0.6)),
+            gamemode: GameMode::Survival,
             marker: PlayerMarker::default(),
         }
     }
@@ -134,7 +144,6 @@ impl From<PlayerSave> for PlayerBundle {
         Self {
             transform: F64Transform::from_translation(save.position),
             camera: Camera(F64Transform {
-                translation: DVec3::new(0.3, 1.8, 0.3),
                 rotation: save.camera_rotation,
                 ..default()
             }),

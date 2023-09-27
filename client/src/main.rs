@@ -6,7 +6,6 @@ use bevy::{
 };
 
 mod assets;
-mod chat;
 mod constants;
 mod game_state;
 mod launcher;
@@ -38,7 +37,6 @@ fn main() {
         .add_plugins(player::PlayerPlugin)
         .add_plugins(world::WorldPlugin)
         .add_plugins(ui::UiPlugin)
-        .add_plugins(chat::ChatPlugin)
         .add_plugins(settings::SettingsPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, fix_keys_not_released_on_focus_loss)

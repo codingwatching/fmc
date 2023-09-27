@@ -384,14 +384,13 @@ fn insert_held_item_component(
 
 fn show_hotbar(
     net: Res<NetworkServer>,
-    players: Res<Players>,
     mut events: EventReader<NetworkData<messages::ClientFinishedLoading>>,
 ) {
     for event in events.read() {
         net.send_one(
             event.source,
             messages::InterfaceOpen {
-                name: "hotbar".to_owned(),
+                interface_path: "hotbar".to_owned(),
             },
         );
     }
@@ -508,7 +507,6 @@ fn update_inventory_interface(
     }
 }
 
-// TODO: The client can be bad
 fn equip_item(
     net: Res<NetworkServer>,
     players: Res<Players>,

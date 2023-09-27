@@ -8,7 +8,7 @@ const MODEL_PATH: &str = "server_assets/textures/models/";
 
 pub type ModelId = u32;
 
-/// A map from server model id to model asset handle
+/// A map from server model id to asset handle
 #[derive(Resource)]
 pub struct Models {
     // id -> model
@@ -37,7 +37,7 @@ pub struct Model {
 }
 
 // TODO: If AssetServer implements some kind of synchronous load or verification in the future,
-// models should be confirmed so we can disconnect when a model can't be loaded.
+// models should be confirmed so we can disconnect when a model fails to load.
 pub(super) fn load_models(
     mut commands: Commands,
     net: Res<NetworkClient>,
@@ -61,7 +61,7 @@ pub(super) fn load_models(
     };
 
     // We first load all the models, they can be in different formats so it's simpler to extract
-    // the names beforehand.
+    // the names from the file entries that try to add an extension to the name sent by the server.
     let mut handles: HashMap<String, Handle<Gltf>> = HashMap::new();
     for dir_entry in directory {
         let file_path = match dir_entry {
@@ -86,14 +86,13 @@ pub(super) fn load_models(
         handles.insert(model_name, model_handle);
     }
 
-    // Match name sent by server to filenames, all need to be present
     for (name, id) in server_config.model_ids.iter() {
-        if let Some(handle) = handles.get(name) {
+        if let Some(handle) = handles.remove(name) {
             models.reverse.insert(name.to_owned(), *id);
             models.inner.insert(
                 *id,
                 Model {
-                    handle: (*handle).clone(),
+                    handle,
                 },
             );
         } else {

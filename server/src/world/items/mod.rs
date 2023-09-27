@@ -74,11 +74,11 @@ fn load_items(mut commands: Commands, database: Res<DatabaseArc>) {
         };
 
         let models = database.load_model_ids();
-        let model_id = match models.get(&json.equip_model.name) {
+        let model_id = match models.get(&json.equip_model) {
             Some(id) => *id,
             None => panic!(
                 "Failed to parse item config at: {}\nError: Missing model by the name: {}",
-                &file_path, &json.equip_model.name
+                &file_path, &json.equip_model
             ),
         };
 
@@ -119,16 +119,11 @@ pub struct ItemConfigJson {
     /// Block name of the block this item can place.
     pub block: String,
     /// Item model filename
-    pub equip_model: ModelJson,
+    pub equip_model: String,
     pub stack_size: u32,
     pub categories: Option<HashSet<String>>,
     #[serde(default)]
     pub properties: serde_json::Map<String, serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-pub struct ModelJson {
-    name: String,
 }
 
 /// Names and configs of all the items in the game.

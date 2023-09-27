@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 
-use crate::ui::InterfaceBundle;
+use super::{InterfaceBundle, Interfaces, UiState};
+use crate::ui::widgets::*;
 
-use super::{widgets::*, Interfaces, UiState};
-
-pub(super) struct MainMenuPlugin;
+pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
@@ -24,13 +23,13 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
         .spawn(InterfaceBundle {
             background_color: Color::DARK_GRAY.into(),
             style: Style {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                row_gap: Val::Px(4.0),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: Val::Px(4.0),
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                position_type: PositionType::Absolute,
                 ..default()
             },
             ..default()

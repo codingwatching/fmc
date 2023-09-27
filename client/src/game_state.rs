@@ -6,13 +6,11 @@ use crate::assets::AssetState;
 /// The overarching states the game can be in.
 #[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
 pub enum GameState {
-    /// Player is in the main menu.
     #[default]
     MainMenu,
-    /// Client is negotiating the connection.
     Connecting,
-    /// Playing on a server.
     Playing,
+    Paused,
 }
 
 pub struct GameStatePlugin;

@@ -1,89 +1,59 @@
-use bevy::{ecs::system::EntityCommands, prelude::*, window::WindowResized, winit::WinitWindows};
+use bevy::{ecs::system::EntityCommands, prelude::*};
 
-use super::{InterfaceMarker, DEFAULT_FONT_HANDLE};
+use super::DEFAULT_FONT_HANDLE;
 
 const FONT_SIZE: f32 = 9.0;
 
 pub struct WidgetPlugin;
 impl Plugin for WidgetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(
+        app.add_systems(
             Update,
             (
+                text_input_setup,
                 edit_text_box,
                 update_textbox_text.after(edit_text_box),
                 focus_text_box_on_click,
                 focus_text_box_on_interface_change,
-                hover_button,
-                //scale_font.run_if(on_event::<WindowResized>()),
-                //scale_borders.run_if(on_event::<WindowResized>()),
+                tint_button_on_hover,
             ),
         );
     }
 }
 
-#[derive(Resource)]
-struct LogicalDisplayWidth {
-    width: f32,
-}
-
-fn setup(
-    mut commands: Commands,
-    winit_windows: NonSend<WinitWindows>,
-    windows: Query<Entity, &Window>,
-) {
-    let entity = windows.single();
-    let id = winit_windows.entity_to_winit.get(&entity).unwrap();
-    let monitor = winit_windows
-        .windows
-        .get(id)
-        .unwrap()
-        .current_monitor()
-        .unwrap();
-    let resolution = monitor.size().to_logical(monitor.scale_factor());
-    commands.insert_resource(LogicalDisplayWidth {
-        width: resolution.width,
-    });
-}
-
-/// Marker struct for interface text.
-#[derive(Component)]
-struct InterfaceText;
-
-/// Marker struct for interface buttons
-#[derive(Component)]
-struct InterfaceButton;
-
-/// Marker struct for interface components with borders.
-#[derive(Component)]
-struct Border;
-
 const BORDER_SIZE: f32 = 1.0;
 
-pub trait ChildBuilderExt<'w, 's> {
+pub trait Widgets<'w, 's> {
+    /// The default GUI button.  
     fn spawn_button<'a>(&'a mut self, width: f32, text: &str) -> EntityCommands<'w, 's, 'a>;
+    /// The default GUI textbox
     fn spawn_textbox<'a>(&'a mut self, width: f32, text: &str) -> EntityCommands<'w, 's, 'a>;
+    fn spawn_text(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        color: Color,
+        flex_direction: FlexDirection,
+        justify_content: JustifyContent,
+        align_items: AlignItems,
+    );
 }
 
-impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
+impl<'w, 's> Widgets<'w, 's> for ChildBuilder<'w, 's, '_> {
     fn spawn_button<'a>(&'a mut self, width: f32, text: &str) -> EntityCommands<'w, 's, 'a> {
-        let mut entity_commands = self.spawn((
-            ButtonBundle {
-                background_color: Color::rgb_u8(110, 110, 110).into(),
-                border_color: Color::BLACK.into(),
-                style: Style {
-                    aspect_ratio: Some(width / 20.0),
-                    width: Val::Px(width),
-                    border: UiRect::all(Val::Px(BORDER_SIZE)),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
+        let mut entity_commands = self.spawn((ButtonBundle {
+            background_color: Color::rgb_u8(110, 110, 110).into(),
+            border_color: Color::BLACK.into(),
+            style: Style {
+                aspect_ratio: Some(width / 20.0),
+                width: Val::Px(width),
+                border: UiRect::all(Val::Px(BORDER_SIZE)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 ..default()
             },
-            InterfaceButton,
-            Border,
-        ));
+            ..default()
+        },));
         entity_commands.with_children(|parent| {
             parent
                 // Need to spawn a parent here because the borders mess up, expanding into the
@@ -97,169 +67,257 @@ impl<'w, 's> ChildBuilderExt<'w, 's> for ChildBuilder<'w, 's, '_> {
                     ..default()
                 })
                 .with_children(|parent| {
-                    parent.spawn((
-                        NodeBundle {
-                            style: Style {
-                                position_type: PositionType::Absolute,
-                                width: Val::Percent(100.0),
-                                height: Val::Percent(100.0),
-                                border: UiRect {
-                                    top: Val::Px(BORDER_SIZE),
-                                    left: Val::Px(BORDER_SIZE),
-                                    ..default()
-                                },
+                    parent.spawn((NodeBundle {
+                        style: Style {
+                            position_type: PositionType::Absolute,
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            border: UiRect {
+                                top: Val::Px(BORDER_SIZE),
+                                left: Val::Px(BORDER_SIZE),
                                 ..default()
                             },
-                            border_color: Color::rgb_u8(170, 170, 170).into(),
                             ..default()
                         },
-                        Border,
-                    ));
-                    parent.spawn((
-                        NodeBundle {
-                            style: Style {
-                                position_type: PositionType::Absolute,
-                                width: Val::Percent(100.0),
-                                height: Val::Percent(100.0),
-                                border: UiRect {
-                                    bottom: Val::Px(BORDER_SIZE),
-                                    right: Val::Px(BORDER_SIZE),
-                                    ..default()
-                                },
+                        border_color: Color::rgb_u8(170, 170, 170).into(),
+                        ..default()
+                    },));
+                    parent.spawn((NodeBundle {
+                        style: Style {
+                            position_type: PositionType::Absolute,
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            border: UiRect {
+                                bottom: Val::Px(BORDER_SIZE),
+                                right: Val::Px(BORDER_SIZE),
                                 ..default()
                             },
-                            border_color: Color::rgba_u8(62, 62, 62, 150).into(),
                             ..default()
                         },
-                        Border,
-                    ));
+                        border_color: Color::rgba_u8(62, 62, 62, 150).into(),
+                        ..default()
+                    },));
                 });
-            parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        text,
-                        TextStyle {
-                            font_size: FONT_SIZE,
-                            font: DEFAULT_FONT_HANDLE.clone(),
-                            color: Color::DARK_GRAY,
-                            ..default()
-                        },
-                    ),
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        margin: UiRect {
-                            top: Val::Px(1.7),
-                            left: Val::Px(2.0),
-                            ..default()
-                        },
-                        ..default()
-                    },
-                    ..default()
-                },
-                InterfaceText,
-            ));
-            parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        text,
-                        TextStyle {
-                            font_size: FONT_SIZE,
-                            font: DEFAULT_FONT_HANDLE.clone(),
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    ),
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        ..default()
-                    },
-                    ..default()
-                },
-                InterfaceText,
-            ));
+            parent.spawn_text(
+                text,
+                FONT_SIZE,
+                Color::WHITE,
+                FlexDirection::Row,
+                JustifyContent::Center,
+                AlignItems::Center,
+            );
         });
         entity_commands
     }
 
     fn spawn_textbox<'a>(&'a mut self, width: f32, text: &str) -> EntityCommands<'w, 's, 'a> {
-        let mut entity_commands = self.spawn((
+        let entity_commands = self.spawn((
             ButtonBundle {
                 background_color: Color::BLACK.into(),
                 border_color: Color::WHITE.into(),
                 style: Style {
                     width: Val::Percent(width),
                     aspect_ratio: Some(width / 4.2),
-                    border: UiRect::all(Val::Px(BORDER_SIZE)),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
+                    border: UiRect::all(Val::Px(BORDER_SIZE)),
                     overflow: Overflow::clip(),
                     ..default()
                 },
                 ..default()
             },
             TextBox {
+                is_input: true,
                 text: text.to_owned(),
+                scrollable: false,
+                scroll_position: 0.0,
+                text_background_color: Color::NONE,
             },
-            Border,
+            TextInput::default(),
         ));
 
-        entity_commands.with_children(move |parent| {
-            parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        "",
-                        TextStyle {
-                            font_size: FONT_SIZE,
-                            font: DEFAULT_FONT_HANDLE.clone(),
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    ),
+        entity_commands
+    }
+
+    // TODO: https://github.com/bevyengine/bevy/pull/8973 related pr that would remove need to fake
+    // shadows.
+    // TODO: None of this alignment stuff should be part of the function, but shadows need to be
+    // shifted twice as far when centered. I don't know why. Waiting for
+    // 0.12 to see if cosmic text fixes it.
+    fn spawn_text(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        color: Color,
+        flex_direction: FlexDirection,
+        justify_content: JustifyContent,
+        align_items: AlignItems,
+    ) {
+        let vertical_margin = match flex_direction {
+            FlexDirection::Row | FlexDirection::RowReverse => {
+                if align_items == AlignItems::Center {
+                    Val::Px(font_size / 5.3)
+                } else {
+                    Val::Px(font_size / 10.6)
+                }
+            }
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                if justify_content == JustifyContent::Center {
+                    Val::Px(font_size / 5.3)
+                } else {
+                    Val::Px(font_size / 10.6)
+                }
+            }
+        };
+
+        let horizontal_margin = match flex_direction {
+            FlexDirection::Row | FlexDirection::RowReverse => {
+                if justify_content == JustifyContent::Center {
+                    Val::Px(font_size / 4.5)
+                } else {
+                    Val::Px(font_size / 9.0)
+                }
+            }
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                if align_items == AlignItems::Center {
+                    Val::Px(font_size / 4.5)
+                } else {
+                    Val::Px(font_size / 9.0)
+                }
+            }
+        };
+
+        self.spawn((
+            TextBundle {
+                text: Text::from_section(
+                    text,
+                    TextStyle {
+                        font_size,
+                        font: DEFAULT_FONT_HANDLE,
+                        color: Color::DARK_GRAY,
+                        ..default()
+                    },
+                ),
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    margin: UiRect {
+                        top: vertical_margin,
+                        left: horizontal_margin,
+                        ..default()
+                    },
                     ..default()
                 },
-                TextBoxText,
-                InterfaceText,
-            ));
-        });
-        entity_commands
+                ..default()
+            },
+            TextMarker,
+        ));
+        self.spawn((
+            TextBundle {
+                text: Text::from_section(
+                    text,
+                    TextStyle {
+                        font_size,
+                        font: DEFAULT_FONT_HANDLE,
+                        color,
+                        ..default()
+                    },
+                ),
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    ..default()
+                },
+                ..default()
+            },
+            TextMarker,
+        ));
     }
 }
 
-fn hover_button(
+#[derive(Component, Deref, Default)]
+struct PreviousButtonColor(Color);
+
+fn tint_button_on_hover(
+    mut commands: Commands,
+    new_button_query: Query<Entity, Added<Button>>,
     mut button_query: Query<
-        (&Interaction, &mut BackgroundColor),
-        (With<InterfaceButton>, Changed<Interaction>),
+        (&Interaction, &mut PreviousButtonColor, &mut BackgroundColor),
+        (With<Button>, Changed<Interaction>),
     >,
 ) {
-    for (interaction, mut background_color) in button_query.iter_mut() {
-        if *interaction == Interaction::Hovered {
-            *background_color = Color::rgb_u8(139, 139, 139).into();
-        } else {
-            *background_color = Color::rgb_u8(110, 110, 110).into();
+    for entity in new_button_query.iter() {
+        commands
+            .entity(entity)
+            .insert(PreviousButtonColor::default());
+    }
+
+    for (interaction, mut prev_color, mut background_color) in button_query.iter_mut() {
+        match *interaction {
+            Interaction::Hovered => {
+                prev_color.0 = background_color.0;
+                background_color.0 *= Vec3::splat(139.0 / 110.0);
+            }
+            Interaction::None => {
+                background_color.0 = prev_color.0;
+            }
+            _ => (),
         }
     }
 }
 
 #[derive(Component)]
-struct FocusedTextBox;
+pub struct FocusedTextBox;
 
-// TODO: Needs horizontal scroll and cursor
-//
-/// Marker component for the textbox
-#[derive(Component)]
+// By the GUI this is used exlcusively as text input.
+// By the server interfaces, it is also used as a text container the server can place text into.
+#[derive(Component, Default)]
 pub struct TextBox {
-    // The entire content of the textbox. The visible text might be a subset of this.
+    pub is_input: bool,
+    // If this is an input textbox, this is the entire content of the input field. The visible text
+    // might be a subset of this.
+    // XXX: Will not be updated unless it is an input textbox.
     pub text: String,
+    pub scrollable: bool,
+    pub scroll_position: f32,
+    pub text_background_color: Color,
 }
 
-/// Marker component for the text inside the textbox
+#[derive(Component, Default)]
+struct TextInput {
+    cursor: usize,
+}
+
 #[derive(Component)]
-pub struct TextBoxText;
+struct TextMarker;
+
+fn text_input_setup(
+    mut commands: Commands,
+    input_query: Query<(Entity, &TextBox, &Style), Added<TextBox>>,
+) {
+    for (entity, text_box, style) in input_query.iter() {
+        if !text_box.is_input {
+            continue;
+        }
+
+        commands
+            .entity(entity)
+            .insert(TextInput::default())
+            .with_children(|parent| {
+                parent.spawn_text(
+                    &text_box.text,
+                    FONT_SIZE,
+                    Color::WHITE,
+                    style.flex_direction,
+                    style.justify_content,
+                    style.align_items,
+                );
+            });
+    }
+}
 
 fn focus_text_box_on_click(
     mut commands: Commands,
     focused_text_box: Query<Entity, With<FocusedTextBox>>,
-    possible_new_focus: Query<(Entity, &Interaction), (With<TextBox>, Changed<Interaction>)>,
+    possible_new_focus: Query<(Entity, &Interaction), (With<TextInput>, Changed<Interaction>)>,
 ) {
     for (entity, interaction) in possible_new_focus.iter() {
         if *interaction == Interaction::Pressed {
@@ -275,20 +333,19 @@ fn focus_text_box_on_click(
 fn focus_text_box_on_interface_change(
     mut commands: Commands,
     focused_text_box: Query<Entity, With<FocusedTextBox>>,
-    text_box_query: Query<Entity, With<TextBox>>,
-    interfaces_query: Query<(&Style, &Children), (With<InterfaceMarker>, Changed<Style>)>,
+    text_box_query: Query<
+        (Entity, &InheritedVisibility),
+        (With<TextInput>, Changed<InheritedVisibility>),
+    >,
 ) {
-    for (style, children) in interfaces_query.iter() {
-        if style.display == Display::Flex {
-            for child_entity in children.iter() {
-                if let Ok(entity) = text_box_query.get(*child_entity) {
-                    commands.entity(entity).insert(FocusedTextBox);
-                }
-            }
+    for (entity, visibility) in text_box_query.iter() {
+        if let Ok(prev_entity) = focused_text_box.get_single() {
+            commands.entity(prev_entity).remove::<FocusedTextBox>();
+        }
 
-            if let Ok(prev_entity) = focused_text_box.get_single() {
-                commands.entity(prev_entity).remove::<FocusedTextBox>();
-            }
+        if visibility.get() {
+            commands.entity(entity).insert(FocusedTextBox);
+            return;
         }
     }
 }
@@ -304,7 +361,7 @@ fn edit_text_box(
         for event in chars.read() {
             if event.char.is_ascii() {
                 if !event.char.is_control() {
-                    text_box.text.push(event.char.to_ascii_lowercase());
+                    text_box.text.push(event.char);
                 } else if event.char == '\u{8}' {
                     // This is backspace (pray)
                     text_box.text.pop();
@@ -315,50 +372,14 @@ fn edit_text_box(
 }
 
 fn update_textbox_text(
-    mut text_query: Query<&mut Text, With<TextBoxText>>,
+    mut text_query: Query<&mut Text, With<TextMarker>>,
     text_box_query: Query<(&TextBox, &Children), Changed<TextBox>>,
 ) {
     for (text_box, children) in text_box_query.iter() {
-        let mut text = text_query.get_mut(children[0]).unwrap();
-        text.sections[0].value = text_box.text.clone();
-    }
-}
-
-// TODO: Can be removed when: https://github.com/bevyengine/bevy/pull/9524
-fn scale_font(
-    resolution: Res<LogicalDisplayWidth>,
-    windows: Query<&Window>,
-    mut text_query: Query<&mut Transform, With<InterfaceText>>,
-) {
-    let window = windows.single();
-    let scale = window.resolution.width() / resolution.width;
-    for mut transform in text_query.iter_mut() {
-        transform.scale = Vec3::splat(scale);
-    }
-}
-
-// TODO: This as well as the Border component are not actually needed. Borders can be defined by
-// Val::Percent and will resize fine. There is currently a bug where the rightmost inner border
-// overlaps the outer border, it shows less when doing it manually.
-fn scale_borders(
-    resolution: Res<LogicalDisplayWidth>,
-    windows: Query<&Window>,
-    mut text_query: Query<&mut Style, With<Border>>,
-) {
-    let window = windows.single();
-    let scale = window.resolution.width() / resolution.width;
-    for mut style in text_query.iter_mut() {
-        if style.border.left != Val::Px(0.0) {
-            style.border.left = Val::Px(BORDER_SIZE * scale);
-        }
-        if style.border.right != Val::Px(0.0) {
-            style.border.right = Val::Px(BORDER_SIZE * scale);
-        }
-        if style.border.top != Val::Px(0.0) {
-            style.border.top = Val::Px(BORDER_SIZE * scale);
-        }
-        if style.border.bottom != Val::Px(0.0) {
-            style.border.bottom = Val::Px(BORDER_SIZE * scale);
+        for child in children {
+            if let Ok(mut text) = text_query.get_mut(*child) {
+                text.sections[0].value = text_box.text.clone();
+            }
         }
     }
 }

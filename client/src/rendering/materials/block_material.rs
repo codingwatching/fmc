@@ -239,6 +239,8 @@ pub struct BlockMaterial {
     pub animation_frames: u32,
 }
 
+// TODO: This can be removed and moved back to StandardMaterialFlags
+//
 // NOTE: These must match the bit flags in bevy_pbr/src/render/pbr_types.wgsl!
 bitflags::bitflags! {
     /// Bitflags info about the material a shader is currently rendering.

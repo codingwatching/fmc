@@ -50,7 +50,7 @@ pub struct PhysicsBundle {
 fn simulate_aabb_physics(
     world_map: Res<WorldMap>,
     time: Res<Time>,
-    mut entities: Query<(&mut F64Transform, &mut Velocity, &Aabb)>,
+    mut entities: Query<(&mut F64Transform, &mut Velocity, &Aabb), With<Mass>>,
 ) {
     for (mut transform, mut velocity, aabb) in entities.iter_mut() {
         // Have to check changes manually because change detection does not detect changes within

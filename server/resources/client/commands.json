@@ -4,7 +4,7 @@
         "key_binding": "e"
     },
     {
-        "command": "/interface hotbar",
-        "key_binding": "i"
+        "command": "/interface chat",
+        "key_binding": "t"
     }
 ]

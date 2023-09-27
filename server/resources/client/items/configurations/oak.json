@@ -2,9 +2,6 @@
     "name": "Oak",
     "image": "oak.png",
     "block": "oak",
-    "equip_model": {
-        "name": "oak",
-        "scale": 0.025
-    },
+    "equip_model": "oak",
     "stack_size": 64
 }

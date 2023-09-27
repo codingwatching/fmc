@@ -164,12 +164,13 @@ impl NetworkServer {
 
     /// Send a message to many clients
     #[track_caller]
-    pub fn send_many<T: ClientBound + Clone>(
+    pub fn send_many<'a, T: ClientBound + Clone>(
         &self,
-        connection_ids: &HashSet<ConnectionId>,
+        //connection_ids: &HashSet<ConnectionId>,
+        connection_ids: impl IntoIterator<Item = &'a ConnectionId>,
         message: T,
     ) {
-        for connection_id in connection_ids.iter() {
+        for connection_id in connection_ids {
             let connection = match self.established_connections.get(connection_id) {
                 Some(conn) => conn,
                 None => panic!("Server should not have access to connections that aren't in the connection pool."),

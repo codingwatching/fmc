@@ -27,7 +27,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use bevy::{prelude::*, utils::Uuid};
 use client::AppNetworkClientMessage;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use derive_more::{Deref, Display};
+use derive_more::{Deref, DerefMut, Display};
 use error::{ClientNetworkError, ServerNetworkError};
 use network_message::NetworkMessage;
 use serde::{Deserialize, Serialize};
@@ -127,10 +127,11 @@ pub enum ClientNetworkEvent {
 }
 
 /// [`NetworkData`] are bevy events that should be handled by the receiver.
-#[derive(Debug, Deref, Event)]
+#[derive(Debug, Deref, DerefMut, Event)]
 pub struct NetworkData<T> {
     /// The connection information of the sender.
     pub source: ConnectionId,
+    #[deref_mut]
     #[deref]
     inner: T,
 }
@@ -190,6 +191,7 @@ impl Plugin for ServerPlugin {
             .listen_for_server_message::<messages::InterfacePlaceItem>()
             .listen_for_server_message::<messages::InterfaceEquipItem>()
             .listen_for_server_message::<messages::InterfaceButtonPress>()
+            .listen_for_server_message::<messages::InterfaceTextInput>()
             .listen_for_server_message::<messages::AssetRequest>();
     }
 }
@@ -205,7 +207,8 @@ impl Plugin for ClientPlugin {
             .init_resource::<NetworkSettings>()
             .add_systems(PreUpdate, client::handle_connection_event)
             .add_systems(Update, client::handle_client_network_events)
-            .listen_for_client_message::<messages::InterfaceImageUpdate>()
+            .listen_for_client_message::<messages::InterfaceTextBoxUpdate>()
+            .listen_for_client_message::<messages::InterfaceVisibilityUpdate>()
             .listen_for_client_message::<messages::InterfaceItemBoxUpdate>()
             .listen_for_client_message::<messages::InterfaceOpen>()
             .listen_for_client_message::<messages::InterfaceClose>()
@@ -214,7 +217,6 @@ impl Plugin for ClientPlugin {
             .listen_for_client_message::<messages::ModelUpdateTransform>()
             .listen_for_client_message::<messages::ModelUpdateAsset>()
             .listen_for_client_message::<messages::ChunkResponse>()
-            .listen_for_client_message::<messages::ChatMessage>()
             .listen_for_client_message::<messages::BlockUpdates>()
             .listen_for_client_message::<messages::ServerConfig>()
             .listen_for_client_message::<messages::AssetResponse>()

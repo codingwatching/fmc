@@ -2,10 +2,6 @@
     "name": "Torch",
     "image": "torch.png",
     "block": "torch",
-    "equip_model": {
-        "name": "torch",
-        "position": [-0.1, 0.03, 0.2],
-        "scale": 0.1
-    },
+    "equip_model": "torch",
     "stack_size": 64
 }

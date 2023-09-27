@@ -85,9 +85,15 @@ fn handle_position_updates_from_server(
 // the original state.
 fn toggle_flight(
     keys: Res<Input<KeyCode>>,
+    window: Query<&Window, With<PrimaryWindow>>,
     mut query: Query<&mut Player>,
     mut timer: Local<Timer>,
 ) {
+    let window = window.single();
+    if window.cursor.grab_mode == CursorGrabMode::None {
+        return;
+    }
+
     for key in keys.get_just_released() {
         if KeyCode::Space == *key {
             if std::time::Instant::now()
@@ -130,7 +136,7 @@ fn change_player_acceleration(
     let mut horizontal_acceleration = Vec3::ZERO;
     let mut vertical_acceleration = Vec3::ZERO;
     for key in keys.get_pressed() {
-        if window.cursor.grab_mode == CursorGrabMode::Locked {
+        if window.cursor.grab_mode != CursorGrabMode::None {
             match key {
                 KeyCode::W => horizontal_acceleration += forward,
                 KeyCode::S => horizontal_acceleration -= forward,

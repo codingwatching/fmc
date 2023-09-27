@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 use fmc_networking::NetworkSettings;
 
-use crate::{game_state::GameState, ui::InterfaceBundle};
+use crate::{game_state::GameState, ui::widgets::*};
 
-use super::{widgets::*, Interfaces, UiState};
+use super::{InterfaceBundle, Interfaces, UiState};
 
-pub(super) struct MultiPlayerPlugin;
+pub struct MultiPlayerPlugin;
 impl Plugin for MultiPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
@@ -54,7 +54,7 @@ fn press_play_button(
 ) {
     if play_button
         .get_single()
-        .is_ok_and(|int| *int == Interaction::Pressed)
+        .is_ok_and(|interaction| *interaction == Interaction::Pressed)
         || keys.just_pressed(KeyCode::Return)
     {
         let mut ip = server_ip.single().text.to_owned();

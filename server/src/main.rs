@@ -3,6 +3,7 @@ use bevy::{app::ScheduleRunnerPlugin, prelude::*};
 mod api;
 mod assets;
 mod bevy_extensions;
+mod chat;
 mod constants;
 mod database;
 mod networking;
@@ -41,5 +42,6 @@ fn main() {
         .add_plugins(world::WorldPlugin)
         .add_plugins(physics::PhysicsPlugin)
         .add_plugins(players::PlayersPlugin)
+        .add_plugins(chat::ChatPlugin)
         .run();
 }

@@ -2,10 +2,6 @@
     "name": "Dirt",
     "image": "dirt.png",
     "block": "dirt",
-    "equip_model": {
-        "name": "dirt",
-        "position": [-0.075, 0.04, 0.22],
-        "scale": 0.025
-    },
+    "equip_model": "dirt",
     "stack_size": 64
 }

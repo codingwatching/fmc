@@ -20,12 +20,13 @@ pub use models::{DeleteModel, ModelUpdateAsset, ModelUpdateTransform, NewModel};
 /// Changes to the player.
 mod player;
 pub use player::{
-    ChatMessage, LeftClick, PlayerCameraRotation, PlayerConfiguration, PlayerPosition, RightClick,
+    LeftClick, PlayerCameraRotation, PlayerConfiguration, PlayerPosition, RightClick,
 };
 
 /// User interface
 mod interfaces;
 pub use interfaces::{
-    InterfaceButtonPress, InterfaceClose, InterfaceEquipItem, InterfaceImageUpdate,
+    InterfaceButtonPress, InterfaceClose, InterfaceEquipItem, InterfaceVisibilityUpdate,
     InterfaceItemBoxUpdate, InterfaceOpen, InterfacePlaceItem, InterfaceTakeItem,
+    InterfaceTextBoxUpdate, InterfaceTextInput
 };

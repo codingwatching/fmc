@@ -12,6 +12,7 @@ use fmc_networking::{messages, ConnectionId, NetworkClient, NetworkData};
 use crate::{
     assets::models::Models,
     game_state::GameState,
+    player::{Player, PlayerCameraMarker},
     utils,
     world::{
         blocks::{Block, BlockFace, Blocks},
@@ -20,34 +21,40 @@ use crate::{
     },
 };
 
-use super::{
-    camera::PlayerCameraMarker,
-    interfaces::{
-        items::{ItemStack, Items},
-        InterfacePath, ItemBox, ItemBoxSection, SelectedItemBox,
-    },
-    Player,
+use super::server::{
+    items::{ItemBox, ItemBoxSection, ItemStack, Items, SelectedItemBox},
+    InterfacePath,
 };
 
 pub struct HandPlugin;
 impl Plugin for HandPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SwitchAnimation::default()).add_systems(
-            Update,
-            (
-                equip_item,
-                play_use_animation,
-                play_switch_animation,
-                place_block,
-                send_clicks,
-            )
-                .run_if(in_state(GameState::Playing)),
-        );
+        app.insert_resource(SwitchAnimation::default())
+            .add_systems(PostStartup, setup)
+            .add_systems(
+                Update,
+                (
+                    equip_item,
+                    play_use_animation,
+                    play_switch_animation,
+                    place_block,
+                    send_clicks,
+                )
+                    .run_if(in_state(GameState::Playing)),
+            );
+    }
+}
+
+fn setup(mut commands: Commands, player_camera: Query<Entity, Added<PlayerCameraMarker>>) {
+    if let Ok(entity) = player_camera.get_single() {
+        commands.entity(entity).with_children(|parent| {
+            parent.spawn(HandBundle::default());
+        });
     }
 }
 
 #[derive(Bundle, Default)]
-pub(super) struct HandBundle {
+struct HandBundle {
     scene: SceneBundle,
     animation_player: AnimationPlayer,
     marker: HandMarker,
@@ -94,7 +101,7 @@ fn equip_item(
             With<EquippedItem>,
         ),
     >,
-    hand_scene_query: Query<&Handle<Scene>, With<HandMarker>>,
+    hand_scene_query: Query<(Entity, &Handle<Scene>), With<HandMarker>>,
 ) {
     // equip and unequip when the equipment interface is hidden/shown or the selected box changes
     for (interface_path, item_box_section, selected) in changed_interface_query.iter() {
@@ -117,7 +124,7 @@ fn equip_item(
 
     // equip new item when the selected item changes.
     for item_box in changed_equipped_item_query.iter() {
-        let scene = hand_scene_query.single();
+        let (hand_entity, hand_scene) = hand_scene_query.single();
 
         switch_animation.old_transform = switch_animation.new_transform;
         switch_animation.old_offset = switch_animation.new_offset;
@@ -132,9 +139,15 @@ fn equip_item(
             // This looks like it is only to prevent triggering the animation when switching
             // between the same items. The server sends a full interface update anytime an item is
             // picked up, that is also caught by this.
-            if gltf.scenes[0] == *scene {
+            if gltf.scenes[0] == *hand_scene {
                 continue;
             }
+
+            // In order for animation players to work, the entity it is part of needs to share
+            // name with the AnimationClip paths. There is an animation player inserted deep in
+            // the hierarchy below the hand entity that gets inserted immediately. It is too
+            // cumbersome to get to. This is a hack.
+            commands.entity(hand_entity).insert(Name::new(gltf.named_nodes.iter().next().unwrap().0.to_owned()));
 
             let gltf_mesh = gltf_meshes.get(&gltf.meshes[0]).unwrap();
             // Cumbersomely extract aabb height from gltf in an error prone way. I don't know how
@@ -228,30 +241,35 @@ fn play_use_animation(
     window: Query<&Window, With<PrimaryWindow>>,
     mouse_button_input: Res<Input<MouseButton>>,
     mut hand_animation_query: Query<&mut AnimationPlayer, With<HandMarker>>,
-    equipped_item_query: Query<&ItemStack, With<EquippedItem>>,
+    equipped_item_query: Query<&ItemBox, With<EquippedItem>>,
 ) {
     let Ok(equipped_item) = equipped_item_query.get_single() else {
         return;
     };
 
-    // Only play if not in an interface or settings menu.
+    // Only play if not in interface
     if window.single().cursor.visible {
         return;
     }
 
-    let item = if let Some(item_id) = &equipped_item.item {
+    let item = if let Some(item_id) = &equipped_item.item_stack.item {
         items.get(item_id)
     } else {
         return;
     };
 
+
     let model = models.get(&item.model_id).unwrap();
     let gltf = gltf_assets.get(&model.handle).unwrap();
     let mut player = hand_animation_query.single_mut();
+    //dbg!(player.animation_clip().is_strong());
 
     if mouse_button_input.pressed(MouseButton::Left) {
         let animation_handle = gltf.named_animations.get("left_click").unwrap();
         let animation_clip = animation_clips.get(animation_handle).unwrap();
+
+        //dbg!(animation_handle.path(), animation_handle.is_strong());
+        //dbg!(animation_clip);
         if mouse_button_input.just_pressed(MouseButton::Left) {
             player.start_with_transition(animation_handle.clone(), Duration::from_millis(10));
         } else if player.elapsed() >= animation_clip.duration() {
@@ -274,10 +292,13 @@ fn send_clicks(mouse_button_input: Res<Input<MouseButton>>, net: Res<NetworkClie
     }
 }
 
+// TODO: I don't know if this belongs here. Maybe keep it strictly Ui. Export EquippedItem and do
+// it in the player module?
 // TODO: Needs repetition if button held down. Test to where it feels reasonably comfortable so
 // that you can fly and place without having to pace yourself.
 //
-// Place a block locally, the server will parse
+// Fakes a local block update to make it feel more responsive. The server will NOT know if it is
+// a valid placement, so it will not correct it.
 fn place_block(
     world_map: ResMut<WorldMap>,
     items: Res<Items>,

@@ -1,16 +1,14 @@
 use bevy::{prelude::*, render::primitives::Aabb};
 use fmc_networking::{messages, NetworkData};
 
-use crate::{
-    constants::CHUNK_SIZE, game_state::GameState, settings::Settings, world::MovesWithOrigin,
-};
+use crate::{game_state::GameState, world::MovesWithOrigin};
 
 mod camera;
-mod hand;
-pub mod interfaces;
-pub mod key_bindings;
+// TODO: This is pub because of asset loading, remove when redone
 mod movement;
 mod physics;
+
+pub use camera::PlayerCameraMarker;
 
 // Used at setup to set camera position and define the AABB, but should be changed by the server.
 const DEFAULT_PLAYER_WIDTH: f32 = 0.6;
@@ -21,10 +19,7 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(movement::MovementPlugin)
-            .add_plugins(interfaces::InterfacePlugin)
             .add_plugins(camera::CameraPlugin)
-            .add_plugins(hand::HandPlugin)
-            .add_plugins(key_bindings::KeyBindingsPlugin)
             .add_systems(Startup, setup_player)
             .add_systems(
                 Update,
@@ -69,12 +64,7 @@ fn setup_player(mut commands: Commands) {
         ),
     );
 
-    let camera_entity = commands
-        .spawn(camera::CameraBundle::default())
-        .with_children(|parent| {
-            parent.spawn(hand::HandBundle::default());
-        })
-        .id();
+    let camera_entity = commands.spawn(camera::CameraBundle::default()).id();
 
     let player_entity = commands
         .spawn(player)

@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { git = "https://github.com/bevyengine/bevy", rev = "462d2ff", default-features=false, features = ["filesystem_watcher", "multi-threaded"]}
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "bc1f33d", default-features=false, features = ["filesystem_watcher", "multi-threaded"]}
 #bevy = { version = "0.11.2", default-features=false, features = ["filesystem_watcher"]}
 
 fmc_networking = { path = "../lib/fmc_networking" }

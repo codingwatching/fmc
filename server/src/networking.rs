@@ -7,7 +7,7 @@ use crate::{
     database::DatabaseArc,
     players::{PlayerName, Players},
     settings::ServerSettings,
-    world::{blocks::Blocks, items::Items, models::Models},
+    world::{blocks::Blocks, items::Items, models::Models}, chat::{CHAT_FONT_SIZE, CHAT_TEXT_COLOR},
 };
 
 pub struct ServerPlugin;
@@ -70,19 +70,17 @@ fn handle_network_events(
 
                 info!("{} joined the server.", username);
 
-                net.broadcast(messages::ChatMessage {
-                    username: String::from("SERVER"),
-                    message: format!("{} joined the server.", username),
-                });
+                let mut chat_update = messages::InterfaceTextBoxUpdate::new("chat/history");
+                chat_update.append_line().with_text(format!("[SERVER] {} joined the server.", username), CHAT_FONT_SIZE, CHAT_TEXT_COLOR);
+                net.broadcast(chat_update);
             }
             ServerNetworkEvent::Disconnected(connection) => {
                 let entity = players.remove(connection).unwrap();
                 let username = player_query.get(entity).unwrap();
 
-                net.broadcast(messages::ChatMessage {
-                    username: String::from("SERVER"),
-                    message: format!("{} disonnected", username.as_str()),
-                });
+                let mut chat_update = messages::InterfaceTextBoxUpdate::new("chat/history");
+                chat_update.append_line().with_text(format!("[SERVER] {} disconnected", username.as_str()), CHAT_FONT_SIZE, CHAT_TEXT_COLOR);
+                net.broadcast(chat_update);
 
                 info!(
                     "Player disconnected, id: {}, username: {}",

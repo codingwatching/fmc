@@ -5,16 +5,39 @@ use std::collections::HashMap;
 /// Close an interface that is currently closed.
 #[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone)]
 pub struct InterfaceOpen {
-    /// Name of the interface that should be opened.
-    pub name: String,
+    /// Path of the interface that should be opened.
+    pub interface_path: String,
 }
 
 /// Close an interface that is currently open.
 #[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone)]
 pub struct InterfaceClose {
-    /// Name of the interface that should be closed.
-    pub name: String,
+    /// Path of the interface that should be closed.
+    pub interface_path: String,
 }
+
+/// Toggle the visbility of images
+#[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone, Default)]
+pub struct InterfaceVisibilityUpdate {
+    /// List of (interface path, visibility[0 for inherited, 1 for Hidden, 2 for
+    /// visible]).
+    pub updates: Vec<(String, u8)>,
+}
+
+impl InterfaceVisibilityUpdate {
+    pub fn set_inherited(&mut self, interface_path: String) {
+        self.updates.push((interface_path, 0));
+    }
+
+    pub fn set_hidden(&mut self, interface_path: String) {
+        self.updates.push((interface_path, 1));
+    }
+
+    pub fn set_visible(&mut self, interface_path: String) {
+        self.updates.push((interface_path, 2));
+    }
+}
+
 
 /// Notifies the server a button was pressed.
 #[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone)]
@@ -103,14 +126,14 @@ impl InterfaceItemBoxUpdate {
     }
 
     pub fn combine(&mut self, other: InterfaceItemBoxUpdate) {
-        for (interface_name, mut updates) in other.updates.into_iter() {
-            if self.updates.contains_key(&interface_name) {
+        for (interface_path, mut updates) in other.updates.into_iter() {
+            if self.updates.contains_key(&interface_path) {
                 self.updates
-                    .get_mut(&interface_name)
+                    .get_mut(&interface_path)
                     .unwrap()
                     .append(&mut updates);
             } else {
-                self.updates.insert(interface_name, updates);
+                self.updates.insert(interface_path, updates);
             }
         }
     }
@@ -150,9 +173,88 @@ pub struct InterfaceEquipItem {
     pub index: u32,
 }
 
-/// Toggle the visbility of images
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct Text {
+    pub text: String,
+    pub font_size: f32,
+    // Hex, if it is malformed it will default to white.
+    pub color: String,
+}
+
+// TODO: Same problem as above, should contain TextAlignment and BreakLineOn
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct Line {
+    pub index: i32,
+    pub sections: Vec<Text>
+}
+
+impl Line {
+    pub fn with_text(&mut self, text: String, font_size: f32, color: &str) -> &mut Self {
+        self.sections.push(Text {
+            text,
+            font_size,
+            color: color.to_owned()
+        });
+        self
+    }
+}
+
+/// A set of text updates for a single item box
 #[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone, Default)]
-pub struct InterfaceImageUpdate {
-    /// List of interface paths of the images and if they should be visible.
-    pub updates: Vec<(String, bool)>,
+pub struct InterfaceTextBoxUpdate {
+    pub interface_path: String,
+    pub lines: Vec<Line>
+}
+
+impl InterfaceTextBoxUpdate {
+    pub fn new(interface_path: &str) -> Self {
+        Self {
+            interface_path: interface_path.to_owned(),
+            lines: Vec::new()
+        }
+    }
+
+    /// Appends a line to the end of the textbox
+    pub fn append_line(&mut self) -> &mut Line {
+        self.lines.push(Line {
+            index: i32::MAX,
+            sections: Vec::new()
+        });
+        self.lines.last_mut().unwrap()
+    }
+
+    /// Prepends a line to the beginning of the textbox
+    pub fn prepend_line(&mut self) -> &mut Line {
+        self.lines.push(Line {
+            index: -1,
+            sections: Vec::new()
+        });
+        self.lines.last_mut().unwrap()
+    }
+
+    /// Changes the line at the supplied index.
+    pub fn change_line(&mut self, index: i32) -> &mut Line {
+        self.lines.push(Line {
+            index,
+            sections: Vec::new()
+        });
+        self.lines.last_mut().unwrap()
+    }
+
+    pub fn remove_line(&mut self, index: i32) {
+        self.lines.push(Line {
+            index,
+            sections: Vec::new()
+        });
+    }
+}
+
+
+/// Textbox input sent to the server
+#[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone, Default)]
+pub struct InterfaceTextInput {
+    /// Path of the input field
+    pub interface_path: String,
+    /// The content of the textbox
+    pub text: String
 }

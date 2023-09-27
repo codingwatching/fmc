@@ -6,7 +6,7 @@ use bevy::{
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
 
-use crate::{constants::CHUNK_SIZE, settings::Settings};
+use crate::{constants::CHUNK_SIZE, settings::Settings, game_state::GameState};
 
 pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
@@ -14,7 +14,7 @@ impl Plugin for CameraPlugin {
         app.add_systems(
             Update,
             (
-                camera_rotation,
+                camera_rotation.run_if(in_state(GameState::Playing)),
                 update_render_distance.run_if(resource_changed::<Settings>()),
             ),
         );
@@ -38,7 +38,7 @@ impl Default for CameraBundle {
                 // TODO: This should be defined by server
                 transform: Transform::from_xyz(
                     super::DEFAULT_PLAYER_WIDTH / 2.0,
-                    super::DEFAULT_PLAYER_HEIGHT - 0.2,
+                    super::DEFAULT_PLAYER_HEIGHT - 0.05,
                     super::DEFAULT_PLAYER_WIDTH / 2.0,
                 ),
                 projection: PerspectiveProjection {
@@ -56,7 +56,7 @@ impl Default for CameraBundle {
 }
 
 #[derive(Component, Default)]
-pub struct CameraState {
+struct CameraState {
     /// Vertical angle
     pub pitch: f32,
     /// Horizontal angle
@@ -123,7 +123,7 @@ fn camera_rotation(
 }
 
 // Forced camera rotation by the server.
-pub fn handle_camera_rotation_from_server(
+fn handle_camera_rotation_from_server(
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
     mut camera_q: Query<&mut Transform, With<Camera>>,
 ) {
