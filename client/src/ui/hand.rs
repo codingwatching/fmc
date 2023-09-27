@@ -148,7 +148,9 @@ fn equip_item(
             // the hierarchy below the hand entity that gets inserted immediately. It is too
             // cumbersome to get to. This is a hack.
             let name = Name::new(gltf.named_nodes.iter().next().unwrap().0.to_owned());
-            commands.entity(hand_entity).insert((name, AnimationPlayer::default()));
+            commands
+                .entity(hand_entity)
+                .insert((name, AnimationPlayer::default()));
 
             let gltf_mesh = gltf_meshes.get(&gltf.meshes[0]).unwrap();
             // Cumbersomely extract aabb height from gltf in an error prone way. I don't know how
@@ -258,7 +260,6 @@ fn play_use_animation(
     } else {
         return;
     };
-
 
     let model = models.get(&item.model_id).unwrap();
     let gltf = gltf_assets.get(&model.handle).unwrap();

@@ -16,7 +16,12 @@ impl Plugin for TextBoxPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (size_textbox_lines, handle_text_box_updates, send_text, fade_lines)
+            (
+                size_textbox_lines,
+                handle_text_box_updates,
+                send_text,
+                fade_lines,
+            )
                 .run_if(in_state(GameState::Playing)),
         );
     }
@@ -27,7 +32,7 @@ struct Line;
 
 #[derive(Component)]
 struct Fade {
-    delay: Timer
+    delay: Timer,
 }
 
 // Marks textboxes that should have their new lines faded out.
@@ -139,7 +144,7 @@ fn handle_text_box_updates(
                         ..default()
                     },
                     visibility: if should_fade {
-                        Visibility::Visible 
+                        Visibility::Visible
                     } else {
                         Visibility::Inherited
                     },
@@ -179,11 +184,11 @@ fn handle_text_box_updates(
 }
 
 // TODO: Make it actually fade? Thinking maybe it should initially show text without background,
-// this way it's less obtrusive. 
+// this way it's less obtrusive.
 fn fade_lines(
     mut commands: Commands,
     time: Res<Time>,
-    mut fading_query: Query<(Entity, &mut Visibility, &mut Fade)>
+    mut fading_query: Query<(Entity, &mut Visibility, &mut Fade)>,
 ) {
     for (entity, mut visibility, mut fade) in fading_query.iter_mut() {
         if !fade.delay.finished() {
@@ -194,7 +199,6 @@ fn fade_lines(
         }
     }
 }
-
 
 fn size_textbox_lines(
     mut line_query: Query<(&mut Style, &Children), Added<Line>>,

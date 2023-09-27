@@ -23,7 +23,7 @@ use fmc_networking::BlockId;
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::Deserialize;
 
-use crate::database::DatabaseArc;
+use crate::database::Database;
 
 use super::items::ItemId;
 
@@ -50,7 +50,7 @@ impl Plugin for BlockPlugin {
 
 // Reads blocks from resources/client/blocks/ and resources/server/mods/*/blocks and loads them
 // Each block will have a permanent id assigned to it that will persist through restarts.
-fn load_blocks(database: Res<DatabaseArc>) {
+fn load_blocks(database: Res<Database>) {
     fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
 

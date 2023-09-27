@@ -130,9 +130,11 @@ fn change_interface(
     }
 }
 
-fn enter_exit_ui(game_state: Res<State<GameState>>, mut ui_state: ResMut<NextState<UiState>>,
-mut window: Query<&mut Window, With<PrimaryWindow>>
-    ) {
+fn enter_exit_ui(
+    game_state: Res<State<GameState>>,
+    mut ui_state: ResMut<NextState<UiState>>,
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
+) {
     match game_state.get() {
         GameState::MainMenu => {
             ui_state.set(UiState::MainMenu);
@@ -143,7 +145,7 @@ mut window: Query<&mut Window, With<PrimaryWindow>>
     }
 
     let mut window = window.single_mut();
-    
+
     match game_state.get() {
         GameState::Playing => {
             window.cursor.grab_mode = if cfg!(unix) {
@@ -156,6 +158,8 @@ mut window: Query<&mut Window, With<PrimaryWindow>>
         _ => {
             window.cursor.grab_mode = CursorGrabMode::None;
             window.cursor.visible = true;
+            let position = Vec2::new(window.width() / 2.0, window.height() / 2.0);
+            window.set_cursor_position(Some(position));
         }
     }
 }

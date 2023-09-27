@@ -8,7 +8,7 @@ use fmc_networking::{messages, NetworkServer};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    database::DatabaseArc,
+    database::Database,
     physics::shapes::Aabb,
     utils,
     world::world_map::chunk_manager::{ChunkSubscriptionEvent, ChunkSubscriptions},
@@ -40,7 +40,7 @@ impl Plugin for ModelPlugin {
     }
 }
 
-fn load_models(mut commands: Commands, database: Res<DatabaseArc>) {
+fn load_models(mut commands: Commands, database: Res<Database>) {
     let ids = database.load_model_ids();
     let mut configs = HashMap::with_capacity(ids.len());
 

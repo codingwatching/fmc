@@ -13,7 +13,7 @@ use futures_lite::future;
 use crate::{
     bevy_extensions::f64_transform::F64GlobalTransform,
     constants::CHUNK_SIZE,
-    database::DatabaseArc,
+    database::Database,
     players::{PlayerMarker, Players},
     settings::ServerSettings,
     utils,
@@ -21,7 +21,7 @@ use crate::{
         blocks::Blocks,
         world_map::{
             chunk::{Chunk, ChunkStatus},
-            terrain_generation::TerrainGeneratorArc,
+            terrain_generation::TerrainGenerator,
             WorldMap,
         },
     },
@@ -225,9 +225,9 @@ struct LoadingTasks(HashSet<IVec3>);
 fn handle_chunk_requests(
     mut commands: Commands,
     net: Res<NetworkServer>,
-    database: Res<DatabaseArc>,
+    database: Res<Database>,
     world_map: Res<WorldMap>,
-    terrain_generator: Res<TerrainGeneratorArc>,
+    terrain_generator: Res<TerrainGenerator>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     mut loading_tasks: ResMut<LoadingTasks>,
     mut requests: EventReader<NetworkData<messages::ChunkRequest>>,

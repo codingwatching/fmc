@@ -32,35 +32,35 @@ impl Plugin for TerrainGenerationPlugin {
 }
 
 fn add_terrain_generator(mut commands: Commands, server_settings: Res<ServerSettings>) {
-    commands.insert_resource(TerrainGeneratorArc(Arc::new(TerrainGenerator::new(
+    commands.insert_resource(TerrainGenerator::new(
         server_settings.seed,
-    ))));
+    ));
 }
 
-#[derive(Resource, Deref)]
-pub struct TerrainGeneratorArc(pub Arc<TerrainGenerator>);
+#[derive(Resource, Deref, Clone)]
+pub struct TerrainGenerator(Arc<TerrainGeneratorInner>);
+
+impl TerrainGenerator {
+    fn new(seed: u64) -> Self {
+        Self(Arc::new(TerrainGeneratorInner {
+            biome_map: biomes::BiomeMap::new(),
+            seed,
+        }))
+    }
+}
 
 // TODO: It's terrible that the block ids need to be indexed by their name. Any name should be
 // replaceable by an id at startup. Therefore there needs to be a way to be able to define a biome
 // as data only, but I have no idea how. Like how would you define something like a tree that could
 // have so many variations.
-pub struct TerrainGenerator {
+pub struct TerrainGeneratorInner {
     // TODO: Need some way to define this dynamically?
     biome_map: biomes::BiomeMap,
     // World seed
     seed: u64,
 }
 
-impl TerrainGenerator {
-    fn new(seed: u64) -> TerrainGenerator {
-        let terrain_generator = TerrainGenerator {
-            biome_map: biomes::BiomeMap::new(),
-            seed,
-        };
-
-        return terrain_generator;
-    }
-
+impl TerrainGeneratorInner {
     // 3d noise used to give shape to the terrain.
     fn terrain_shape_noise(&self, x: i32, y: i32, z: i32, y_offset: usize) -> Vec<f32> {
         const GAIN: f32 = 2.0;

@@ -89,12 +89,7 @@ pub(super) fn load_models(
     for (name, id) in server_config.model_ids.iter() {
         if let Some(handle) = handles.remove(name) {
             models.reverse.insert(name.to_owned(), *id);
-            models.inner.insert(
-                *id,
-                Model {
-                    handle,
-                },
-            );
+            models.inner.insert(*id, Model { handle });
         } else {
             net.disconnect(&format!(
                 "Misconfigured resource pack: Missing model, no model with the name '{}'",

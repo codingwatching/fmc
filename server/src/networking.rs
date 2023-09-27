@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use fmc_networking::{messages, NetworkData, NetworkServer, ServerNetworkEvent};
 
 use crate::{
-    database::DatabaseArc,
     players::{PlayerName, Players},
     settings::ServerSettings,
     world::{blocks::Blocks, items::Items, models::Models}, chat::{CHAT_FONT_SIZE, CHAT_TEXT_COLOR},

@@ -84,19 +84,19 @@ impl Plugin for DatabasePlugin {
         //    panic!("Could not open the world file at '{}', make sure it is the correct file, else it might be corrupt", settings.world_database_path);
         //}
 
-        app.insert_resource(DatabaseArc(Arc::new(database)));
+        app.insert_resource(database);
     }
 }
 
-#[derive(Resource, Deref)]
-pub struct DatabaseArc(pub Arc<Database>);
+#[derive(Resource, Deref, Clone)]
+pub struct Database(Arc<DatabaseInner>);
 
 // TODO: Two modes, one where it saves only changes to disk and one where it saves all chunk data.
 //       Changes are best for single instances that don't care about the cpu load of re-generating
 //       chunks. For large servers it would be less expensive to save all of it.
 // TODO: Implement a connection pool
 // TODO: Currently passed around as ArcDatabase(Arc<Database>), should just be Database.
-pub struct Database {
+pub struct DatabaseInner {
     path: String,
     //pub pool: Mutex<Vec<rusqlite::Connection>>
 }
@@ -115,7 +115,9 @@ pub struct Database {
 // TODO: Extract functions and have them take a connection instead?
 impl Database {
     pub fn new(path: String) -> Self {
-        return Self { path };
+        return Self(Arc::new(DatabaseInner {
+            path,
+        }));
     }
 
     pub fn get_connection(&self) -> rusqlite::Connection {

@@ -12,7 +12,7 @@ mod world_map;
 pub use world_map::WorldMap;
 
 use crate::{
-    database::{Database, DatabaseArc},
+    database::Database,
     utils,
 };
 
@@ -168,7 +168,7 @@ fn handle_block_updates(
 struct DatabaseSyncTimer(Timer);
 
 async fn save_blocks(
-    database: Arc<Database>,
+    database: Database,
     block_updates: Vec<(IVec3, (BlockId, Option<BlockState>))>,
 ) {
     let mut conn = database.get_connection();
@@ -202,7 +202,7 @@ async fn save_blocks(
 }
 
 fn save_block_updates_to_database(
-    database: Res<DatabaseArc>,
+    database: Res<Database>,
     time: Res<Time>,
     mut block_events: EventReader<BlockUpdate>,
     mut sync_timer: ResMut<DatabaseSyncTimer>,
@@ -224,17 +224,15 @@ fn save_block_updates_to_database(
     sync_timer.tick(time.delta());
     if sync_timer.just_finished() {
         let task_pool = IoTaskPool::get();
-        let database_clone: Arc<Database> = database.clone();
         let block_updates = block_updates.drain().collect();
         task_pool
-            .spawn(save_blocks(database_clone, block_updates))
+            .spawn(save_blocks(database.clone(), block_updates))
             .detach();
     }
 
     if !exit_events.is_empty() {
-        let database_clone: Arc<Database> = database.clone();
         let block_updates = block_updates.drain().collect();
-        futures_lite::future::block_on(save_blocks(database_clone, block_updates));
+        futures_lite::future::block_on(save_blocks(database.clone(), block_updates));
     }
 }
 

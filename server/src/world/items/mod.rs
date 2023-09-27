@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
-    database::{Database, DatabaseArc},
+    database::Database,
     utils,
 };
 
@@ -39,7 +39,7 @@ impl Plugin for ItemPlugin {
     }
 }
 
-fn load_items(mut commands: Commands, database: Res<DatabaseArc>) {
+fn load_items(mut commands: Commands, database: Res<Database>) {
     let mut items = Items {
         configs: HashMap::new(),
         ids: database.load_item_ids(),

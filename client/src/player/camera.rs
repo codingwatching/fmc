@@ -6,7 +6,7 @@ use bevy::{
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
 
-use crate::{constants::CHUNK_SIZE, settings::Settings, game_state::GameState};
+use crate::{constants::CHUNK_SIZE, game_state::GameState, settings::Settings};
 
 pub struct CameraPlugin;
 impl Plugin for CameraPlugin {

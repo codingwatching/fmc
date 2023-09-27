@@ -17,13 +17,13 @@ pub use player::{PlayerMarker, PlayerName, PlayerSave};
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
     constants::CHUNK_SIZE,
-    database::DatabaseArc,
+    database::Database,
     physics::Velocity,
     utils,
     world::{
         blocks::Blocks,
         models::{Model, ModelBundle, ModelVisibility, Models},
-        world_map::{chunk::Chunk, terrain_generation::TerrainGeneratorArc},
+        world_map::{chunk::Chunk, terrain_generation::TerrainGenerator},
         WorldProperties,
     },
 };
@@ -75,7 +75,7 @@ impl Players {
 fn add_players(
     mut commands: Commands,
     net: Res<NetworkServer>,
-    database: Res<DatabaseArc>,
+    database: Res<Database>,
     models: Res<Models>,
     mut respawn_events: EventWriter<RespawnEvent>,
     player_query: Query<(Entity, &ConnectionId, &PlayerName), Added<PlayerName>>,
@@ -177,8 +177,8 @@ fn handle_player_rotation_updates(
 fn respawn_players(
     net: Res<NetworkServer>,
     world_properties: Res<WorldProperties>,
-    terrain_generator: Res<TerrainGeneratorArc>,
-    database: Res<DatabaseArc>,
+    terrain_generator: Res<TerrainGenerator>,
+    database: Res<Database>,
     mut respawn_events: EventReader<RespawnEvent>,
     connection_query: Query<&ConnectionId>,
 ) {

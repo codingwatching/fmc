@@ -6,8 +6,10 @@ use crate::{game_state::GameState, ui::widgets::*};
 pub struct PauseMenuPlugin;
 impl Plugin for PauseMenuPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, (press_resume, press_quit).run_if(in_state(UiState::PauseMenu)));
+        app.add_systems(Startup, setup).add_systems(
+            Update,
+            (resume_button, quit_button, escape_key).run_if(in_state(UiState::PauseMenu)),
+        );
     }
 }
 
@@ -41,7 +43,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     interfaces.insert(UiState::PauseMenu, entity);
 }
 
-fn press_quit(
+fn quit_button(
     mut game_state: ResMut<NextState<GameState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<QuitButton>)>,
 ) {
@@ -52,7 +54,7 @@ fn press_quit(
     }
 }
 
-fn press_resume(
+fn resume_button(
     mut game_state: ResMut<NextState<GameState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<ResumeButton>)>,
 ) {
@@ -60,5 +62,11 @@ fn press_resume(
         if *interaction == Interaction::Pressed {
             game_state.set(GameState::Playing);
         }
+    }
+}
+
+fn escape_key(mut game_state: ResMut<NextState<GameState>>, input: Res<Input<KeyCode>>) {
+    if input.just_pressed(KeyCode::Escape) {
+        game_state.set(GameState::Playing);
     }
 }

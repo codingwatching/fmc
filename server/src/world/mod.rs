@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{database::DatabaseArc, settings::ServerSettings};
-
-use self::world_map::terrain_generation::TerrainGeneratorArc;
+use crate::{database::Database, settings::ServerSettings};
 
 /// Block properties
 // TODO: limit scope?
@@ -32,7 +30,7 @@ impl Plugin for WorldPlugin {
     }
 }
 
-fn load_world_properties(mut commands: Commands, database: Res<DatabaseArc>) {
+fn load_world_properties(mut commands: Commands, database: Res<Database>) {
     let properties = if let Some(properties) = database.load_world_properties() {
         properties
     } else {
@@ -42,7 +40,7 @@ fn load_world_properties(mut commands: Commands, database: Res<DatabaseArc>) {
     commands.insert_resource(properties);
 }
 
-fn save_world_properties(database: Res<DatabaseArc>, properties: Res<WorldProperties>) {
+fn save_world_properties(database: Res<Database>, properties: Res<WorldProperties>) {
     database.save_world_properties(&properties);
 }
 

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
-use std::sync::Arc;
 
 use crate::database::Database;
 use crate::world::blocks::{BlockState, Blocks};
@@ -111,8 +110,8 @@ impl Chunk {
     // Load/Generate a chunk
     pub async fn load(
         position: IVec3,
-        terrain_generator: Arc<TerrainGenerator>,
-        database: Arc<Database>,
+        terrain_generator: TerrainGenerator,
+        database: Database,
     ) -> (IVec3, Chunk) {
         let mut partial_chunks: HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>> =
             HashMap::new();
