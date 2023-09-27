@@ -156,16 +156,16 @@ impl<'w, 's> Widgets<'w, 's> for ChildBuilder<'w, 's, '_> {
         let vertical_margin = match flex_direction {
             FlexDirection::Row | FlexDirection::RowReverse => {
                 if align_items == AlignItems::Center {
-                    Val::Px(font_size / 5.3)
+                    Val::Px((font_size / 5.3).round())
                 } else {
-                    Val::Px(font_size / 10.6)
+                    Val::Px((font_size / 10.6).round())
                 }
             }
             FlexDirection::Column | FlexDirection::ColumnReverse => {
                 if justify_content == JustifyContent::Center {
-                    Val::Px(font_size / 5.3)
+                    Val::Px((font_size / 5.3).round())
                 } else {
-                    Val::Px(font_size / 10.6)
+                    Val::Px((font_size / 10.6).round())
                 }
             }
         };

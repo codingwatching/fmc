@@ -136,9 +136,9 @@ fn equip_item(
             let model = models.get(&item.model_id).unwrap();
             let gltf = gltf_assets.get(&model.handle).unwrap();
 
-            // This looks like it is only to prevent triggering the animation when switching
-            // between the same items. The server sends a full interface update anytime an item is
-            // picked up, that is also caught by this.
+            // This prevents triggering the switch animation when switching
+            // between the same items. The server also sends a full interface update anytime an item is
+            // picked up, that is caught by this.
             if gltf.scenes[0] == *hand_scene {
                 continue;
             }
@@ -147,7 +147,8 @@ fn equip_item(
             // name with the AnimationClip paths. There is an animation player inserted deep in
             // the hierarchy below the hand entity that gets inserted immediately. It is too
             // cumbersome to get to. This is a hack.
-            commands.entity(hand_entity).insert(Name::new(gltf.named_nodes.iter().next().unwrap().0.to_owned()));
+            let name = Name::new(gltf.named_nodes.iter().next().unwrap().0.to_owned());
+            commands.entity(hand_entity).insert((name, AnimationPlayer::default()));
 
             let gltf_mesh = gltf_meshes.get(&gltf.meshes[0]).unwrap();
             // Cumbersomely extract aabb height from gltf in an error prone way. I don't know how
