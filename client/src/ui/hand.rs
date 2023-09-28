@@ -264,14 +264,11 @@ fn play_use_animation(
     let model = models.get(&item.model_id).unwrap();
     let gltf = gltf_assets.get(&model.handle).unwrap();
     let mut player = hand_animation_query.single_mut();
-    //dbg!(player.animation_clip().is_strong());
 
     if mouse_button_input.pressed(MouseButton::Left) {
         let animation_handle = gltf.named_animations.get("left_click").unwrap();
         let animation_clip = animation_clips.get(animation_handle).unwrap();
 
-        //dbg!(animation_handle.path(), animation_handle.is_strong());
-        //dbg!(animation_clip);
         if mouse_button_input.just_pressed(MouseButton::Left) {
             player.start_with_transition(animation_handle.clone(), Duration::from_millis(10));
         } else if player.elapsed() >= animation_clip.duration() {

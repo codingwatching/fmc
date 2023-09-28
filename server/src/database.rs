@@ -73,7 +73,6 @@ impl Plugin for DatabasePlugin {
         let settings = app.world.resource::<ServerSettings>();
 
         let database = Database::new(settings.database_path.clone());
-        app.insert_non_send_resource(database.get_connection());
 
         database.build();
         database.save_block_ids();

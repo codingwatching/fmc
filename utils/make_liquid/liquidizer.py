@@ -14,6 +14,17 @@ material_name = "water"
 friction = [0.8, 0.5, 0.8]
 flowing_texture_name = "flowing_water.png"
 still_texture_name = "still_water.png"
+fog = {
+    "color": {
+        "Rgba": {
+            "red": 0,
+            "green": 0,
+            "blue": 1,
+            "alpha": 1
+        }
+    },
+    "distance": 50
+}
 
 def make_block(name, top_quad, top_texture, rotate_texture, is_rotatable, cull_top=False, light_attenuation=0):
     quads = []
@@ -96,6 +107,7 @@ def make_block(name, top_quad, top_texture, rotate_texture, is_rotatable, cull_t
             "drag": friction,
         },
         "light_attenuation": light_attenuation,
+        "fog": fog,
         "is_rotatable": is_rotatable,
         "quads": quads
     }

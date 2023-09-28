@@ -184,6 +184,7 @@ pub fn load_blocks(
                 interactable,
                 is_rotatable,
                 light_attenuation,
+                fog,
             } => {
                 let material_handle = if let Some(m) = material_handles.get(&material) {
                     m.clone().typed()
@@ -338,6 +339,20 @@ pub fn load_blocks(
                     }
                 };
 
+                let fog_settings = if let Some(fog) = fog {
+                    Some(FogSettings {
+                        color: fog.color,
+                        falloff: FogFalloff::from_visibility_squared(fog.distance),
+                        //falloff: FogFalloff::Linear {
+                        //    start: 0.0,
+                        //    end: fog.distance,
+                        //},
+                        ..default()
+                    })
+                } else {
+                    None
+                };
+
                 Block::Cube(Cube {
                     name,
                     material_handle,
@@ -348,6 +363,7 @@ pub fn load_blocks(
                     cull_delimiters,
                     is_rotatable,
                     light_attenuation: light_attenuation.unwrap_or(15).min(15),
+                    fog_settings,
                 })
             }
 
@@ -468,18 +484,18 @@ impl Index<&BlockId> for Blocks {
 
 #[derive(Debug)]
 pub struct Cube {
-    /// Name of the block
-    pub name: String,
-    /// Material used to render this block.
+    // Name of the block
+    name: String,
+    // Material used to render this block.
     pub material_handle: Handle<materials::BlockMaterial>,
-    /// List of squares meshes that make up the block.
+    // List of squares meshes that make up the block.
     pub quads: Vec<QuadPrimitive>,
-    /// Friction value for player contact.
-    pub friction: Friction,
-    /// If when the player uses their equipped item on this block it should count as an
-    /// interaction, or it should count as trying to place its associated block.
-    pub interactable: bool,
-    /// The alpha mode of the blocks associated material, used to determine face culling.
+    // Friction value for player contact.
+    friction: Friction,
+    // If when the player uses their equipped item on this block it should count as an
+    // interaction, or it should count as trying to place its associated block.
+    interactable: bool,
+    // The alpha mode of the blocks associated material, used to determine face culling.
     cull_method: CullMethod,
     // TODO: This is not strictly needed I think, and it makes the code messy in a direction I
     // don't like. It was needed for water, but I don't think it's actually needed for anything
@@ -488,15 +504,17 @@ pub struct Cube {
     // currently. I didn't because I feel bad about wasting some 500 blocks (9!/6! I think is
     // correct.)
     //
-    /// Two vertical points on the left and right side of the vertical block faces that make a line
-    /// delimiting how much of an adjacent block face it will cull. This is needed for transparent
-    /// blocks like water as you only want the parts exposed to air to render when two water blocks
-    /// of different levels are adjacent to each other.
+    // Two vertical points on the left and right side of the vertical block faces that make a line
+    // delimiting how much of an adjacent block face it will cull. This is needed for transparent
+    // blocks like water as you only want the parts exposed to air to render when two water blocks
+    // of different levels are adjacent to each other.
     cull_delimiters: [Option<(f32, f32)>; 4],
-    /// If the block is rotateable around the y-axis
+    // If the block is rotateable around the y-axis
     is_rotatable: bool,
-    /// If transparent, should this decrease the vertical sunlight level.
-    pub light_attenuation: u8,
+    // If transparent, should this decrease the vertical sunlight level.
+    light_attenuation: u8,
+    // Fog rendered if the camera is inside the bounds of the cube.
+    pub fog_settings: Option<FogSettings>,
 }
 
 // TODO: This was made before the Models collection was made. This could hold model ids instead of
@@ -512,16 +530,16 @@ pub struct Cube {
 #[derive(Debug)]
 pub struct BlockModel {
     /// Name of the block
-    pub name: String,
+    name: String,
     /// Model used when centered in the block
     pub center: Option<(Handle<Scene>, Transform)>,
     /// Model used when on the side of the block
     pub side: Option<(Handle<Scene>, Transform)>,
     /// Friction or drag, applied by closest normal of the textures.
-    pub friction: Friction,
+    friction: Friction,
     /// If when the player uses their equipped item on this block, it should count as an
     /// interaction, or it should count as trying to place a block.
-    pub interactable: bool,
+    interactable: bool,
 }
 
 #[derive(Debug)]
@@ -601,6 +619,13 @@ impl Block {
             Block::Model(m) => &m.name,
         }
     }
+
+    pub fn fog_settings(&self) -> Option<FogSettings> {
+        match self {
+            Block::Cube(c) => c.fog_settings.clone(),
+            Block::Model(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -674,6 +699,8 @@ enum BlockConfig {
         is_rotatable: bool,
         /// How many levels light should decrease when passing through this block.
         light_attenuation: Option<u8>,
+        /// If fog should be rendered when the player camera is inside the block.
+        fog: Option<FogJson>,
     },
     Model {
         /// Name of the block, must be unique
@@ -772,6 +799,12 @@ struct QuadPrimitiveJson {
     cull_face: Option<BlockFace>,
     #[serde(default)]
     rotate_texture: bool,
+}
+
+#[derive(Deserialize)]
+struct FogJson {
+    color: Color,
+    distance: f32,
 }
 
 #[derive(Deserialize)]

@@ -33,7 +33,7 @@ impl Default for Camera {
     fn default() -> Self {
         Self(
             F64Transform {
-                translation: DVec3::new(0.3, 1.75, 0.3),
+                translation: DVec3::new(0.3, 1.65, 0.3),
                 ..default()
             }
         )

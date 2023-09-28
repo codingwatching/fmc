@@ -398,9 +398,9 @@ impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
         if self.unlit {
             flags |= BlockMaterialFlags::UNLIT;
         }
-        if self.fog_enabled {
+        //if self.fog_enabled {
             flags |= BlockMaterialFlags::FOG_ENABLED;
-        }
+        //}
         let has_normal_map = self.normal_map_texture.is_some();
         if has_normal_map {
             if let Some(texture) = images.get(self.normal_map_texture.as_ref().unwrap()) {

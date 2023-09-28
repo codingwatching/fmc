@@ -1,7 +1,7 @@
 use bevy::{prelude::*, render::primitives::Aabb};
 use fmc_networking::{messages, NetworkData};
 
-use crate::{game_state::GameState, world::MovesWithOrigin};
+use crate::{game_state::GameState, settings::Settings, world::MovesWithOrigin};
 
 mod camera;
 // TODO: This is pub because of asset loading, remove when redone
@@ -51,7 +51,7 @@ impl Player {
     }
 }
 
-fn setup_player(mut commands: Commands) {
+fn setup_player(mut commands: Commands, settings: Res<Settings>) {
     let player = Player::new();
     // TODO: The server should be able to define this so that you can play as different sized
     // things.
@@ -64,7 +64,9 @@ fn setup_player(mut commands: Commands) {
         ),
     );
 
-    let camera_entity = commands.spawn(camera::CameraBundle::default()).id();
+    let camera_entity = commands
+        .spawn((camera::CameraBundle::default(), settings.fog.clone()))
+        .id();
 
     let player_entity = commands
         .spawn(player)

@@ -6,7 +6,7 @@ use bevy::{
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
 
-use crate::{constants::CHUNK_SIZE, game_state::GameState, settings::Settings};
+use crate::{constants::CHUNK_SIZE, game_state::GameState, settings::Settings, world::{world_map::WorldMap, Origin, blocks::Blocks}};
 
 pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
@@ -14,7 +14,7 @@ impl Plugin for CameraPlugin {
         app.add_systems(
             Update,
             (
-                camera_rotation.run_if(in_state(GameState::Playing)),
+                (camera_rotation, fog).run_if(in_state(GameState::Playing)),
                 update_render_distance.run_if(resource_changed::<Settings>()),
             ),
         );
@@ -38,7 +38,7 @@ impl Default for CameraBundle {
                 // TODO: This should be defined by server
                 transform: Transform::from_xyz(
                     super::DEFAULT_PLAYER_WIDTH / 2.0,
-                    super::DEFAULT_PLAYER_HEIGHT - 0.05,
+                    super::DEFAULT_PLAYER_HEIGHT - 0.15,
                     super::DEFAULT_PLAYER_WIDTH / 2.0,
                 ),
                 projection: PerspectiveProjection {
@@ -130,6 +130,45 @@ fn handle_camera_rotation_from_server(
     for rotation_event in camera_rotation_events.read() {
         let mut transform = camera_q.single_mut();
         transform.rotation = rotation_event.rotation;
+    }
+}
+
+fn fog(
+    settings: Res<Settings>,
+    origin: Res<Origin>,
+    mut camera_transform_query: Query<(&GlobalTransform, &Projection, &mut FogSettings), (With<PlayerCameraMarker>, Changed<GlobalTransform>)>,
+    world_map: Res<WorldMap>,
+) {
+    for (transform, projection, mut fog_settings) in camera_transform_query.iter_mut() {
+        let (angle, near) = match projection {
+            Projection::Perspective(projection) => (projection.fov, projection.near),
+            _ => unreachable!()
+        };
+
+        // TODO: Without this if you peek above water it will still have the water fog until the
+        // camera origin comes up farther. With this if you peek under water it will not render the
+        // fog until the top of the camera is sumberged. I would like to not need this tradeoff,
+        // some kind of split.
+        //
+        // Only render fog when the camera is completely immersed in the block. 
+        let mut camera_frustum_near_top = transform.translation() + transform.forward() * near;
+        // TODO: This angle division of 1.5 should technically be 2.0 no? If the angle is the
+        // vertical fov, you want half. This yielded incorrect results though, 1.5 is better, but
+        // still wrong.
+        camera_frustum_near_top.y += near / (angle / 1.5).cos();
+
+        let camera_top_position = (camera_frustum_near_top).as_ivec3() + origin.0;
+        let Some(block_id) = world_map.get_block(&camera_top_position) else {
+            continue;
+        };
+
+        let blocks = Blocks::get();
+        let block_config = &blocks[&block_id];
+        if let Some(fog) = block_config.fog_settings() {
+            *fog_settings = fog.clone();
+        } else {
+            *fog_settings = settings.fog.clone();
+        }
     }
 }
 

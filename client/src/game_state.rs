@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::WindowFocused};
 use fmc_networking::{messages, NetworkClient};
 
 use crate::assets::AssetState;
@@ -17,7 +17,8 @@ pub struct GameStatePlugin;
 impl Plugin for GameStatePlugin {
     fn build(&self, app: &mut App) {
         app.add_state::<GameState>();
-        app.add_systems(OnExit(AssetState::Loading), finished_loading_start_game);
+        app.add_systems(Update, pause_when_unfocused)
+            .add_systems(OnExit(AssetState::Loading), finished_loading_start_game);
     }
 }
 
@@ -25,4 +26,18 @@ impl Plugin for GameStatePlugin {
 fn finished_loading_start_game(net: Res<NetworkClient>, mut state: ResMut<NextState<GameState>>) {
     net.send_message(messages::ClientFinishedLoading);
     state.set(GameState::Playing);
+}
+
+fn pause_when_unfocused(
+    state: Res<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut focus_events: EventReader<WindowFocused>,
+) {
+    for event in focus_events.read() {
+        if *state.get() == GameState::Playing {
+            if !event.focused {
+                next_state.set(GameState::Paused);
+            }
+        }
+    }
 }

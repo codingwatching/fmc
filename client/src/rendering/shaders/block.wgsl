@@ -1,10 +1,12 @@
 //#import bevy_pbr::mesh_bindings
 
+#import bevy_pbr::pbr_functions apply_fog
 #import bevy_pbr::pbr_types as pbr_types
 
 
 #import bevy_core_pipeline::tonemapping screen_space_dither, powsafe, tone_mapping
-#import bevy_pbr::mesh_view_bindings    globals, lights, view
+#import bevy_pbr::mesh_view_bindings    globals, lights, view, fog
+#import bevy_pbr::mesh_view_types       FOG_MODE_OFF
 
 //#import bevy_pbr::prepass_utils
 
@@ -262,10 +264,10 @@ fn fragment(
 //        output_color = alpha_discard(material, output_color);
 //    }
 //
-//    if (fog.mode != FOG_MODE_OFF && (material.flags & STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
-//        output_color = apply_fog(output_color, world_position.xyz, view.world_position.xyz);
-//    }
-//
+    if (fog.mode != FOG_MODE_OFF && (material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
+        output_color = apply_fog(fog, output_color, world_position.xyz, view.world_position.xyz);
+    }
+
 #ifdef TONEMAP_IN_SHADER
     //output_color = tone_mapping(output_color, view.color_grading);
 #ifdef DEBAND_DITHER

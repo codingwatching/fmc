@@ -1,4 +1,5 @@
-#import bevy_pbr::mesh_view_bindings view
+#import bevy_pbr::mesh_view_bindings view, fog
+#import bevy_pbr::pbr_functions      apply_fog
 #import bevy_pbr::mesh_vertex_output MeshVertexOutput
 
 struct SkyMaterialUniform {
@@ -108,7 +109,7 @@ fn fragment(
     let color: vec3<f32> = curr * whiteScale;
     let retColor: vec3<f32> = pow(color, vec3<f32>(1. / (1.2 + 1.2 * sunfade)));
 
-    let output_color = vec4(retColor, 1.0);
+    let output_color = apply_fog(fog, vec4(retColor, 1.0), in.world_position.xyz, view.world_position.xyz);
     return output_color;
 } 
 
