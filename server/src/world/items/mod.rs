@@ -310,6 +310,9 @@ fn pick_up_items(
     }
 }
 
+// TODO: This is actually a thing that needs to happen to all physics enabled object. This should
+// be moved to the physics module. All physics objects mapped to their current chunk position as
+// with models.
 fn trigger_physics_update_on_block_change(
     model_map: Res<ModelMap>,
     mut dropped_items: Query<&mut F64Transform, With<DroppedItem>>,
@@ -321,16 +324,26 @@ fn trigger_physics_update_on_block_change(
             _ => continue,
         };
         let chunk_position = utils::world_position_to_chunk_position(position);
-        let item_entities = match model_map.get_entities(&chunk_position) {
-            Some(e) => e,
-            None => continue,
-        };
-
-        for entity in item_entities.iter() {
-            if let Ok(mut transform) = dropped_items.get_mut(*entity) {
-                transform.into_inner();
+        if let Some(item_entities) = model_map.get_entities(&chunk_position) {
+            for entity in item_entities.iter() {
+                if let Ok(mut transform) = dropped_items.get_mut(*entity) {
+                    transform.into_inner();
+                }
             }
         }
+
+        let above_position = position + IVec3::Y;
+        let above_chunk_position = utils::world_position_to_chunk_position(above_position);
+        if above_chunk_position != chunk_position {
+            if let Some(item_entities) = model_map.get_entities(&above_chunk_position) {
+                for entity in item_entities.iter() {
+                    if let Ok(mut transform) = dropped_items.get_mut(*entity) {
+                        transform.into_inner();
+                    }
+                }
+            }
+        } 
+
     }
 }
 
