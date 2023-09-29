@@ -46,7 +46,6 @@ fn handle_model_add_delete(
     mut model_entities: ResMut<ModelEntities>,
     mut deleted_models: EventReader<NetworkData<messages::DeleteModel>>,
     mut new_models: EventReader<NetworkData<messages::NewModel>>,
-    player_aabb: Query<(&Aabb, &Transform), With<Player>>,
 ) {
     for model in deleted_models.read() {
         if let Some(entity) = model_entities.remove(&model.id) {
@@ -74,36 +73,6 @@ fn handle_model_add_delete(
             commands.entity(old_entity).despawn_recursive();
         }
 
-        // TODO: This is a crude way to avoid rendering the player model. Any model that is spawned
-        // inside the player aabb is assumed to be part of the player model. It will false
-        // positive.
-        //
-        // The plan was to make it so players could see their own body, but since client input
-        // needs a roundtrip before displayed it needs refinement, if it is even viable.
-        // It goes through ~3 change detections server side(change player position -> propagate to
-        // child model -> detect position change and send), so there's room for delay reduction by
-        // having a specific model update path for players.
-        //
-        // Current action plan would be to get all model aabbs when loading(might take a long time)
-        // and then check those against the player aabb instead of just the new model position.
-        // Then if the player body should be visible, any model inside the player aabb is moved in
-        // sync with the player. Rotation would still be delayed, but that might look just good
-        // enough. The body would lag behind, and the head would be see-through. Might be
-        // disassociating in third person though(can also be a good thing idk).
-        let (aabb, transform) = player_aabb.single();
-        let model_position = (new_model.position - origin.as_dvec3()).as_vec3();
-        let visibility = if (model_position)
-            .cmpge(Vec3::from(aabb.min()) + transform.translation)
-            .all()
-            && (model_position)
-                .cmple(Vec3::from(aabb.max()) + transform.translation)
-                .all()
-        {
-            Visibility::Hidden
-        } else {
-            Visibility::Visible
-        };
-
         let gltf = gltf_assets.get(&model.handle).unwrap();
 
         let entity = commands
@@ -114,7 +83,6 @@ fn handle_model_add_delete(
                     rotation: new_model.rotation,
                     scale: new_model.scale,
                 },
-                visibility,
                 ..default()
             })
             .insert(MovesWithOrigin)

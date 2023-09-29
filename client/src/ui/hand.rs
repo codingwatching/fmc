@@ -282,7 +282,6 @@ fn play_use_animation(
     }
 }
 
-// The server processes mouse clicks too.
 fn send_clicks(
     window: Query<&Window, With<PrimaryWindow>>,
     mouse_button_input: Res<Input<MouseButton>>, net: Res<NetworkClient>) {
@@ -296,8 +295,6 @@ fn send_clicks(
     }
 }
 
-// TODO: I don't know if this belongs here. Maybe keep it strictly Ui. Export EquippedItem and do
-// it in the player module?
 // TODO: Needs repetition if button held down. Test to where it feels reasonably comfortable so
 // that you can fly and place without having to pace yourself.
 //

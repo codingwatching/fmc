@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{math::DVec3, prelude::*};
-use fmc_networking::{messages, NetworkServer};
+use fmc_networking::{messages, NetworkServer, ConnectionId};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
@@ -361,18 +361,27 @@ fn update_visibility(
 fn send_models_on_chunk_subscription(
     net: Res<NetworkServer>,
     model_map: Res<ModelMap>,
-    models: Query<(&Model, &F64GlobalTransform, &ModelVisibility)>,
+    player_query: Query<&ConnectionId>,
+    models: Query<(Option<&Parent>, &Model, &F64GlobalTransform, &ModelVisibility)>,
     mut chunk_sub_events: EventReader<ChunkSubscriptionEvent>,
 ) {
     for chunk_sub in chunk_sub_events.read() {
         if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_pos) {
             for entity in model_entities.iter() {
-                let (model, transform, visibility) = models
+                let (maybe_player_parent, model, transform, visibility) = models
                     .get(*entity)
                     .expect("Entity to exist while it is contained in ModelMap");
 
                 if !visibility.is_visible {
                     continue;
+                }
+
+                // Don't send the player models to the players they belong to.
+                if let Some(parent) = maybe_player_parent {
+                    let connection_id = player_query.get(parent.get()).unwrap();
+                    if connection_id == &chunk_sub.connection_id {
+                        continue;
+                    }
                 }
 
                 let transform = transform.compute_transform();
