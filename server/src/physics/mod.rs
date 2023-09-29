@@ -15,6 +15,8 @@ use crate::{
 
 use self::shapes::Aabb;
 
+const GRAVITY: DVec3 = DVec3::new(0.0, -28.0, 0.0);
+
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
@@ -59,7 +61,6 @@ fn simulate_aabb_physics(
             continue;
         }
 
-        const GRAVITY: DVec3 = DVec3::new(0.0, -28.0, 0.0);
         velocity.0 += GRAVITY * time.delta_seconds_f64();
 
         for directional_velocity in [
@@ -104,11 +105,13 @@ fn simulate_aabb_physics(
                             half_extents: DVec3::new(0.5, 0.5, 0.5),
                         };
 
+                        let distance = aabb.center - block_aabb.center;
                         let overlap = aabb.half_extents + block_aabb.half_extents
-                            - (aabb.center - block_aabb.center).abs();
+                            - distance.abs();
 
                         if overlap.cmpgt(DVec3::ZERO).all() {
-                            collisions.push((overlap, block_id));
+                            //collisions.push((overlap, block_id));
+                            collisions.push((DVec3::from(overlap.copysign(distance)), block_id));
                         }
                     }
                 }
@@ -120,23 +123,24 @@ fn simulate_aabb_physics(
             // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
             // axis it takes the longest time to resolve the conflict.
             for (collision, _block_id) in collisions {
-                let backwards_time = collision / directional_velocity.abs();
+                let backwards_time = collision / -directional_velocity;
                 // Small epsilon to delta time because of precision.
-                let valid_axes = backwards_time.cmplt(delta_time + 0.0001);
-                let slowest_resolution_axis =
+                let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
+                    & backwards_time.cmpgt(DVec3::ZERO);
+                let resolution_axis =
                     DVec3::select(valid_axes, backwards_time, DVec3::NAN).max_element();
 
-                if slowest_resolution_axis == backwards_time.x {
-                    move_back.x = collision.x + collision.x / 100.0;
-                    velocity.x = 0.0;
-                } else if slowest_resolution_axis == backwards_time.y {
+                if resolution_axis == backwards_time.y {
                     move_back.y = collision.y + collision.y / 100.0;
                     if directional_velocity.y.signum() == GRAVITY.y.signum() {
                         velocity.0 = DVec3::ZERO;
                     } else {
                         velocity.y = 0.0;
                     }
-                } else if slowest_resolution_axis == backwards_time.z {
+                } else if resolution_axis == backwards_time.x {
+                    move_back.x = collision.x + collision.x / 100.0;
+                    velocity.x = 0.0;
+                } else if resolution_axis == backwards_time.z {
                     move_back.z = collision.z + collision.z / 100.0;
                     velocity.z = 0.0;
                 }

@@ -204,8 +204,6 @@ fn change_player_acceleration(
     player.acceleration = acceleration;
 }
 
-// TODO: This needs to be timestepped. When you unfocus the window it slows down tick rate, makes
-// you tunnel.
 // TODO: If you travel more than 0.5 blocks per tick you will tunnel.
 fn simulate_player_physics(
     origin: Res<Origin>,
