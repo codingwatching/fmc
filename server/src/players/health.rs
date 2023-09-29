@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
-use super::{player::Health, PlayerMarker, Players, RespawnEvent};
+use super::{player::Health, Player, Players, RespawnEvent};
 
 pub struct HealthPlugin;
 impl Plugin for HealthPlugin {
@@ -34,7 +34,7 @@ struct HealEvent {
 
 fn add_fall_damage_component(
     mut commands: Commands,
-    new_player_query: Query<Entity, Added<PlayerMarker>>,
+    new_player_query: Query<Entity, Added<Player>>,
 ) {
     for entity in new_player_query.iter() {
         commands.entity(entity).insert(FallDamage(0));
@@ -43,7 +43,7 @@ fn add_fall_damage_component(
 
 fn fall_damage(
     players: Res<Players>,
-    mut fall_damage_query: Query<(Entity, &mut FallDamage), With<PlayerMarker>>,
+    mut fall_damage_query: Query<(Entity, &mut FallDamage), With<Player>>,
     mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
     mut damage_events: EventWriter<DamageEvent>,
 ) {

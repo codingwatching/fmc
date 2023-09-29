@@ -12,17 +12,10 @@ use crate::{
     world::items::{crafting::CraftingTable, ItemStack, ItemStorage},
 };
 
-// TODO: Many of these are not necessarily unique to players. I've marked those I think are with
-// the Player prefix. Players probably share most of their properties and functionality with npcs,
-// but there are extra concerns about response time, and I don't know what to name the module that
-// would keep the components.
-
 #[derive(Component, Default)]
-pub struct PlayerMarker;
-
-/// Player name shown to other players
-#[derive(Component, Deref, DerefMut)]
-pub struct PlayerName(pub String);
+pub struct Player {
+    pub username: String,
+}
 
 /// Orientation of the player's camera.
 /// The transform's translation is where the camera is relative to the player position.
@@ -31,12 +24,10 @@ pub struct Camera(pub F64Transform);
 
 impl Default for Camera {
     fn default() -> Self {
-        Self(
-            F64Transform {
-                translation: DVec3::new(0.3, 1.65, 0.3),
-                ..default()
-            }
-        )
+        Self(F64Transform {
+            translation: DVec3::new(0.3, 1.65, 0.3),
+            ..default()
+        })
     }
 }
 
@@ -93,25 +84,23 @@ enum GameMode {
 #[derive(Bundle)]
 pub struct PlayerBundle {
     global_transform: F64GlobalTransform,
-    pub transform: F64Transform,
-    pub camera: Camera,
+    transform: F64Transform,
+    camera: Camera,
     inventory: ItemStorage,
     equipment: Equipment,
     equipped_item: EquippedItem,
     crafting_table: CraftingTable,
     velocity: Velocity,
     health: Health,
-    pub aabb: Aabb,
+    aabb: Aabb,
     gamemode: GameMode,
-    marker: PlayerMarker,
 }
 
 impl Default for PlayerBundle {
     fn default() -> Self {
         Self {
             global_transform: F64GlobalTransform::default(),
-            // Put the player somewhere high while it is waiting to be spawned for the first time.
-            transform: F64Transform::from_xyz(0.0, 10000.0, 0.0),
+            transform: F64Transform::default(),
             camera: Camera::default(),
             inventory: ItemStorage(vec![ItemStack::default(); 36]),
             equipment: Equipment::default(),
@@ -124,7 +113,6 @@ impl Default for PlayerBundle {
             },
             aabb: Aabb::from_min_max(DVec3::ZERO, DVec3::new(0.6, 1.8, 0.6)),
             gamemode: GameMode::Survival,
-            marker: PlayerMarker::default(),
         }
     }
 }

@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-use super::player::{Camera, EquippedItem, PlayerMarker};
+use super::player::{Camera, EquippedItem, Player};
 
 // Keeps the state of how far along a block is to breaking
 #[derive(Debug)]
@@ -221,7 +221,7 @@ pub fn handle_right_clicks(
             &F64GlobalTransform,
             &Camera,
         ),
-        With<PlayerMarker>,
+        With<Player>,
     >,
     mut block_update_writer: EventWriter<BlockUpdate>,
 ) {

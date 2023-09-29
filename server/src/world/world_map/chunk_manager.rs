@@ -14,7 +14,7 @@ use crate::{
     bevy_extensions::f64_transform::F64GlobalTransform,
     constants::CHUNK_SIZE,
     database::Database,
-    players::{PlayerMarker, Players},
+    players::{Player, Players},
     settings::ServerSettings,
     utils,
     world::{
@@ -64,7 +64,7 @@ struct PlayerRenderDistance(u32);
 
 fn add_chunk_origin(
     mut commands: Commands,
-    player_query: Query<(Entity, &F64GlobalTransform), Added<PlayerMarker>>,
+    player_query: Query<(Entity, &F64GlobalTransform), Added<Player>>,
 ) {
     for (entity, transform) in player_query.iter() {
         let position = transform.translation().as_ivec3();
@@ -90,7 +90,7 @@ fn update_chunk_origin(
 fn add_render_distance(
     mut commands: Commands,
     server_settings: Res<ServerSettings>,
-    player_query: Query<Entity, Added<PlayerMarker>>,
+    player_query: Query<Entity, Added<Player>>,
 ) {
     for entity in player_query.iter() {
         commands
@@ -205,11 +205,11 @@ fn handle_subscribers(
 ) {
     for event in network_events.read() {
         match event {
-            ServerNetworkEvent::Connected { connection, .. } => {
-                chunk_subscriptions.add_subscriber(*connection);
+            ServerNetworkEvent::Connected { connection_id, .. } => {
+                chunk_subscriptions.add_subscriber(*connection_id);
             }
-            ServerNetworkEvent::Disconnected(connection) => {
-                chunk_subscriptions.remove_subscriber(connection);
+            ServerNetworkEvent::Disconnected{ connection_id, ..} => {
+                chunk_subscriptions.remove_subscriber(connection_id);
             }
             _ => (),
         }

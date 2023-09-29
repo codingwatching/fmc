@@ -106,11 +106,14 @@ impl std::fmt::Debug for NetworkPacket {
 pub enum ServerNetworkEvent {
     /// A client has connected
     Connected {
-        connection: ConnectionId,
+        connection_id: ConnectionId,
         username: String,
     },
     /// A client has disconnected
-    Disconnected(ConnectionId),
+    Disconnected {
+        connection_id: ConnectionId,
+        username: String,
+    },
     /// An error occured while trying to do a network operation
     Error(ServerNetworkError),
 }
@@ -174,10 +177,10 @@ impl Plugin for ServerPlugin {
         app.insert_resource(server::NetworkServer::new())
             .add_event::<ServerNetworkEvent>()
             .init_resource::<NetworkSettings>()
-            // Preupdate -> register messages
+            // Preupdate -> Connect/register messages
             // Update -> process messages and register connections that should be disconnected
-            // PostUpdate -> Disconnect/Connect clients
-            .add_systems(PostUpdate, server::handle_connections)
+            // PostUpdate -> Disconnect
+            .add_systems(PreUpdate, server::handle_connections)
             .add_systems(PostUpdate, server::handle_disconnections)
             .listen_for_server_message::<messages::ClientFinishedLoading>()
             .listen_for_server_message::<messages::RenderDistance>()

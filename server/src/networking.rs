@@ -1,16 +1,16 @@
 use std::net::SocketAddr;
 
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkData, NetworkServer, ServerNetworkEvent};
+use fmc_networking::{messages, NetworkServer, ServerNetworkEvent};
 
 use crate::{
-    players::{PlayerName, Players},
     settings::ServerSettings,
-    world::{blocks::Blocks, items::Items, models::Models}, chat::{CHAT_FONT_SIZE, CHAT_TEXT_COLOR},
+    world::{blocks::Blocks, items::Items, models::Models},
 };
 
+// TODO: I stripped this for most of its functionality, and it's a little too lean now. Move server
+// setup to main, and sending the server config to fmc_networking::server
 pub struct ServerPlugin;
-
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(fmc_networking::ServerPlugin)
@@ -45,49 +45,17 @@ fn server_setup(
 }
 
 fn handle_network_events(
-    mut commands: Commands,
     net: Res<NetworkServer>,
     server_config: Res<messages::ServerConfig>,
-    mut players: ResMut<Players>,
     mut network_events: EventReader<ServerNetworkEvent>,
-    player_query: Query<&PlayerName>,
 ) {
     for event in network_events.read() {
         match event {
             ServerNetworkEvent::Connected {
-                connection,
-                username,
+                connection_id,
+                ..
             } => {
-                net.send_one(*connection, server_config.clone());
-
-                // The PlayerBundle is inserted on Added<PlayerName>(next tick), but is
-                // guaranteed to be available by the time the first packet is processed.
-                let entity = commands
-                    .spawn((*connection, PlayerName(username.clone())))
-                    .id();
-                players.insert(*connection, entity);
-
-                info!("{} joined the server.", username);
-
-                let mut chat_update = messages::InterfaceTextBoxUpdate::new("chat/history");
-                chat_update.append_line().with_text(format!("[SERVER] {} joined the server.", username), CHAT_FONT_SIZE, CHAT_TEXT_COLOR);
-                net.broadcast(chat_update);
-            }
-            ServerNetworkEvent::Disconnected(connection) => {
-                let entity = players.remove(connection).unwrap();
-                let username = player_query.get(entity).unwrap();
-
-                let mut chat_update = messages::InterfaceTextBoxUpdate::new("chat/history");
-                chat_update.append_line().with_text(format!("[SERVER] {} disconnected", username.as_str()), CHAT_FONT_SIZE, CHAT_TEXT_COLOR);
-                net.broadcast(chat_update);
-
-                info!(
-                    "Player disconnected, id: {}, username: {}",
-                    connection,
-                    username.as_str()
-                );
-
-                commands.entity(entity).despawn_recursive();
+                net.send_one(*connection_id, server_config.clone());
             }
             _ => {}
         }

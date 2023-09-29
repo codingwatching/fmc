@@ -5,7 +5,7 @@ use bevy::{
     math::Vec3A,
     prelude::*,
     render::{mesh::VertexAttributeValues, primitives::Aabb},
-    window::PrimaryWindow,
+    window::{PrimaryWindow, CursorGrabMode},
 };
 use fmc_networking::{messages, ConnectionId, NetworkClient, NetworkData};
 
@@ -283,11 +283,16 @@ fn play_use_animation(
 }
 
 // The server processes mouse clicks too.
-fn send_clicks(mouse_button_input: Res<Input<MouseButton>>, net: Res<NetworkClient>) {
-    if mouse_button_input.pressed(MouseButton::Left) {
-        net.send_message(messages::LeftClick);
-    } else if mouse_button_input.just_pressed(MouseButton::Right) {
-        net.send_message(messages::RightClick);
+fn send_clicks(
+    window: Query<&Window, With<PrimaryWindow>>,
+    mouse_button_input: Res<Input<MouseButton>>, net: Res<NetworkClient>) {
+
+    if window.single().cursor.grab_mode != CursorGrabMode::None {
+        if mouse_button_input.pressed(MouseButton::Left) {
+            net.send_message(messages::LeftClick);
+        } else if mouse_button_input.just_pressed(MouseButton::Right) {
+            net.send_message(messages::RightClick);
+        }
     }
 }
 

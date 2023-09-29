@@ -30,6 +30,7 @@ struct NewConnection {
 
 /// An established connection
 pub struct ClientConnection {
+    username: String,
     id: ConnectionId,
     receive_task: JoinHandle<()>,
     send_task: JoinHandle<()>,
@@ -457,6 +458,7 @@ pub(crate) fn handle_connections(
         server.established_connections.insert(
             connection_id,
             ClientConnection {
+                username: connection.username.to_owned(),
                 id: connection_id,
                 receive_task: server.runtime.as_ref().unwrap().spawn(recv_task(
                     connection_id,
@@ -476,12 +478,15 @@ pub(crate) fn handle_connections(
         );
 
         network_events.send(ServerNetworkEvent::Connected {
-            connection: connection_id,
+            connection_id,
             username: connection.username,
         });
     }
 }
 
+// TODO: When you disconnnect is prints a bunch of errors because it still has
+// access to the connection even though it's disconnected.
+//
 // Connections are disconnected with a 1 update-cycle lag. This is let the server application
 // process the connection's messages. If the lag wasn't there, the server would recieve the
 // disconnect event, while still having messages to process from the connection.
@@ -497,8 +502,12 @@ pub(crate) fn handle_disconnections(
             None => continue,
         };
 
+        network_events.send(ServerNetworkEvent::Disconnected {
+            connection_id,
+            username: connection.username.to_owned(),
+        });
+
         connection.stop();
-        network_events.send(ServerNetworkEvent::Disconnected(connection_id));
     }
 
     for disconnected_connection in server.disconnected_connections.receiver.try_iter() {

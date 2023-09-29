@@ -20,13 +20,13 @@ impl Plugin for ItemPlugin {
         app.add_systems(
             Update,
             (
-                handle_item_box_updates,
-                item_box_mouse_interaction,
-                update_cursor_item_stack_position,
+                (handle_item_box_updates,
                 update_item_box_images,
                 initial_select_item_box,
-                keyboard_select_item_box,
-                return_cursor_item.after(super::handle_toggle_events),
+                return_cursor_item.after(super::handle_toggle_events)).run_if(GameState::in_game),
+                (item_box_mouse_interaction,
+                update_cursor_item_stack_position,
+                keyboard_select_item_box).run_if(in_state(GameState::Playing)),
             )
                 .run_if(in_state(GameState::Playing)),
         );

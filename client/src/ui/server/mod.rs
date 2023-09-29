@@ -46,7 +46,7 @@ impl Plugin for ServerInterfacesPlugin {
                     cursor_visibility,
                     handle_escape_key,
                 )
-                    .run_if(in_state(GameState::Playing)),
+                    .run_if(GameState::in_game),
             );
     }
 }
@@ -599,6 +599,11 @@ fn cursor_visibility(
     }
 }
 
+// TODO: Interaction isn't granular enough. Buttons should only be pressed when they are hovered
+// over and the button is released. https://github.com/bevyengine/bevy/pull/9240 is fix I think.
+// Remember to also change it for the client GUI buttons, it will solve the problem
+// of mouse button spillover. Currently it plays the item use animation when you come out of the
+// pause menu.
 fn button_interaction(
     net: Res<NetworkClient>,
     button_query: Query<(&Interaction, &InterfacePath), (Changed<Interaction>, With<Button>)>,

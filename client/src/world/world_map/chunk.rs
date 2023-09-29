@@ -19,7 +19,7 @@ impl Plugin for ChunkPlugin {
         app.add_event::<ComputeVisibleChunkFacesEvent>();
         app.add_systems(
             Update,
-            (handle_visibility_tasks, spawn_visiblity_tasks).run_if(in_state(GameState::Playing)),
+            (handle_visibility_tasks, spawn_visiblity_tasks).run_if(GameState::in_game),
         );
     }
 }

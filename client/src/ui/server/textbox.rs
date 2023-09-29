@@ -22,7 +22,7 @@ impl Plugin for TextBoxPlugin {
                 send_text,
                 fade_lines,
             )
-                .run_if(in_state(GameState::Playing)),
+                .run_if(GameState::in_game),
         );
     }
 }

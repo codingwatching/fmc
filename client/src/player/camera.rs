@@ -14,7 +14,7 @@ impl Plugin for CameraPlugin {
         app.add_systems(
             Update,
             (
-                (camera_rotation, fog).run_if(in_state(GameState::Playing)),
+                (camera_rotation, fog).run_if(GameState::in_game),
                 update_render_distance.run_if(resource_changed::<Settings>()),
             ),
         );

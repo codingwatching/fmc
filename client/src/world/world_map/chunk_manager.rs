@@ -45,7 +45,7 @@ impl Plugin for ChunkManagerPlugin {
                     handle_block_updates,
                     pause_system,
                 )
-                    .run_if(in_state(GameState::Playing)),
+                    .run_if(GameState::in_game),
             )
             .add_systems(
                 // This has to be run postupdate because of the async mesh/visibility tasks. If

@@ -49,7 +49,7 @@ impl Plugin for LightingPlugin {
                     send_chunk_mesh_events,
                     light_chunk_unloading.run_if(resource_changed::<Origin>()),
                 )
-                    .run_if(in_state(GameState::Playing)),
+                    .run_if(GameState::in_game),
             );
     }
 }

@@ -26,7 +26,7 @@ impl Plugin for ModelPlugin {
                 render_aabb,
                 update_transforms,
             )
-                .run_if(in_state(GameState::Playing)),
+                .run_if(GameState::in_game),
         );
     }
 }

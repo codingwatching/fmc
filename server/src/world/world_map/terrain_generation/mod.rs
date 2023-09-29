@@ -32,9 +32,7 @@ impl Plugin for TerrainGenerationPlugin {
 }
 
 fn add_terrain_generator(mut commands: Commands, server_settings: Res<ServerSettings>) {
-    commands.insert_resource(TerrainGenerator::new(
-        server_settings.seed,
-    ));
+    commands.insert_resource(TerrainGenerator::new(server_settings.seed));
 }
 
 #[derive(Resource, Deref, Clone)]

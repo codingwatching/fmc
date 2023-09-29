@@ -114,9 +114,7 @@ pub struct DatabaseInner {
 // TODO: Extract functions and have them take a connection instead?
 impl Database {
     pub fn new(path: String) -> Self {
-        return Self(Arc::new(DatabaseInner {
-            path,
-        }));
+        return Self(Arc::new(DatabaseInner { path }));
     }
 
     pub fn get_connection(&self) -> rusqlite::Connection {

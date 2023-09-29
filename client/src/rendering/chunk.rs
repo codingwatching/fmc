@@ -31,7 +31,7 @@ impl Plugin for ChunkPlugin {
         app.add_event::<ChunkMeshEvent>();
         app.add_systems(
             Update,
-            (mesh_system, handle_mesh_tasks).run_if(in_state(GameState::Playing)),
+            (mesh_system, handle_mesh_tasks).run_if(GameState::in_game),
         );
     }
 }

@@ -4,7 +4,7 @@ use bevy::{
 };
 use std::collections::HashMap;
 
-use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
+use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer, ServerNetworkEvent};
 
 mod actions;
 mod health;
@@ -12,13 +12,14 @@ mod inventory;
 mod movement;
 mod player;
 
-pub use player::{PlayerMarker, PlayerName, PlayerSave};
+// TODO: Impl save/load for database in player module to not leak.
+pub use player::{Player, PlayerSave};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
     constants::CHUNK_SIZE,
     database::Database,
-    physics::Velocity,
+    physics::{shapes::Aabb, Velocity},
     utils,
     world::{
         blocks::Blocks,
@@ -28,6 +29,8 @@ use crate::{
     },
 };
 
+use self::player::Camera;
+
 pub struct PlayersPlugin;
 impl Plugin for PlayersPlugin {
     fn build(&self, app: &mut App) {
@@ -35,13 +38,14 @@ impl Plugin for PlayersPlugin {
             .insert_resource(Players::default())
             .add_plugins(inventory::InventoryPlugin)
             .add_plugins(health::HealthPlugin)
-            // This has to be preupdate to ensure that all player components are available by the
-            // time the first packet handlers might access them.
-            .add_systems(PreUpdate, add_players)
             .add_systems(
                 Update,
                 (
+                    add_remove_players,
+                    respawn_new_players,
                     respawn_players,
+                    add_player_model,
+                    send_player_configuration,
                     handle_player_position_updates,
                     handle_player_rotation_updates,
                     actions::handle_left_clicks,
@@ -49,11 +53,6 @@ impl Plugin for PlayersPlugin {
                 ),
             );
     }
-}
-
-#[derive(Event)]
-pub struct RespawnEvent {
-    pub entity: Entity,
 }
 
 #[derive(Default, Deref, DerefMut, Resource)]
@@ -72,36 +71,74 @@ impl Players {
     }
 }
 
-fn add_players(
+fn add_remove_players(
     mut commands: Commands,
-    net: Res<NetworkServer>,
     database: Res<Database>,
-    models: Res<Models>,
-    mut respawn_events: EventWriter<RespawnEvent>,
-    player_query: Query<(Entity, &ConnectionId, &PlayerName), Added<PlayerName>>,
+    mut players: ResMut<Players>,
+    mut network_events: EventReader<ServerNetworkEvent>,
 ) {
-    for (player_entity, connection, username) in player_query.iter() {
-        let player_bundle = if let Some(saved_player) = database.load_player(username) {
-            player::PlayerBundle::from(saved_player)
-        } else {
-            respawn_events.send(RespawnEvent {
-                entity: player_entity,
-            });
-            player::PlayerBundle::default()
-        };
+    for event in network_events.read() {
+        match event {
+            ServerNetworkEvent::Connected {
+                connection_id,
+                username,
+            } => {
+                let player_bundle = if let Some(player_save) = database.load_player(username) {
+                    player_save.into()
+                } else {
+                    player::PlayerBundle::default()
+                };
 
+                let entity =commands.spawn((
+                    Player {
+                        username: username.to_owned(),
+                    },
+                    player_bundle,
+                    *connection_id,
+                )).id();
+
+                players.insert(*connection_id, entity);
+
+                info!(
+                    "Player connected, id: {}, username: {}",
+                    connection_id, username
+                );
+
+            }
+            ServerNetworkEvent::Disconnected {
+                connection_id,
+                username,
+            } => {
+                let entity = players.remove(connection_id).unwrap();
+                commands.entity(entity).despawn_recursive();
+
+                info!(
+                    "Player disconnected, id: {}, username: {}",
+                    connection_id, username
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn send_player_configuration(
+    net: Res<NetworkServer>,
+    player_query: Query<(Entity, &ConnectionId, &Aabb, &Camera, &F64Transform), Added<Player>>,
+) {
+    for (player_entity, connection, aabb, camera, transform) in player_query.iter() {
         net.send_one(
             *connection,
             messages::PlayerConfiguration {
-                aabb_dimensions: player_bundle.aabb.half_extents.as_vec3() * 2.0,
-                camera_position: player_bundle.camera.translation.as_vec3(),
+                aabb_dimensions: aabb.half_extents.as_vec3() * 2.0,
+                camera_position: camera.translation.as_vec3(),
             },
         );
 
         net.send_one(
             *connection,
             messages::PlayerPosition {
-                position: player_bundle.transform.translation,
+                position: transform.translation,
                 velocity: DVec3::ZERO,
             },
         );
@@ -109,33 +146,38 @@ fn add_players(
         net.send_one(
             *connection,
             messages::PlayerCameraRotation {
-                rotation: player_bundle.camera.rotation.as_f32(),
+                rotation: camera.rotation.as_f32(),
             },
         );
+    }
+}
 
-        commands
-            .entity(player_entity)
-            .with_children(|parent| {
-                parent.spawn(ModelBundle {
-                    model: Model::new(models.get_id("player")),
-                    visibility: ModelVisibility::default(),
-                    global_transform: F64GlobalTransform::default(),
-                    transform: F64Transform {
-                        //translation: player_bundle.camera.translation - player_bundle.camera.translation.y,
-                        translation: DVec3::Z * 0.3 + DVec3::X * 0.3,
-                        rotation: player_bundle.camera.rotation,
-                        ..default()
-                    },
-                });
-            })
-            .insert(player_bundle);
+fn add_player_model(
+    mut commands: Commands,
+    models: Res<Models>,
+    player_query: Query<(Entity, &Camera), Added<Player>>,
+) {
+    for (entity, camera) in player_query.iter() {
+        commands.entity(entity).with_children(|parent| {
+            parent.spawn(ModelBundle {
+                model: Model::new(models.get_id("player")),
+                visibility: ModelVisibility::default(),
+                global_transform: F64GlobalTransform::default(),
+                transform: F64Transform {
+                    //translation: player_bundle.camera.translation - player_bundle.camera.translation.y,
+                    translation: DVec3::Z * 0.3 + DVec3::X * 0.3,
+                    rotation: camera.rotation,
+                    ..default()
+                },
+            });
+        });
     }
 }
 
 fn handle_player_position_updates(
     net: Res<NetworkServer>,
     players: Res<Players>,
-    mut player_query: Query<(&mut F64Transform, &mut Velocity), With<PlayerMarker>>,
+    mut player_query: Query<(&mut F64Transform, &mut Velocity), With<Player>>,
     mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
 ) {
     for position_update in position_events.read() {
@@ -165,6 +207,22 @@ fn handle_player_rotation_updates(
             .unwrap();
         let theta = f64::atan2(camera.rotation.y, camera.rotation.w);
         transform.rotation = DQuat::from_xyzw(0.0, f64::sin(theta), 0.0, f64::cos(theta));
+    }
+}
+
+#[derive(Event)]
+pub struct RespawnEvent {
+    pub entity: Entity,
+}
+
+fn respawn_new_players(
+    player_query: Query<(Entity, &F64Transform), Added<Player>>,
+    mut respawn_events: EventWriter<RespawnEvent>,
+) {
+    for (entity, transform) in player_query.iter() {
+        if transform.translation == DVec3::ZERO {
+            respawn_events.send(RespawnEvent { entity });
+        }
     }
 }
 

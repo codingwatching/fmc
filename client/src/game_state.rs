@@ -3,6 +3,15 @@ use fmc_networking::{messages, NetworkClient};
 
 use crate::assets::AssetState;
 
+pub struct GameStatePlugin;
+impl Plugin for GameStatePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_state::<GameState>();
+        app.add_systems(Update, pause_when_unfocused)
+            .add_systems(OnExit(AssetState::Loading), finished_loading_start_game);
+    }
+}
+
 /// The overarching states the game can be in.
 #[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
 pub enum GameState {
@@ -13,12 +22,13 @@ pub enum GameState {
     Paused,
 }
 
-pub struct GameStatePlugin;
-impl Plugin for GameStatePlugin {
-    fn build(&self, app: &mut App) {
-        app.add_state::<GameState>();
-        app.add_systems(Update, pause_when_unfocused)
-            .add_systems(OnExit(AssetState::Loading), finished_loading_start_game);
+
+impl GameState {
+    pub fn in_game(state: Res<State<GameState>>) -> bool {
+        match state.get() {
+            GameState::Playing | GameState::Paused => true,
+            _ => false,
+        }
     }
 }
 

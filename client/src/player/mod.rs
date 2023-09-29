@@ -23,7 +23,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Startup, setup_player)
             .add_systems(
                 Update,
-                handle_player_config.run_if(in_state(GameState::Playing)),
+                handle_player_config.run_if(GameState::in_game),
             );
     }
 }

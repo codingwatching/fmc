@@ -11,10 +11,7 @@ mod world_map;
 
 pub use world_map::WorldMap;
 
-use crate::{
-    database::Database,
-    utils,
-};
+use crate::{database::Database, utils};
 
 use self::chunk_manager::ChunkSubscriptions;
 

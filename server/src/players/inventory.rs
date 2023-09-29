@@ -4,7 +4,7 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 use crate::{
     players::{
-        player::{Equipment, EquippedItem, PlayerMarker},
+        player::{Equipment, EquippedItem, Player},
         Players,
     },
     world::items::{
@@ -371,10 +371,7 @@ impl PlayerInventoryInterface<'_> {
     }
 }
 
-fn insert_held_item_component(
-    mut commands: Commands,
-    player_query: Query<Entity, Added<PlayerMarker>>,
-) {
+fn insert_held_item_component(mut commands: Commands, player_query: Query<Entity, Added<Player>>) {
     for player_entity in player_query.iter() {
         commands
             .entity(player_entity)
