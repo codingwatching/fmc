@@ -52,10 +52,10 @@ fn fall_damage(
         let (entity, mut fall_damage) = fall_damage_query.get_mut(player_entity).unwrap();
 
         if fall_damage.0 != 0 && position_update.velocity.y > -0.1 {
-            damage_events.send(DamageEvent {
-                entity,
-                damage: fall_damage.0,
-            });
+            //damage_events.send(DamageEvent {
+            //    entity,
+            //    damage: fall_damage.0,
+            //});
             fall_damage.0 = 0;
         } else if position_update.velocity.y < 0.0 {
             fall_damage.0 = (position_update.velocity.y.abs() as u32).saturating_sub(15);

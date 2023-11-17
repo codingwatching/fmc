@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{database::Database, settings::ServerSettings};
+use crate::{database::Database, settings::Settings};
 
 /// Block properties
 // TODO: limit scope?

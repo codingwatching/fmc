@@ -106,8 +106,7 @@ fn simulate_aabb_physics(
                         };
 
                         let distance = aabb.center - block_aabb.center;
-                        let overlap = aabb.half_extents + block_aabb.half_extents
-                            - distance.abs();
+                        let overlap = aabb.half_extents + block_aabb.half_extents - distance.abs();
 
                         if overlap.cmpgt(DVec3::ZERO).all() {
                             //collisions.push((overlap, block_id));

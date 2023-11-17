@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{math::DVec3, prelude::*};
-use fmc_networking::{messages, NetworkServer, ConnectionId};
+use fmc_networking::{messages, ConnectionId, NetworkServer};
 
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
@@ -362,7 +362,12 @@ fn send_models_on_chunk_subscription(
     net: Res<NetworkServer>,
     model_map: Res<ModelMap>,
     player_query: Query<&ConnectionId>,
-    models: Query<(Option<&Parent>, &Model, &F64GlobalTransform, &ModelVisibility)>,
+    models: Query<(
+        Option<&Parent>,
+        &Model,
+        &F64GlobalTransform,
+        &ModelVisibility,
+    )>,
     mut chunk_sub_events: EventReader<ChunkSubscriptionEvent>,
 ) {
     for chunk_sub in chunk_sub_events.read() {

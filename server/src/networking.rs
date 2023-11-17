@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use fmc_networking::{messages, NetworkServer, ServerNetworkEvent};
 
 use crate::{
-    settings::ServerSettings,
+    settings::Settings,
     world::{blocks::Blocks, items::Items, models::Models},
 };
 
@@ -27,7 +27,7 @@ fn server_setup(
     assets_hash: Res<crate::assets::AssetArchiveHash>,
     models: Res<Models>,
     items: Res<Items>,
-    server_settings: Res<ServerSettings>,
+    settings: Res<Settings>,
 ) {
     let socket_address: SocketAddr = "127.0.0.1:42069".parse().unwrap();
 
@@ -38,7 +38,7 @@ fn server_setup(
         block_ids: Blocks::get().clone_ids(),
         model_ids: models.clone_ids(),
         item_ids: items.clone_ids(),
-        render_distance: server_settings.render_distance,
+        render_distance: settings.render_distance,
     });
 
     info!("Started listening for new connections!");
@@ -51,10 +51,7 @@ fn handle_network_events(
 ) {
     for event in network_events.read() {
         match event {
-            ServerNetworkEvent::Connected {
-                connection_id,
-                ..
-            } => {
+            ServerNetworkEvent::Connected { connection_id, .. } => {
                 net.send_one(*connection_id, server_config.clone());
             }
             _ => {}

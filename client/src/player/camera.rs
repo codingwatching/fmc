@@ -6,7 +6,12 @@ use bevy::{
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
 
-use crate::{constants::CHUNK_SIZE, game_state::GameState, settings::Settings, world::{world_map::WorldMap, Origin, blocks::Blocks}};
+use crate::{
+    constants::CHUNK_SIZE,
+    game_state::GameState,
+    settings::Settings,
+    world::{blocks::Blocks, world_map::WorldMap, Origin},
+};
 
 pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
@@ -136,13 +141,16 @@ fn handle_camera_rotation_from_server(
 fn fog(
     settings: Res<Settings>,
     origin: Res<Origin>,
-    mut camera_transform_query: Query<(&GlobalTransform, &Projection, &mut FogSettings), (With<PlayerCameraMarker>, Changed<GlobalTransform>)>,
+    mut camera_transform_query: Query<
+        (&GlobalTransform, &Projection, &mut FogSettings),
+        (With<PlayerCameraMarker>, Changed<GlobalTransform>),
+    >,
     world_map: Res<WorldMap>,
 ) {
     for (transform, projection, mut fog_settings) in camera_transform_query.iter_mut() {
         let (angle, near) = match projection {
             Projection::Perspective(projection) => (projection.fov, projection.near),
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         // TODO: Without this if you peek above water it will still have the water fog until the
@@ -150,7 +158,7 @@ fn fog(
         // fog until the top of the camera is sumberged. I would like to not need this tradeoff,
         // some kind of split.
         //
-        // Only render fog when the camera is completely immersed in the block. 
+        // Only render fog when the camera is completely immersed in the block.
         let mut camera_frustum_near_top = transform.translation() + transform.forward() * near;
         // TODO: This angle division of 1.5 should technically be 2.0 no? If the angle is the
         // vertical fov, you want half. This yielded incorrect results though, 1.5 is better, but

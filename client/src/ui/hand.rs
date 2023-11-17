@@ -5,7 +5,7 @@ use bevy::{
     math::Vec3A,
     prelude::*,
     render::{mesh::VertexAttributeValues, primitives::Aabb},
-    window::{PrimaryWindow, CursorGrabMode},
+    window::{CursorGrabMode, PrimaryWindow},
 };
 use fmc_networking::{messages, ConnectionId, NetworkClient, NetworkData};
 
@@ -284,8 +284,9 @@ fn play_use_animation(
 
 fn send_clicks(
     window: Query<&Window, With<PrimaryWindow>>,
-    mouse_button_input: Res<Input<MouseButton>>, net: Res<NetworkClient>) {
-
+    mouse_button_input: Res<Input<MouseButton>>,
+    net: Res<NetworkClient>,
+) {
     if window.single().cursor.grab_mode != CursorGrabMode::None {
         if mouse_button_input.pressed(MouseButton::Left) {
             net.send_message(messages::LeftClick);

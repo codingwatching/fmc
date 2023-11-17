@@ -35,7 +35,7 @@ fn main() {
         //.add_plugin(LogDiagnosticsPlugin::default())
         //.add_plugin(FrameTimeDiagnosticsPlugin::default())
         // Server specific
-        .insert_resource(settings::ServerSettings::load())
+        .insert_resource(settings::Settings::load())
         .add_plugins(assets::AssetPlugin)
         .add_plugins(database::DatabasePlugin)
         .add_plugins(networking::ServerPlugin)

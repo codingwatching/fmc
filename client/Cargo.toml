@@ -30,6 +30,7 @@ zstd = "0.12.4"
 
 # Enable a small amount of optimization in debug mode
 #[profile.dev]
+#strip = "debuginfo"
 #opt-level = 1
 
 # Enable high optimizations for dependencies (incl. Bevy), but not for our code:

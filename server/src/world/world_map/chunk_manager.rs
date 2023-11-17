@@ -15,7 +15,7 @@ use crate::{
     constants::CHUNK_SIZE,
     database::Database,
     players::{Player, Players},
-    settings::ServerSettings,
+    settings::Settings,
     utils,
     world::{
         blocks::Blocks,
@@ -89,26 +89,26 @@ fn update_chunk_origin(
 
 fn add_render_distance(
     mut commands: Commands,
-    server_settings: Res<ServerSettings>,
+    settings: Res<Settings>,
     player_query: Query<Entity, Added<Player>>,
 ) {
     for entity in player_query.iter() {
         commands
             .entity(entity)
-            .insert(PlayerRenderDistance(server_settings.render_distance));
+            .insert(PlayerRenderDistance(settings.render_distance));
     }
 }
 
 fn update_render_distance(
     players: Res<Players>,
-    server_settings: Res<ServerSettings>,
+    settings: Res<Settings>,
     mut player_query: Query<&mut PlayerRenderDistance>,
     mut render_distance_events: EventReader<NetworkData<messages::RenderDistance>>,
 ) {
     for event in render_distance_events.read() {
         let entity = players.get(&event.source);
         let mut render_distance = player_query.get_mut(entity).unwrap();
-        render_distance.0 = event.render_distance.min(server_settings.render_distance);
+        render_distance.0 = event.render_distance.min(settings.render_distance);
     }
 }
 
@@ -208,7 +208,7 @@ fn handle_subscribers(
             ServerNetworkEvent::Connected { connection_id, .. } => {
                 chunk_subscriptions.add_subscriber(*connection_id);
             }
-            ServerNetworkEvent::Disconnected{ connection_id, ..} => {
+            ServerNetworkEvent::Disconnected { connection_id, .. } => {
                 chunk_subscriptions.remove_subscriber(connection_id);
             }
             _ => (),
@@ -242,6 +242,7 @@ fn handle_chunk_requests(
             // Clients might send positions that aren't aligned with chunk positions if they are
             // evil, so they need to be normalized.
             let chunk_pos = utils::world_position_to_chunk_position(*chunk_pos);
+
             for x in -1..=1 {
                 for y in -1..=1 {
                     for z in -1..=1 {

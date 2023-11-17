@@ -21,10 +21,7 @@ impl Plugin for PlayerPlugin {
         app.add_plugins(movement::MovementPlugin)
             .add_plugins(camera::CameraPlugin)
             .add_systems(Startup, setup_player)
-            .add_systems(
-                Update,
-                handle_player_config.run_if(GameState::in_game),
-            );
+            .add_systems(Update, handle_player_config.run_if(GameState::in_game));
     }
 }
 

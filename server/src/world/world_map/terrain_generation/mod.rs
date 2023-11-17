@@ -1,179 +1,111 @@
-// There's a lot to do here. But I don't want to start anything without having it mapped out.
-// Temporarily implemented just one biome.
-// When implemented it should support a 3d biome system where biomes might change mid chunk.
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::prelude::*;
 use fmc_networking::BlockId;
+use noise::Noise;
 use rand::SeedableRng;
-use simdnoise::NoiseBuilder;
 
-use crate::{constants::CHUNK_SIZE, settings::ServerSettings};
+use crate::{constants::CHUNK_SIZE, settings::Settings};
 
 mod biomes;
 mod features;
 
-// Used to determine the average height of the world.
-const BASE_HEIGHT: f32 = 40.0;
-
 // The heighest point relative to the base height 3d noise can extend to create terrain.
-const MAX_RELATIVE_HEIGHT: f32 = 120.0;
-// Same, but lowest, extends downwards.
-const MIN_RELATIVE_HEIGHT: f32 = 120.0;
+const MAX_HEIGHT: i32 = 120;
 
 pub struct TerrainGenerationPlugin;
 
 impl Plugin for TerrainGenerationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, add_terrain_generator);
+        app.add_systems(Startup, setup);
     }
 }
 
-fn add_terrain_generator(mut commands: Commands, server_settings: Res<ServerSettings>) {
-    commands.insert_resource(TerrainGenerator::new(server_settings.seed));
+fn setup(mut commands: Commands, settings: Res<Settings>) {
+    commands.insert_resource(TerrainGenerator::new(settings.seed));
 }
 
 #[derive(Resource, Deref, Clone)]
 pub struct TerrainGenerator(Arc<TerrainGeneratorInner>);
 
 impl TerrainGenerator {
-    fn new(seed: u64) -> Self {
+    fn new(seed: i32) -> Self {
+        //let freq = 1.0/200.0;
+        //let terrain_low = Noise::simplex(0.0, seed).with_frequency(freq, 0.0, freq).fbm(4, 0.5, 2.0).mul_value(0.3);
+        //let terrain_high = Noise::simplex(0.0, seed + 1).with_frequency(freq, 0.0, freq).fbm(4, 0.5, 2.0).max(terrain_low.clone());
+        //let freq = 1.0/200.0;
+        //let terrain_shape_low = Noise::simplex(0.0, seed + 2).with_frequency(freq, freq * 0.5, freq).fbm(5, 0.5, 2.0);
+        //let terrain_shape_high = Noise::simplex(0.0, seed + 3).with_frequency(freq, freq * 0.5, freq).fbm(5, 0.5, 2.0);
+        //let terrain_shape = Noise::simplex(0.0, seed + 4).with_frequency(freq, freq * 0.5, freq).lerp(terrain_shape_high, terrain_shape_low).range(0.1, -0.1, terrain_high, terrain_low);
+
+        // ANOTHER ATTEMPT
+        //let freq = 0.002;
+        //let base_terrain = Noise::simplex(0.0, seed).with_frequency(freq, 0.0, freq).fbm(4, 0.5, 2.0).mul_value(0.1);
+        //let freq = 0.003;
+        //let mound = Noise::simplex(0.0, seed + 1).with_frequency(freq, 0.0, freq).fbm(4, 0.5, 2.0).abs().mul_value(0.3).add(base_terrain.clone()).max(base_terrain.clone());
+        ////let mounds = Noise::simplex(0.005, seed + 3).fbm(4, 0.5, 2.0).range(0.5, -0.5, mound_high.clone(), mound_low.clone());
+
+        ////let terrain_low = Noise::simplex(0.001, seed + 4).fbm(6, 0.5, 2.0).add(base_terrain.clone());
+        ////let terrain_high = Noise::simplex(0.005, seed + 5).fbm(4, 0.5, 2.0).range(0.5, -0.5, mound_high, mound_low).add(base_terrain).add_value(0.5);
+
+        //let freq = 1.0/150.0;
+        //let terrain_shape = Noise::simplex(0.0, seed + 6).with_frequency(freq, freq * 0.5, freq).fbm(5, 0.5, 2.0);
+        //let terrain_shape = terrain_shape.clone().range(0.5, -0.0, mound.clone(), base_terrain);
+        ////let terrain_shape = terrain_shape.range(0.8, 0.7, mound.clone().add_value(0.4), terrain_shape_low);
+
+        let contintents = Noise::perlin(0.005, seed)
+            .fbm(6, 0.5, 2.0)
+            // Increase so less of the world is sea
+            .add_value(0.25)
+            // Reduce height of contintents to be between -10%/5% of MAX_HEIGHT
+            .clamp(-0.1, 0.05);
+
+        let terrain_height = Noise::perlin(1./128., seed + 1)
+            .fbm(5, 0.5, 2.0)
+            // Increase so less of the terrain is flat
+            .add_value(0.5)
+            // Move to range 0.5..1.5, see application for how it works
+            .clamp(0.0, 1.0)
+            .add_value(0.5);
+
+        // When out at sea bottom out the terrain height gradually from the shore, so big
+        // landmasses don't poke out.
+        let terrain_height = contintents.clone().range(0.0, -0.05, terrain_height, Noise::constant(0.5));
+
+        let freq = 1.0/2.0f32.powi(8);
+        let high = Noise::perlin(freq, seed + 2).with_frequency(freq, freq, freq).fbm(5, 0.5, 2.0);
+        let low = Noise::perlin(freq, seed + 3).with_frequency(freq, freq, freq).fbm(5, 0.5, 2.0);
+
+        // High and low are switched between to create sudden changes in terrain elevation.
+        let freq = 1.0/92.0;
+        let terrain_shape = Noise::perlin(0.0, seed + 4)
+            .with_frequency(freq, freq * 0.5, freq)
+            .fbm(4, 0.5, 2.0)
+            .range(0.1, -0.1, high, low)
+            .mul_value(1.5);
+
         Self(Arc::new(TerrainGeneratorInner {
             biome_map: biomes::BiomeMap::new(),
+            continents: contintents,
+            terrain_height,
+            terrain_shape,
             seed,
         }))
     }
 }
 
-// TODO: It's terrible that the block ids need to be indexed by their name. Any name should be
-// replaceable by an id at startup. Therefore there needs to be a way to be able to define a biome
-// as data only, but I have no idea how. Like how would you define something like a tree that could
-// have so many variations.
 pub struct TerrainGeneratorInner {
-    // TODO: Need some way to define this dynamically?
     biome_map: biomes::BiomeMap,
-    // World seed
-    seed: u64,
+    continents: Noise,
+    terrain_height: Noise,
+    terrain_shape: Noise,
+    seed: i32,
 }
 
 impl TerrainGeneratorInner {
-    // 3d noise used to give shape to the terrain.
-    fn terrain_shape_noise(&self, x: i32, y: i32, z: i32, y_offset: usize) -> Vec<f32> {
-        const GAIN: f32 = 2.0;
-        const OCTAVES: i32 = 3;
-        let mut noise = NoiseBuilder::fbm_3d_offset(
-            x as f32,
-            CHUNK_SIZE,
-            y as f32,
-            CHUNK_SIZE + y_offset,
-            z as f32,
-            CHUNK_SIZE,
-        )
-        .with_gain(GAIN)
-        .with_octaves(OCTAVES as u8)
-        .with_freq(0.05)
-        .generate()
-        .0;
-
-        let scale = (1.0 - GAIN.powi(OCTAVES)) / (1.0 - GAIN);
-        noise.iter_mut().for_each(|x| *x /= scale);
-
-        noise
-    }
-
-    // The base height of the terrain. Used to determine the general height of the world for the
-    // entire chunk column.
-    fn terrain_height_noise(&self, x: i32, z: i32) -> (Vec<f32>, f32, f32) {
-        const GAIN: f32 = 2.0;
-        const OCTAVES: i32 = 2;
-        let mut noise = NoiseBuilder::fbm_2d_offset(x as f32, CHUNK_SIZE, z as f32, CHUNK_SIZE)
-            .with_gain(GAIN)
-            .with_octaves(OCTAVES as u8)
-            .with_freq(0.001)
-            .generate();
-
-        let scale = (1.0 - GAIN.powi(OCTAVES)) / (1.0 - GAIN);
-        noise.0.iter_mut().for_each(|x| *x /= scale);
-        noise.1 /= scale;
-        noise.2 /= scale;
-        return noise;
-    }
-
-    fn compression_noise(&self, x: i32, z: i32) -> Vec<f32> {
-        const GAIN: f32 = 2.0;
-        const OCTAVES: i32 = 5;
-        let mut noise = NoiseBuilder::ridge_2d_offset(x as f32, CHUNK_SIZE, z as f32, CHUNK_SIZE)
-            .with_gain(GAIN)
-            .with_octaves(OCTAVES as u8)
-            .with_freq(0.04)
-            .generate()
-            .0;
-
-        // TODO: Fork simdnoise and add this as another simd operation?
-        // Scale to between -1 and 1
-        let scale = (1.0 - GAIN.powi(OCTAVES)) / (1.0 - GAIN);
-        noise.iter_mut().for_each(|x| *x /= scale);
-        return noise;
-    }
-
-    fn compress_terrain_shape(
-        terrain_shape: &mut Vec<f32>,
-        compression: &Vec<f32>,
-        terrain_height: &Vec<f32>,
-        biomes: &Vec<&biomes::Biome>,
-        chunk_position: IVec3,
-        y_offset: usize,
-    ) {
-        for x in 0..CHUNK_SIZE {
-            for z in 0..CHUNK_SIZE {
-                let index = z << 4 | x;
-                let base_height = (terrain_height[index] * BASE_HEIGHT).round() as i32;
-                // Shift from -1..1 to 0..1
-                let column_compression = (1.0 + compression[index]) / 2.0;
-                let biome = biomes[index];
-
-                for y in 0..CHUNK_SIZE + y_offset {
-                    let relative_height = (chunk_position.y + y as i32 - base_height) as f32;
-
-                    let height_cap = match relative_height.is_sign_positive() {
-                        true => column_compression * MAX_RELATIVE_HEIGHT,
-                        false => column_compression * MIN_RELATIVE_HEIGHT,
-                    };
-
-                    // TODO: Maybe it makes sense to make this an exponential decay? Aggressive
-                    // culling when far off will maybe leave fewer floating blocks.
-                    let block_compression = (1.0 / height_cap).min(1.0);
-
-                    let index = z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
-                    let density = &mut terrain_shape[index];
-
-                    // Notice relative_height carries the sign.
-                    *density -= block_compression * relative_height;
-                }
-            }
-        }
-    }
-
     // TODO: Use X direction of noise as Y direction, this way all access of the vector is
     // sequential, hopefully removing cache misses.
-    //
-    // Terrain is calculated through a base of 3d noise. This noise is manipulated through a set
-    // of 2d noises. The first manipulator is 'terrain height', it moves the base height of the
-    // terrain up and down by using it as a middle point on the y axis of the 3d noise. It is
-    // clamped between the MAX_TERRAIN_HEIGHT and MIN_TERRAIN_HEIGHT.
-    // The second is 'compression', it acts as a second lever on how high the terrain
-    // should be. It's value is used as as density modifier. Terrain above the base terrain height
-    // has its density decreased, and below, increased, depending on how for away they are from the
-    // base terrain height, farther == more. Example: A compression value of 0.5 and a block
-    // above the base terrain. First we find the value's ratio of MAX_RELATIVE_HEIGHT, 100 say, this
-    // would be 50. This means we don't want any blocks above base_terrain_height+50. To accomplish
-    // this we divide -1 by 50 to get the density modifier per block height increase. Any given
-    // block will then have its height difference relative to the base height multiplied by the
-    // density modifier and added to its density. This way a block 50 blocks above will have its
-    // density decreased by '50 * -1/50 = -1', and with the max density being 1, never be visible.
-    // Inverted for all blocks below using MIN_RELATIVE_HEIGHT and 1 instead of -1.
     //
     /// Generates all blocks for the chunk at the given position.
     /// Blocks that are generated outside of the chunk are also included (trees etc.)
@@ -185,66 +117,86 @@ impl TerrainGeneratorInner {
         // Seed used for feature placing, unique to each chunk column.
         let seed = self
             .seed
-            .overflowing_add((chunk_position.x as u64).overflowing_mul(i32::MAX as u64).0)
+            .overflowing_add(chunk_position.x.pow(2))
             .0
-            .overflowing_add(chunk_position.z as u64)
+            .overflowing_add(chunk_position.z)
             .0;
-        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-
-        let (terrain_height, _min, max) =
-            self.terrain_height_noise(chunk_position.x, chunk_position.z);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
 
         // Don't waste time generating if it is guaranteed to be air.
-        if max * BASE_HEIGHT + MAX_RELATIVE_HEIGHT < chunk_position.y as f32 {
+        if MAX_HEIGHT < chunk_position.y {
             blocks.insert(chunk_position, self.biome_map.get_biome().air);
             return (true, blocks);
         }
 
-        // y_offset is the amount of blocks above the chunk that need to be generated. These are
-        // needed to determine how deep the chunk's blocks are. I don't think there's any easy way
-        // to do this since it's all 3d noise, no terrain height to read from.
-        let mut y_offset = 0;
-
-        let biomes: Vec<&biomes::Biome> = terrain_height
-            .iter()
-            .map(|_| {
-                let biome = self.biome_map.get_biome();
-                y_offset = y_offset.max(biome.top_layer_thickness + biome.mid_layer_thickness);
-                biome
-            })
-            .collect();
+        let biome = self.biome_map.get_biome();
+        // TODO: Maybe when the frustum algo is moved to column based,
+        // it's possible to move terrain generation to it too? Like you already know when
+        // the chunk you want to generate is a surface chunk. idk...
+        // Would remove need to generate these blocks.
+        //
+        // y_offset is the amount of blocks above the chunk that need to be generated to know how
+        // deep we are, in order to know which blocks to use when at the surface.
+        let y_offset = biome.top_layer_thickness + biome.mid_layer_thickness;
 
         // TODO: There's something going on here. Compression takes ~10 microseconds and terrain
         // shape takes 2 milliseconds. Terrain shape is 16 times larger than compression (same
         // amount of octaves).
         // After investigation: Switching from avx2 to sse2 seemed to alleviate it.
-        let mut terrain_shape = self.terrain_shape_noise(
-            chunk_position.x,
-            chunk_position.y,
-            chunk_position.z,
-            y_offset,
+        let (mut terrain_shape, _, _) = self.terrain_shape.generate_3d(
+            chunk_position.x as f32,
+            chunk_position.y as f32,
+            chunk_position.z as f32,
+            CHUNK_SIZE,
+            CHUNK_SIZE + y_offset,
+            CHUNK_SIZE,
         );
-        let compression = self.compression_noise(chunk_position.x, chunk_position.z);
 
-        Self::compress_terrain_shape(
-            &mut terrain_shape,
-            &compression,
-            &terrain_height,
-            &biomes,
-            chunk_position,
-            y_offset,
+        let (base_height, _, _) = self.continents.generate_2d(
+            chunk_position.x as f32,
+            chunk_position.z as f32,
+            CHUNK_SIZE,
+            CHUNK_SIZE,
         );
+
+        let (terrain_height, _, _) = self.terrain_height.generate_2d(
+            chunk_position.x as f32,
+            chunk_position.z as f32,
+            CHUNK_SIZE,
+            CHUNK_SIZE,
+        );
+
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                let index = z << 4 | x;
+                let base_height = base_height[index] * MAX_HEIGHT as f32;
+                let terrain_height = terrain_height[index];
+                for y in 0..CHUNK_SIZE + y_offset {
+                    // Amount the density should be decreased by per block above the base height
+                    // for the maximum height to be MAX_HEIGHT.
+                    // MAX_HEIGHT * DECREMENT / mounds_max = 1
+                    const DECREMENT: f32 = 1.5 / MAX_HEIGHT as f32;
+                    let mut compression =
+                        ((chunk_position.y + y as i32) as f32 - base_height) * DECREMENT / terrain_height;
+                    if compression < 0.0 {
+                        compression *= 3.0;
+                    }
+                    let index = z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
+                    terrain_shape[index] -= compression;
+                }
+            }
+        }
 
         let mut uniform = true;
         let mut last_block = None;
 
         for x in 0..CHUNK_SIZE {
             for z in 0..CHUNK_SIZE {
-                let biome = biomes[z << 4 | x];
-
                 let mut layer = 0;
 
-                // Find how deep we are already.
+                let base_height = base_height[z << 4 | x] * MAX_HEIGHT as f32;
+
+                // Find how deep we are from above chunk.
                 for y in CHUNK_SIZE..CHUNK_SIZE + y_offset {
                     // TODO: This needs to be converted to order xzy in simdnoise fork to make all
                     // access contiguous.
@@ -252,7 +204,11 @@ impl TerrainGeneratorInner {
                         z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
                     let density = terrain_shape[block_index];
 
-                    if density < 0.0 {
+                    if density <= 0.0 {
+                        if chunk_position.y + y as i32 <= 0 {
+                            // For water
+                            layer = 1;
+                        }
                         break;
                     } else {
                         layer += 1;
@@ -266,16 +222,22 @@ impl TerrainGeneratorInner {
                         z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
                     let density = terrain_shape[block_index];
 
-                    let block = if density < 0.0 {
-                        layer = 0;
+                    let block = if density <= 0.0 {
                         if block_height == 0 {
+                            layer = 1;
                             biome.surface_liquid
                         } else if block_height < 0 {
+                            layer = 1;
                             biome.sub_surface_liquid
                         } else {
+                            layer = 0;
                             biome.air
                         }
-                    } else if block_height < 1 {
+                    } else if layer > biome.mid_layer_thickness {
+                        layer += 1;
+                        biome.bottom_layer_block
+                    } else if block_height < 2 && base_height < 2.0 {
+                        layer += 1;
                         biome.sand
                     } else {
                         let block = if layer < biome.top_layer_thickness {
@@ -327,10 +289,10 @@ impl TerrainGeneratorInner {
         return (uniform, blocks);
     }
 
-    pub fn get_surface_height(&self, x: i32, z: i32) -> i32 {
-        return NoiseBuilder::fbm_2d_offset(x as f32, 1, z as f32, 1)
-            .generate()
-            .0[0]
-            .round() as i32;
-    }
+    //pub fn get_surface_height(&self, x: i32, z: i32) -> i32 {
+    //    return NoiseBuilder::fbm_2d_offset(x as f32, 1, z as f32, 1)
+    //        .generate()
+    //        .0[0]
+    //        .round() as i32;
+    //}
 }

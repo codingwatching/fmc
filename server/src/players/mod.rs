@@ -89,13 +89,15 @@ fn add_remove_players(
                     player::PlayerBundle::default()
                 };
 
-                let entity =commands.spawn((
-                    Player {
-                        username: username.to_owned(),
-                    },
-                    player_bundle,
-                    *connection_id,
-                )).id();
+                let entity = commands
+                    .spawn((
+                        Player {
+                            username: username.to_owned(),
+                        },
+                        player_bundle,
+                        *connection_id,
+                    ))
+                    .id();
 
                 players.insert(*connection_id, entity);
 
@@ -103,7 +105,6 @@ fn add_remove_players(
                     "Player connected, id: {}, username: {}",
                     connection_id, username
                 );
-
             }
             ServerNetworkEvent::Disconnected {
                 connection_id,
@@ -255,8 +256,7 @@ fn respawn_players(
             .1;
 
             if chunk.is_uniform() && chunk[0] == air {
-                chunk_position.y -= CHUNK_SIZE as i32;
-                continue;
+                break chunk_position;
             }
 
             // Find a spot that has a block with two air blocks above.

@@ -399,7 +399,7 @@ impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
             flags |= BlockMaterialFlags::UNLIT;
         }
         //if self.fog_enabled {
-            flags |= BlockMaterialFlags::FOG_ENABLED;
+        flags |= BlockMaterialFlags::FOG_ENABLED;
         //}
         let has_normal_map = self.normal_map_texture.is_some();
         if has_normal_map {

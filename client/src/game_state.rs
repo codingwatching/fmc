@@ -22,7 +22,6 @@ pub enum GameState {
     Paused,
 }
 
-
 impl GameState {
     pub fn in_game(state: Res<State<GameState>>) -> bool {
         match state.get() {

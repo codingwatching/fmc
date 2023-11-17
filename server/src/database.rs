@@ -6,7 +6,7 @@ use fmc_networking::BlockId;
 use crate::{
     constants::CHUNK_SIZE,
     players::PlayerSave,
-    settings::ServerSettings,
+    settings::Settings,
     world::{
         blocks::{BlockState, Blocks},
         items::ItemId,
@@ -70,7 +70,7 @@ use crate::{
 pub struct DatabasePlugin;
 impl Plugin for DatabasePlugin {
     fn build(&self, app: &mut App) {
-        let settings = app.world.resource::<ServerSettings>();
+        let settings = app.world.resource::<Settings>();
 
         let database = Database::new(settings.database_path.clone());
 

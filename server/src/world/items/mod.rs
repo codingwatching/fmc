@@ -342,8 +342,7 @@ fn trigger_physics_update_on_block_change(
                     }
                 }
             }
-        } 
-
+        }
     }
 }
 

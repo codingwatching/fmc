@@ -11,18 +11,7 @@ bevy = { git = "https://github.com/bevyengine/bevy", rev = "bc1f33d", default-fe
 
 fmc_networking = { path = "../lib/fmc_networking" }
 serde_json = { path = "../lib/json"}
-# Produces values that are slightly less than 1.0 for simplex noise.
-# Idk if it's bug.
-# I calculated my own scaling factors and they came out to be:
-# simplex_2d: 1 / 0.02138935               = 46.75223884783782, this is same as f64 version
-# simplex_3d: 1 / 0.027124329              = 36.867271444760902454618189949542284011840820312
-# simplex_3d_f64: 1 / 0.010561342592592605 = 94.684931506849210336440592072904109954833984375
-# The 1 is divided by the max value it produces without scaling, found by iterating over a large set.
-# The simplex_3d_f64 version is NOT scaled, probably forgotten.
-#
-# Simplex flips between the same two values at the same position for all seeds?
-#simdnoise = { git = "https://github.com/jackmott/rust-simd-noise", rev = "3a4f3e6" }
-simdnoise = { path = "../lib/rust-simd-noise" }
+noise = { path = "../lib/noise" }
 
 tar = "0.4.40"
 zstd = "0.12.4"
@@ -43,6 +32,7 @@ zstd = "0.12.4"
 # Enable a small amount of optimization in debug mode
 [profile.dev]
 opt-level = 1
+#strip = "debuginfo"
 
 # Enable high optimizations for dependencies (incl. Bevy), but not for our code:
 [profile.dev.package."*"]

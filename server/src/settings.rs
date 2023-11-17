@@ -3,18 +3,18 @@ use bevy::prelude::*;
 use std::io::{BufRead, BufReader};
 
 #[derive(Resource)]
-pub struct ServerSettings {
+pub struct Settings {
     /// Name of the world that should be loaded
     pub database_path: String,
     /// Seed used for terrain generation
-    pub seed: u64,
+    pub seed: i32,
     /// Should pvp be enabled
     pub pvp: bool,
     /// The max render distance the server will provide for.
     pub render_distance: u32,
 }
 
-impl Default for ServerSettings {
+impl Default for Settings {
     fn default() -> Self {
         Self {
             database_path: "world.sqlite".to_owned(),
@@ -25,9 +25,9 @@ impl Default for ServerSettings {
     }
 }
 
-impl ServerSettings {
+impl Settings {
     pub fn load() -> Self {
-        let mut server_settings = ServerSettings::default();
+        let mut server_settings = Settings::default();
 
         let path = "./server_settings.txt";
         let file = match std::fs::File::open(path) {
@@ -62,7 +62,7 @@ impl ServerSettings {
                     server_settings.database_path = "./".to_owned() + value + ".sqlite";
                 }
                 "seed" => {
-                    let value = value.parse::<u64>().unwrap_or_else(|_| {
+                    let value = value.parse::<i32>().unwrap_or_else(|_| {
                         panic!(
                             "Server property 'seed' must be a positive number, cannot be: {}",
                             value

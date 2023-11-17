@@ -8,7 +8,7 @@ use rand::distributions::Distribution;
 use super::Feature;
 
 pub struct Tree {
-    leaf_dissapearer: rand::distributions::Bernoulli,
+    leaf_clipper: rand::distributions::Bernoulli,
     trunk_distribution: rand::distributions::Uniform<i32>,
     trunk_block_id: BlockId,
     leaf_block_id: BlockId,
@@ -17,7 +17,7 @@ pub struct Tree {
 impl Tree {
     pub fn new(trunk_block_id: BlockId, leaf_block_id: BlockId) -> Self {
         return Self {
-            leaf_dissapearer: rand::distributions::Bernoulli::new(0.5).unwrap(),
+            leaf_clipper: rand::distributions::Bernoulli::new(0.5).unwrap(),
             trunk_distribution: rand::distributions::Uniform::new_inclusive(5, 6),
             trunk_block_id,
             leaf_block_id,
@@ -46,10 +46,7 @@ impl Feature for Tree {
         for y in height - 2..=height - 1 {
             for x in -2..=2 {
                 for z in -2..=2 {
-                    if (x == 2 || x == -2)
-                        && (z == 2 || z == -2)
-                        && self.leaf_dissapearer.sample(rng)
-                    {
+                    if (x == 2 || x == -2) && (z == 2 || z == -2) && self.leaf_clipper.sample(rng) {
                         // Remove 50% of edges for more variance
                         continue;
                     }
@@ -67,10 +64,7 @@ impl Feature for Tree {
         for y in height..=height + 1 {
             for x in -1..=1 {
                 for z in -1..=1 {
-                    if (x == 1 || x == -1)
-                        && (z == 1 || z == -1)
-                        && self.leaf_dissapearer.sample(rng)
-                    {
+                    if (x == 1 || x == -1) && (z == 1 || z == -1) && self.leaf_clipper.sample(rng) {
                         continue;
                     }
                     tree.entry(IVec3 {

@@ -1,0 +1,23 @@
+[package]
+name = "noise"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+#multiversion = "0.7.3"
+multiversion = { git = "https://github.com/awowogei/multiversion" }
+#plotly = "0.8.4"
+#simdnoise = { git = "https://github.com/jackmott/rust-simd-noise", rev = "3a4f3e6" }
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "benchmark"
+harness = false
+
+#[profile.release]
+#debug=true
+
