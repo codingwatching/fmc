@@ -208,13 +208,13 @@ fn change_player_acceleration(
 fn simulate_player_physics(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
-    fixed_time: Res<FixedTime>,
+    fixed_time: Res<Time>,
     net: Res<NetworkClient>,
     mut player: Query<(&mut Player, &mut Transform, &Aabb)>,
     mut last_position_sent_to_server: Local<Vec3>,
 ) {
     let (mut player, mut transform, player_aabb) = player.single_mut();
-    let delta_time = fixed_time.period.as_secs_f32();
+    let delta_time = fixed_time.delta_seconds();
 
     if player.velocity.x != 0.0 {
         player.is_grounded.x = false;

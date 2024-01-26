@@ -33,6 +33,10 @@ fn handle_chat_messages(
     }
 }
 
+// TODO: Maybe players should be passed the log too.
+// TODO: The "joined game" message sometimes shows for the player that joined. Intermitent problem,
+// the message /should/ arrive before the client finishes setup. In which case it should be
+// discarded after two event buffer switches.
 fn send_connection_messages(
     net: Res<NetworkServer>,
     player_query: Query<&Player>,

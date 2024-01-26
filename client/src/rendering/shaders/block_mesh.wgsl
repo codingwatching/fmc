@@ -1,7 +1,9 @@
-#import bevy_pbr::mesh_functions as mesh_functions
-#import bevy_pbr::mesh_functions get_model_matrix
-#import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::mesh_bindings mesh
+#import bevy_pbr::{
+    mesh_functions,
+    mesh_view_bindings,
+    mesh_bindings,
+    view_transformations::position_world_to_clip
+}
 
 const HALF_PI: f32 = 1.57079632679;
 
@@ -25,7 +27,7 @@ struct Vertex {
 };
 
 struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
+    @builtin(position) position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
@@ -86,7 +88,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let model = mesh_functions::get_model_matrix(vertex.instance_index);
 
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.clip_position = mesh_functions::mesh_position_world_to_clip(out.world_position);
+    out.position = position_world_to_clip(out.world_position.xyz);
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #ifdef VERTEX_TANGENTS
     out.world_tangent = mesh_functions::mesh_tangent_local_to_world(model, vertex.tangent);

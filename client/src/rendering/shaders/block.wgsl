@@ -1,12 +1,19 @@
 //#import bevy_pbr::mesh_bindings
 
-#import bevy_pbr::pbr_functions apply_fog
-#import bevy_pbr::pbr_types as pbr_types
-
-
-#import bevy_core_pipeline::tonemapping screen_space_dither, powsafe, tone_mapping
-#import bevy_pbr::mesh_view_bindings    globals, lights, view, fog
-#import bevy_pbr::mesh_view_types       FOG_MODE_OFF
+#import bevy_pbr::pbr_functions::apply_fog
+#import bevy_pbr::pbr_types
+#import bevy_core_pipeline::tonemapping::{
+    screen_space_dither,
+    powsafe,
+    tone_mapping
+} 
+#import bevy_pbr::mesh_view_bindings::{
+    globals,
+    lights,
+    view,
+    fog
+}
+#import bevy_pbr::mesh_view_types::FOG_MODE_OFF
 
 //#import bevy_pbr::prepass_utils
 
@@ -140,17 +147,17 @@ fn fragment(
 #ifdef VERTEX_TANGENTS
     @location(4) world_tangent: vec4<f32>,
 #endif
-    @location(5) light: u32,
+    @location(5) light_packed: u32,
 ) -> @location(0) vec4<f32> {
     var output_color: vec4<f32> = material.base_color;
 
     // TODO: For some reason this refuses to take a u32 as the index
     let fps = 10.0;
-    let texture_index: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
-    output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index);
+    let texture_index_anim_offset: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
+    output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index_anim_offset);
 
-    let sunlight = (light >> 4u) & 0xFu;
-    let artificial_light = light & 0xFu;
+    let sunlight = (light_packed >> 4u) & 0xFu;
+    let artificial_light = light_packed & 0xFu;
     let light = pow(0.8, f32(15u - max(sunlight, artificial_light)));
     //let light = get_light(sunlight);
     if sunlight >= artificial_light {

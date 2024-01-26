@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     render::{
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        texture::{CompressedImageFormats, ImageType},
+        texture::{CompressedImageFormats, ImageType, ImageSampler},
     },
 };
 
@@ -62,18 +62,19 @@ pub fn load_block_textures(mut commands: Commands, mut images: ResMut<Assets<Ima
             ImageType::MimeType("image/png"),
             CompressedImageFormats::NONE,
             true,
+            ImageSampler::Default
         )
         .unwrap();
 
-        assert!(image.size()[0] == 16.0);
+        assert!(image.size()[0] == 16);
 
-        let height = image.aspect_2d() as u32;
+        let id_increment = image.height() / 16;
         final_image_data.extend(image.data);
 
         let name = path.file_name().unwrap().to_string_lossy();
         texture_array_indices.insert(name.to_string(), id);
 
-        id += height;
+        id += id_increment;
     }
 
     let final_image = Image::new(

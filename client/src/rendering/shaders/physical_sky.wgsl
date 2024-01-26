@@ -1,6 +1,9 @@
-#import bevy_pbr::mesh_view_bindings view, fog
-#import bevy_pbr::pbr_functions      apply_fog
-#import bevy_pbr::mesh_vertex_output MeshVertexOutput
+#import bevy_pbr::mesh_view_bindings::{
+    view,
+    fog
+}
+#import bevy_pbr::pbr_functions::apply_fog
+#import bevy_pbr::forward_io::VertexOutput
 
 struct SkyMaterialUniform {
     mieKCoefficient: vec4<f32>,
@@ -66,7 +69,7 @@ struct FragmentInput {
 
 @fragment
 fn fragment(
-    in: MeshVertexOutput
+    in: VertexOutput
 ) -> @location(0) vec4<f32> {
     // Rayleigh coefficient
     let sunfade: f32 = 1. - clamp(1. - exp(sky_material_uniform.sunPosition.y / 450000.), 0., 1.);

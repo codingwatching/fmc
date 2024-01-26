@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy::{
     ecs::system::EntityCommands,
     prelude::*,
-    render::texture::CompressedImageFormats,
+    render::texture::{CompressedImageFormats, ImageSampler},
     window::{CursorGrabMode, PrimaryWindow},
 };
 use fmc_networking::{messages, NetworkClient, NetworkData};
@@ -135,6 +135,7 @@ pub fn load_interfaces(
                 bevy::render::texture::ImageType::Extension("png"),
                 CompressedImageFormats::NONE,
                 false,
+                ImageSampler::Default
             ) {
                 Ok(i) => i,
                 Err(_) => {
@@ -142,7 +143,7 @@ pub fn load_interfaces(
                 }
             };
 
-            return image.size();
+            return image.size_f32();
         }
 
         // TODO: The server needs to validate that no interfaces share a name. The client doesn't

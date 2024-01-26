@@ -9,7 +9,6 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer, ServerN
 mod actions;
 mod health;
 mod inventory;
-mod movement;
 mod player;
 
 // TODO: Impl save/load for database in player module to not leak.

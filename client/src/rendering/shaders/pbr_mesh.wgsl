@@ -1,6 +1,6 @@
 #import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::mesh_bindings       mesh
-#import bevy_pbr::mesh_functions as mesh_functions
+#import bevy_pbr::mesh_bindings::mesh
+#import bevy_pbr::mesh_functions
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -24,7 +24,6 @@ struct Vertex {
     @location(6) joint_weights: vec4<f32>,
 #endif
     @location(7) packed_bits: u32,
-
 };
 
 struct VertexOutput {
