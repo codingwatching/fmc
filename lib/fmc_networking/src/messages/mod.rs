@@ -7,7 +7,7 @@ pub use connection::{
 
 /// Chunk management
 mod chunk;
-pub use chunk::{ChunkRequest, ChunkResponse, UnsubscribeFromChunks};
+pub use chunk::Chunk;
 
 /// Individual changes to blocks
 mod blocks;
@@ -26,7 +26,7 @@ pub use player::{
 /// User interface
 mod interfaces;
 pub use interfaces::{
-    InterfaceButtonPress, InterfaceClose, InterfaceEquipItem, InterfaceVisibilityUpdate,
-    InterfaceItemBoxUpdate, InterfaceOpen, InterfacePlaceItem, InterfaceTakeItem,
-    InterfaceTextBoxUpdate, InterfaceTextInput
+    InterfaceButtonPress, InterfaceClose, InterfaceEquipItem, InterfaceItemBoxUpdate,
+    InterfaceOpen, InterfacePlaceItem, InterfaceTakeItem, InterfaceTextBoxUpdate,
+    InterfaceTextInput, InterfaceVisibilityUpdate,
 };

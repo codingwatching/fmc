@@ -1,26 +1,24 @@
-use std::collections::{HashMap, HashSet};
-
 use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task},
+    // TODO: This is used instead of std version because extract_if is not stabilized.
+    // TODO: I kinda fixed this, but changing it would mean interleaving data access, keep it?
+    utils::{HashMap, HashSet},
 };
-use fmc_networking::{
-    messages::{self, ServerConfig},
-    BlockId, ConnectionId, NetworkData, NetworkServer, ServerNetworkEvent,
-};
+use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer, ServerNetworkEvent};
 use futures_lite::future;
 
 use crate::{
     bevy_extensions::f64_transform::F64GlobalTransform,
     constants::CHUNK_SIZE,
     database::Database,
-    players::{Player, Players},
+    players::Player,
     settings::Settings,
     utils,
     world::{
-        blocks::Blocks,
+        blocks::BlockState,
         world_map::{
-            chunk::{Chunk, ChunkStatus},
+            chunk::{Chunk, ChunkFace},
             terrain_generation::TerrainGenerator,
             WorldMap,
         },
@@ -32,21 +30,25 @@ pub struct ChunkManagerPlugin;
 impl Plugin for ChunkManagerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ChunkUnloadEvent>()
-            .add_event::<ChunkSubscriptionEvent>()
-            .insert_resource(LoadingTasks::default())
+            .add_event::<SubscribeToChunk>()
             .insert_resource(WorldMap::default())
             .insert_resource(ChunkSubscriptions::default())
+            // This is postupdate so that when a disconnect event is sent, the other systems can
+            // assume that the connection is still registered as a subscriber.
+            // TODO: This can be changed to run on Update when I sort out the spaghetti in
+            // NetworkPlugin.
+            .add_systems(PostUpdate, add_and_remove_subscribers)
             .add_systems(
                 Update,
                 (
-                    add_chunk_origin,
-                    update_chunk_origin,
+                    add_player_chunk_origin,
+                    update_player_chunk_origin,
                     add_render_distance,
                     update_render_distance,
-                    handle_subscribers,
-                    handle_chunk_requests,
-                    handle_chunk_loading_tasks,
+                    subscribe_to_visible_chunks,
+                    handle_chunk_subscription_events.after(subscribe_to_visible_chunks),
                     unsubscribe_from_chunks,
+                    handle_chunk_loading_tasks,
                     unload_chunks,
                 ),
             );
@@ -62,7 +64,7 @@ struct PlayerChunkOrigin(IVec3);
 #[derive(Component)]
 struct PlayerRenderDistance(u32);
 
-fn add_chunk_origin(
+fn add_player_chunk_origin(
     mut commands: Commands,
     player_query: Query<(Entity, &F64GlobalTransform), Added<Player>>,
 ) {
@@ -72,7 +74,7 @@ fn add_chunk_origin(
     }
 }
 
-fn update_chunk_origin(
+fn update_player_chunk_origin(
     mut player_query: Query<
         (&mut PlayerChunkOrigin, &F64GlobalTransform),
         Changed<F64GlobalTransform>,
@@ -100,118 +102,173 @@ fn add_render_distance(
 }
 
 fn update_render_distance(
-    players: Res<Players>,
     settings: Res<Settings>,
     mut player_query: Query<&mut PlayerRenderDistance>,
     mut render_distance_events: EventReader<NetworkData<messages::RenderDistance>>,
 ) {
     for event in render_distance_events.read() {
-        let entity = players.get(&event.source);
-        let mut render_distance = player_query.get_mut(entity).unwrap();
+        let mut render_distance = player_query.get_mut(event.source.entity()).unwrap();
         render_distance.0 = event.render_distance.min(settings.render_distance);
     }
 }
 
 /// Sent when a player subscribes to a new chunk
 #[derive(Event)]
-pub struct ChunkSubscriptionEvent {
+pub struct SubscribeToChunk {
     pub connection_id: ConnectionId,
-    pub chunk_pos: IVec3,
+    pub chunk_position: IVec3,
 }
 
 // Event sent when the server should unload a chunk and its associated entities.
 #[derive(Event)]
 pub struct ChunkUnloadEvent(pub IVec3);
 
-// TODO: Add reverse, and remove on player disconnect BEFORE systems have access to it.
-// XXX: Attack surface, player can both load chunks too far away, as well as decide not to
-// unsubscribe.
-// Keeps track of which players are subscribed to what chunks. Clients will get updates for
+// Keeps track of which players are subscribed to which chunks. Clients will get updates for
 // everything that happens within a chunk it is subscribed to.
-// Chunks are automatically subscribed to when requested.
-// The client is responsible for unsubscribing when it no longer wants the updates.
 #[derive(Resource, Default)]
 pub struct ChunkSubscriptions {
-    inner: HashMap<IVec3, HashSet<ConnectionId>>,
-    reverse: HashMap<ConnectionId, HashSet<IVec3>>,
+    // Map from chunk position to all connections that are subscribed to it, mapped by their entity for
+    // removal.
+    chunk_to_subscribers: HashMap<IVec3, HashSet<ConnectionId>>,
+    // reverse
+    subscriber_to_chunks: HashMap<ConnectionId, HashSet<IVec3>>,
 }
 
-// TODO: Deriving Default complains about type inference
-//impl Default for ChunkSubscriptions {
-//    fn default() -> Self {
-//        Self {
-//            inner: HashMap::new(),
-//            reverse: HashMap::new(),
-//        }
-//    }
-//}
-
 impl ChunkSubscriptions {
-    pub fn get_subscribers(&self, chunk_pos: &IVec3) -> Option<&HashSet<ConnectionId>> {
-        return self.inner.get(chunk_pos);
+    pub fn get_subscribers(
+        &self,
+        chunk_position: &IVec3,
+    ) -> Option<impl IntoIterator<Item = &ConnectionId>> {
+        return self.chunk_to_subscribers.get(chunk_position);
     }
+}
 
-    // Returns true if the chunk has no subscribers left, false if it does.
-    fn unsubscribe(&mut self, chunk_pos: &IVec3, connection: &ConnectionId) -> bool {
-        if let Some(subscribers) = self.inner.get_mut(chunk_pos) {
-            subscribers.remove(connection);
-            self.reverse.get_mut(connection).unwrap().remove(chunk_pos);
+fn add_and_remove_subscribers(
+    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
+    connection_query: Query<&ConnectionId>,
+    mut network_events: EventReader<ServerNetworkEvent>,
+    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
+) {
+    for event in network_events.read() {
+        match event {
+            ServerNetworkEvent::Connected { entity, .. } => {
+                let connection_id = connection_query.get(*entity).unwrap();
+                chunk_subscriptions
+                    .subscriber_to_chunks
+                    .insert(*connection_id, HashSet::default());
+            }
+            ServerNetworkEvent::Disconnected { entity } => {
+                let connection_id = connection_query.get(*entity).unwrap();
+                let subscribed_chunks = chunk_subscriptions
+                    .subscriber_to_chunks
+                    .remove(connection_id)
+                    .unwrap();
 
-            if subscribers.len() == 0 {
-                self.inner.remove(chunk_pos);
+                for chunk_position in subscribed_chunks {
+                    let subscribers = chunk_subscriptions
+                        .chunk_to_subscribers
+                        .get_mut(&chunk_position)
+                        .unwrap();
+                    subscribers.remove(connection_id);
+
+                    if subscribers.len() == 0 {
+                        chunk_subscriptions
+                            .chunk_to_subscribers
+                            .remove(&chunk_position);
+                        unload_chunk_events.send(ChunkUnloadEvent(chunk_position));
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+}
+
+fn handle_chunk_subscription_events(
+    mut commands: Commands,
+    net: Res<NetworkServer>,
+    world_map: Res<WorldMap>,
+    terrain_generator: Res<TerrainGenerator>,
+    database: Res<Database>,
+    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
+    mut subscription_events: EventReader<SubscribeToChunk>,
+) {
+    let thread_pool = AsyncComputeTaskPool::get();
+
+    for event in subscription_events.read() {
+        chunk_subscriptions
+            .subscriber_to_chunks
+            .get_mut(&event.connection_id)
+            .unwrap()
+            .insert(event.chunk_position);
+
+        if let Some(chunk_subscribers) = chunk_subscriptions
+            .chunk_to_subscribers
+            .get_mut(&event.chunk_position)
+        {
+            chunk_subscribers.insert(event.connection_id);
+            if let Some(chunk) = world_map.get_chunk(&event.chunk_position) {
+                net.send_one(
+                    event.connection_id,
+                    messages::Chunk {
+                        position: event.chunk_position,
+                        blocks: chunk.blocks.clone(),
+                        block_state: chunk.block_state.clone(),
+                    },
+                );
+            }
+        } else {
+            chunk_subscriptions
+                .chunk_to_subscribers
+                .insert(event.chunk_position, HashSet::from([event.connection_id]));
+
+            let task = thread_pool.spawn(Chunk::load(
+                event.chunk_position,
+                terrain_generator.clone(),
+                database.clone(),
+            ));
+            commands.spawn(ChunkLoadingTask(task));
+        };
+    }
+}
+
+fn unsubscribe_from_chunks(
+    chunk_subscriptions: ResMut<ChunkSubscriptions>,
+    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
+    player_origin_query: Query<
+        (&ConnectionId, &PlayerChunkOrigin, &PlayerRenderDistance),
+        Changed<PlayerChunkOrigin>,
+    >,
+) {
+    // reborrow to make split borrowing work.
+    let chunk_subscriptions = chunk_subscriptions.into_inner();
+    for (connection_id, origin, render_distance) in player_origin_query.iter() {
+        let subscribed_chunks = chunk_subscriptions
+            .subscriber_to_chunks
+            .get_mut(connection_id)
+            .unwrap();
+        let removed = subscribed_chunks.extract_if(|chunk_position| {
+            let distance = (*chunk_position - origin.0).abs() / CHUNK_SIZE as i32;
+            if distance.cmpgt(IVec3::splat(render_distance.0 as i32)).any() {
                 return true;
             } else {
                 return false;
             }
-        } else {
-            panic!("Tried to unsubscribe from a chunk that wasn't subscribed to.");
-        }
-    }
+        });
 
-    // Returns true if the chunk is already subscribed to by the connection.
-    fn subscribe(&mut self, chunk_pos: IVec3, connection: ConnectionId) -> bool {
-        let new = if let Some(chunk_subscribers) = self.inner.get_mut(&chunk_pos) {
-            chunk_subscribers.insert(connection)
-        } else {
-            self.inner.insert(chunk_pos, HashSet::from([connection]));
-            true
-        };
+        for chunk_position in removed {
+            let chunk_subscribers = chunk_subscriptions
+                .chunk_to_subscribers
+                .get_mut(&chunk_position)
+                .unwrap();
+            chunk_subscribers.remove(connection_id);
 
-        if let Some(connection_chunk_subscriptions) = self.reverse.get_mut(&connection) {
-            connection_chunk_subscriptions.insert(chunk_pos);
-        } else {
-            self.reverse.insert(connection, HashSet::from([chunk_pos]));
-        }
-
-        return !new;
-    }
-
-    fn add_subscriber(&mut self, connection: ConnectionId) {
-        self.reverse.insert(connection, HashSet::new());
-    }
-
-    fn remove_subscriber(&mut self, connection: &ConnectionId) {
-        // TODO: This unrwap can panic, should not be possible. It calls the funciton twice or
-        // something.
-        for chunk_pos in self.reverse.remove(connection).unwrap().iter() {
-            self.inner.get_mut(&chunk_pos).unwrap().remove(connection);
-        }
-    }
-}
-
-fn handle_subscribers(
-    mut network_events: EventReader<ServerNetworkEvent>,
-    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
-) {
-    for event in network_events.read() {
-        match event {
-            ServerNetworkEvent::Connected { connection_id, .. } => {
-                chunk_subscriptions.add_subscriber(*connection_id);
+            if chunk_subscribers.len() == 0 {
+                chunk_subscriptions
+                    .chunk_to_subscribers
+                    .remove(&chunk_position);
+                unload_chunk_events.send(ChunkUnloadEvent(chunk_position));
             }
-            ServerNetworkEvent::Disconnected { connection_id, .. } => {
-                chunk_subscriptions.remove_subscriber(connection_id);
-            }
-            _ => (),
         }
     }
 }
@@ -219,173 +276,246 @@ fn handle_subscribers(
 #[derive(Component)]
 struct ChunkLoadingTask(Task<(IVec3, Chunk)>);
 
-#[derive(Resource, Default, Deref, DerefMut)]
-struct LoadingTasks(HashSet<IVec3>);
-
-fn handle_chunk_requests(
-    mut commands: Commands,
-    net: Res<NetworkServer>,
-    database: Res<Database>,
+// Search for chunks by fanning out from the player's chunk position to find chunks that are
+// visible to it.
+// 1. Fan out from the origin chunk in all directions. The direction the neighbour chunk was
+//    entered by is the primary direction, the opposite direction is now blocked.
+// 2. If there is a path from the chunk face that was entered through to any of the faces
+//    corresponding to the 5 remaining directions add those to the queue. The direction that was
+//    entered through this time is the secondary direction unless the primary was used. This step
+//    is repeated in the next iteration for the tertiary direction, and locks the path of continued
+//    search to those three directions.
+// 3. If a chunk has already been checked, it can no longer be added to the queue.
+fn subscribe_to_visible_chunks(
+    settings: Res<Settings>,
     world_map: Res<WorldMap>,
-    terrain_generator: Res<TerrainGenerator>,
-    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
-    mut loading_tasks: ResMut<LoadingTasks>,
-    mut requests: EventReader<NetworkData<messages::ChunkRequest>>,
-    mut chunk_subscription_events: EventWriter<ChunkSubscriptionEvent>,
+    chunk_subscriptions: Res<ChunkSubscriptions>,
+    changed_origin_query: Query<
+        (&ConnectionId, &PlayerChunkOrigin, &PlayerRenderDistance),
+        Changed<PlayerChunkOrigin>,
+    >,
+    mut subscription_events: EventWriter<SubscribeToChunk>,
 ) {
-    let thread_pool = AsyncComputeTaskPool::get();
+    let mut already_visited = HashSet::with_capacity(settings.render_distance.pow(3) as usize);
+    let mut queue = Vec::new();
 
-    for request in requests.read() {
-        let mut chunk_response = messages::ChunkResponse::new();
+    for (connection_id, chunk_origin, render_distance) in changed_origin_query.iter() {
+        let subscribed_chunks = chunk_subscriptions
+            .subscriber_to_chunks
+            .get(connection_id)
+            .unwrap();
 
-        for chunk_pos in &request.chunks {
-            // Clients might send positions that aren't aligned with chunk positions if they are
-            // evil, so they need to be normalized.
-            let chunk_pos = utils::world_position_to_chunk_position(*chunk_pos);
+        queue.push((chunk_origin.0, ChunkFace::None, [ChunkFace::None; 3]));
 
-            for x in -1..=1 {
-                for y in -1..=1 {
-                    for z in -1..=1 {
-                        let chunk_pos = chunk_pos + IVec3::new(x, y, z) * CHUNK_SIZE as i32;
+        // from_face = The chunk face the chunk was entered through.
+        // to_faces = The chunk faces it can propagate through
+        while let Some((chunk_position, from_face, to_faces)) = queue.pop() {
+            let distance_to_chunk = (chunk_position - chunk_origin.0) / CHUNK_SIZE as i32;
+            if distance_to_chunk
+                .abs()
+                .cmpgt(IVec3::splat(render_distance.0 as i32))
+                .any()
+            {
+                // TODO: It would be faster to check this before adding a chunk to the queue.
+                continue;
+            }
 
-                        if chunk_subscriptions.subscribe(chunk_pos, request.source) {
-                            continue;
-                        }
+            if !already_visited.insert(chunk_position) {
+                // insert returns false if the position is in the set
+                continue;
+            }
 
-                        chunk_subscription_events.send(ChunkSubscriptionEvent {
-                            connection_id: request.source,
-                            chunk_pos,
-                        });
+            if !subscribed_chunks.contains(&chunk_position) {
+                subscription_events.send(SubscribeToChunk {
+                    connection_id: *connection_id,
+                    chunk_position,
+                });
+            }
 
-                        if let Some(chunk) = world_map.get_chunk(&chunk_pos) {
-                            if chunk.status == ChunkStatus::Finished {
-                                chunk_response.add_chunk(
-                                    chunk_pos,
-                                    chunk.blocks.clone(),
-                                    chunk.block_state.clone(),
-                                );
-                            }
-                            continue;
-                        }
+            let chunk = match world_map.get_chunk(&chunk_position) {
+                Some(chunk) => chunk,
+                None => {
+                    continue;
+                }
+            };
 
-                        if loading_tasks.contains(&chunk_pos) {
-                            continue;
-                        } else {
-                            loading_tasks.insert(chunk_pos);
-                        }
+            if from_face == ChunkFace::None {
+                for chunk_face in [
+                    ChunkFace::Top,
+                    ChunkFace::Bottom,
+                    ChunkFace::Right,
+                    ChunkFace::Left,
+                    ChunkFace::Front,
+                    ChunkFace::Back,
+                ] {
+                    queue.push((
+                        chunk_face.shift_position(chunk_position),
+                        chunk_face.opposite(),
+                        [chunk_face, ChunkFace::None, ChunkFace::None],
+                    ));
+                }
+                continue;
+            } else if chunk.is_neighbour_visible(from_face, to_faces[0]) {
+                queue.push((
+                    to_faces[0].shift_position(chunk_position),
+                    to_faces[0].opposite(),
+                    to_faces,
+                ));
+            }
 
-                        let task = thread_pool.spawn(Chunk::load(
-                            chunk_pos,
-                            terrain_generator.clone(),
-                            database.clone(),
+            if to_faces[1] == ChunkFace::None {
+                let surrounding = [
+                    ChunkFace::Front,
+                    ChunkFace::Back,
+                    ChunkFace::Left,
+                    ChunkFace::Right,
+                    ChunkFace::Top,
+                    ChunkFace::Bottom,
+                ]
+                .into_iter()
+                .filter(|face| *face != from_face && *face != to_faces[0]);
+
+                for to_face in surrounding {
+                    if chunk.is_neighbour_visible(from_face, to_face) {
+                        queue.push((
+                            to_face.shift_position(chunk_position),
+                            to_face.opposite(),
+                            [to_faces[0], to_face, ChunkFace::None],
                         ));
-                        commands.spawn(ChunkLoadingTask(task));
                     }
                 }
-            }
-        }
 
-        if chunk_response.chunks.len() > 0 {
-            net.send_one(request.source, chunk_response);
+                continue;
+            } else if chunk.is_neighbour_visible(from_face, to_faces[1]) {
+                queue.push((
+                    to_faces[1].shift_position(chunk_position),
+                    to_faces[1].opposite(),
+                    to_faces,
+                ));
+            }
+
+            if to_faces[2] == ChunkFace::None {
+                let remaining = match to_faces[0] {
+                    ChunkFace::Top | ChunkFace::Bottom => match to_faces[1] {
+                        ChunkFace::Right | ChunkFace::Left => [ChunkFace::Front, ChunkFace::Back],
+                        ChunkFace::Front | ChunkFace::Back => [ChunkFace::Right, ChunkFace::Left],
+                        _ => unreachable!(),
+                    },
+                    ChunkFace::Right | ChunkFace::Left => match to_faces[1] {
+                        ChunkFace::Top | ChunkFace::Bottom => [ChunkFace::Front, ChunkFace::Back],
+                        ChunkFace::Front | ChunkFace::Back => [ChunkFace::Top, ChunkFace::Bottom],
+                        _ => unreachable!(),
+                    },
+                    ChunkFace::Front | ChunkFace::Back => match to_faces[1] {
+                        ChunkFace::Top | ChunkFace::Bottom => [ChunkFace::Right, ChunkFace::Left],
+                        ChunkFace::Right | ChunkFace::Left => [ChunkFace::Top, ChunkFace::Bottom],
+                        _ => unreachable!(),
+                    },
+                    ChunkFace::None => unreachable!(),
+                };
+
+                for to_face in remaining {
+                    if chunk.is_neighbour_visible(from_face, to_face) {
+                        queue.push((
+                            to_face.shift_position(chunk_position),
+                            to_face.opposite(),
+                            [to_faces[0], to_faces[1], to_face],
+                        ));
+                    }
+                }
+            } else if chunk.is_neighbour_visible(from_face, to_faces[2]) {
+                queue.push((
+                    to_faces[2].shift_position(chunk_position),
+                    to_faces[2].opposite(),
+                    to_faces,
+                ))
+            }
         }
     }
 }
 
-// Send generated chunks to clients
 fn handle_chunk_loading_tasks(
     mut commands: Commands,
     net: Res<NetworkServer>,
     mut world_map: ResMut<WorldMap>,
-    mut loading_tasks: ResMut<LoadingTasks>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
+    mut origin_query: Query<&mut PlayerChunkOrigin>,
     mut chunks: Query<(Entity, &mut ChunkLoadingTask)>,
 ) {
     for (entity, mut task) in chunks.iter_mut() {
-        if let Some((position, mut chunk)) = future::block_on(future::poll_once(&mut task.0)) {
-            loading_tasks.remove(&position);
+        if let Some((chunk_position, mut chunk)) = future::block_on(future::poll_once(&mut task.0))
+        {
+            // TODO: This seems to be a common operation? Maybe create some combination iterator
+            // utilily to fight the drift. moore_neigbourhood(n) or something more friendly
+            //
+            // XXX: If you're wondering where the chunk applies its own terrain features to itself, that
+            // happens during chunk generation.
+            for x in -1..=1 {
+                for y in -1..=1 {
+                    for z in -1..=1 {
+                        let neighbour_position =
+                            chunk_position + IVec3::new(x, y, z) * CHUNK_SIZE as i32;
 
-            for (chunk_offset, partial_chunk) in chunk.partial_chunks.iter() {
-                let chunk_pos = position + *chunk_offset;
-                let neighbor_chunk = match world_map.get_chunk_mut(&chunk_pos) {
-                    Some(c) => c,
-                    None => continue,
-                };
+                        let neighbour_chunk = match world_map.get_chunk_mut(&neighbour_position) {
+                            Some(c) => c,
+                            // x,y,z = 0, ignored here
+                            None => continue,
+                        };
 
-                let invert_offset = -(*chunk_offset);
+                        // Apply neighbour features to the chunk.
+                        for terrain_feature in neighbour_chunk.terrain_features.iter() {
+                            terrain_feature.apply(&mut chunk, chunk_position);
+                        }
 
-                if let Some(neighbors) = chunk.status.neighbors() {
-                    neighbors.insert(
-                        *chunk_offset,
-                        neighbor_chunk.partial_chunks[&invert_offset].clone(),
-                    );
-                }
-
-                if let Some(neighbors) = neighbor_chunk.status.neighbors() {
-                    neighbors.insert(invert_offset, partial_chunk.clone());
-                }
-
-                if neighbor_chunk.try_finish() {
-                    // TODO: This fails sometimes, Connections are removed from the pool but they aren't
-                    // removed from the chunk subscriptions
-                    if let Some(subs) = chunk_subscriptions.get_subscribers(&position) {
-                        let mut chunk_response = messages::ChunkResponse::new();
-
-                        chunk_response.add_chunk(
-                            chunk_pos,
-                            neighbor_chunk.blocks.clone(),
-                            neighbor_chunk.block_state.clone(),
-                        );
-                        net.send_many(subs, chunk_response);
+                        // Apply chunk's features to the neigbour.
+                        for terrain_feature in chunk.terrain_features.iter() {
+                            if let Some(changed) =
+                                terrain_feature.apply_return_changed(neighbour_chunk, neighbour_position)
+                            {
+                                if let Some(subscribers) =
+                                    chunk_subscriptions.get_subscribers(&neighbour_position)
+                                {
+                                    net.send_many(
+                                        subscribers,
+                                        messages::BlockUpdates {
+                                            chunk_position: neighbour_position,
+                                            blocks: changed,
+                                        },
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            if chunk.try_finish() {
-                // TODO: This fails sometimes, Connections are removed from the pool but they aren't
-                // removed from the chunk subscriptions
-                if let Some(subs) = chunk_subscriptions.get_subscribers(&position) {
-                    let mut chunk_response = messages::ChunkResponse::new();
-
-                    chunk_response.add_chunk(
-                        position,
-                        chunk.blocks.clone(),
-                        chunk.block_state.clone(),
-                    );
-                    net.send_many(subs, chunk_response);
+            if let Some(subscribers) = chunk_subscriptions
+                .chunk_to_subscribers
+                .get(&chunk_position)
+            {
+                // Triggers 'subscribe_to_visible_chunks' to run again so it can continue from
+                // where it last stopped.
+                let mut iter = origin_query.iter_many_mut(
+                    subscribers
+                        .iter()
+                        .map(|connection_id| connection_id.entity()),
+                );
+                while let Some(mut origin) = iter.fetch_next() {
+                    origin.set_changed();
                 }
+
+                net.send_many(
+                    subscribers,
+                    messages::Chunk {
+                        position: chunk_position,
+                        blocks: chunk.blocks.clone(),
+                        block_state: chunk.block_state.clone(),
+                    },
+                );
             }
 
-            world_map.insert(position, chunk);
-
+            world_map.insert(chunk_position, chunk);
             commands.entity(entity).despawn();
-        }
-    }
-}
-
-fn unsubscribe_from_chunks(
-    world_map: Res<WorldMap>,
-    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
-    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
-    player_origin_query: Query<
-        (&ConnectionId, &PlayerChunkOrigin, &PlayerRenderDistance),
-        Changed<PlayerChunkOrigin>,
-    >,
-) {
-    for (connection, origin, render_distance) in player_origin_query.iter() {
-        for chunk_pos in chunk_subscriptions.reverse[connection].clone() {
-            let distance = (chunk_pos - origin.0).abs() / IVec3::splat(CHUNK_SIZE as i32);
-            if distance.cmpgt(IVec3::splat(render_distance.0 as i32)).any() {
-                // TODO: This 'contains_chunk' call is a safeguard against unsubscribing from a
-                // chunk before it has been sent to the client. It should be temporary until chunk
-                // loading is moved fully server side. The edge case here is that a player moves
-                // outside the render distance while the chunk is still generating, so the server
-                // discards it, but it's left as requested on the client.
-                if world_map.contains_chunk(&chunk_pos)
-                    && chunk_subscriptions.unsubscribe(&chunk_pos, &connection)
-                {
-                    unload_chunk_events.send(ChunkUnloadEvent(chunk_pos));
-                }
-            }
         }
     }
 }

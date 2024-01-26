@@ -15,8 +15,7 @@ use crate::{
     rendering::materials,
     world::{
         blocks::{Block, BlockFace, BlockRotation, BlockState, Blocks, QuadPrimitive},
-        world_map::{chunk::Chunk, WorldMap},
-        Origin,
+        world_map::{chunk::{Chunk, ChunkMarker}, WorldMap},
     },
 };
 
@@ -40,12 +39,8 @@ impl Plugin for ChunkPlugin {
 #[derive(Event)]
 pub struct ChunkMeshEvent {
     /// Position of the chunk.
-    pub position: IVec3,
+    pub chunk_position: IVec3,
 }
-
-/// Added to chunks that should be rendered.
-#[derive(Component)]
-pub struct MeshedChunkMarker;
 
 #[derive(Component)]
 pub struct ChunkMeshTask(
@@ -57,26 +52,19 @@ pub struct ChunkMeshTask(
 
 /// Launches new mesh tasks when chunks change.
 fn mesh_system(
-    origin: Res<Origin>,
     mut commands: Commands,
     world_map: Res<WorldMap>,
     light_map: Res<LightMap>,
     mut mesh_events: EventReader<ChunkMeshEvent>,
-    meshable_chunks: Query<With<MeshedChunkMarker>>,
-    new_meshed_chunks: Query<&GlobalTransform, Added<MeshedChunkMarker>>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
-    for chunk_position in mesh_events.read().map(|event| event.position).chain(
-        new_meshed_chunks
-            .iter()
-            .map(|global| global.compute_transform().translation.as_ivec3() + origin.0),
-    ) {
-        match world_map.get_chunk(&chunk_position) {
+    for event in mesh_events.read() {
+        match world_map.get_chunk(&event.chunk_position) {
             Some(chunk) => {
-                if chunk.entity.is_some() && meshable_chunks.get(chunk.entity.unwrap()).is_ok() {
-                    let expanded_chunk = world_map.get_expanded_chunk(chunk_position);
-                    let expanded_light_chunk = light_map.get_expanded_chunk(chunk_position);
+                if chunk.entity.is_some() {
+                    let expanded_chunk = world_map.get_expanded_chunk(event.chunk_position);
+                    let expanded_light_chunk = light_map.get_expanded_chunk(event.chunk_position);
 
                     let task = thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk));
                     commands
@@ -85,17 +73,13 @@ fn mesh_system(
                 }
             }
             None => {
-                //panic!("Tried to render a non-existing chunk.");
+                //panic!("Tried to mesh a non-existing chunk.");
             }
         }
     }
 }
 
-// TODO: Some meshes are randomly offset by CHUNK_SIZE in any direction. I assume this is a bug
-// with how the origin is handled, some race condition or some such that has nothing to do with
-// rendering. The chunk probably arrives at the same tick origin is changed and gets messed up.
-//
-/// Meshes are computed async, this handles completed meshes
+// Meshes are computed async, this handles completed meshes
 fn handle_mesh_tasks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -114,8 +98,6 @@ fn handle_mesh_tasks(
                             material: material_handle.clone(),
                             ..Default::default()
                         })
-                        // This is a marker for bevy's internal frustum culling, we do our own for
-                        // chunk meshes.
                         .insert(NoFrustumCulling)
                         .id(),
                 );
@@ -138,7 +120,6 @@ fn handle_mesh_tasks(
             commands.entity(entity).despawn_descendants();
             commands
                 .entity(entity)
-                .insert(VisibilityBundle::default())
                 .remove::<ChunkMeshTask>()
                 .push_children(&children);
         }

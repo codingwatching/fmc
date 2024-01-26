@@ -47,7 +47,7 @@ impl Plugin for LightingPlugin {
                     propagate_light,
                     relight_chunks,
                     send_chunk_mesh_events,
-                    light_chunk_unloading.run_if(resource_changed::<Origin>()),
+                    //light_chunk_unloading.run_if(resource_changed::<Origin>()),
                 )
                     .run_if(GameState::in_game),
             );
@@ -187,7 +187,7 @@ impl Light {
     }
 }
 
-// Light from blocks and the sky are combined into one u8, 4 bits each, max 16 light levels per.
+// Light from blocks and the sky are combined into one u8, 4 bits each, max 16 light levels.
 #[derive(Clone, Debug)]
 pub enum LightChunk {
     // Uniform lighting chunks are used to save space, and are only used for sunlight. 15 when
@@ -272,15 +272,13 @@ fn queue_block_updates(
 }
 
 fn queue_chunk_updates(
-    mut chunk_responses: EventReader<NetworkData<messages::ChunkResponse>>,
+    mut new_chunks: EventReader<NetworkData<messages::Chunk>>,
     mut relight_events: EventWriter<RelightEvent>,
 ) {
-    for response in chunk_responses.read() {
-        for chunk in response.chunks.iter() {
-            relight_events.send(RelightEvent {
-                chunk_position: chunk.position,
-            });
-        }
+    for chunk in new_chunks.read() {
+        relight_events.send(RelightEvent {
+            chunk_position: chunk.position,
+        });
     }
 }
 
@@ -602,7 +600,7 @@ fn propagate_light(
 ) {
     let blocks = Blocks::get();
 
-    // Limit number of updates applied per system loop
+    // TODO: Limit number of updates applied per system loop?
     let chunk_positions: Vec<_> = light_update_queues.keys().cloned().collect();
     for chunk_position in chunk_positions.iter() {
         // Sunlight from the sides is often inserted as light updates before any coming from
@@ -845,13 +843,15 @@ fn light_chunk_unloading(world_map: Res<WorldMap>, mut light_map: ResMut<LightMa
 struct TestFinishedLightingEvent(IVec3);
 
 fn send_chunk_mesh_events(
+    light_map: Res<LightMap>,
     light_update_queues: Res<LightUpdateQueues>,
     mut lighting_events: EventReader<TestFinishedLightingEvent>,
     mut chunk_mesh_events: EventWriter<ChunkMeshEvent>,
 ) {
     for light_event in lighting_events.read() {
         let position = light_event.0;
-        if !light_update_queues.contains_key(&position)
+        if light_map.chunks.contains_key(&position)
+            && !light_update_queues.contains_key(&position)
             && !light_update_queues.contains_key(&(position + IVec3::new(0, CHUNK_SIZE as i32, 0)))
             && !light_update_queues.contains_key(&(position - IVec3::new(0, CHUNK_SIZE as i32, 0)))
             && !light_update_queues.contains_key(&(position + IVec3::new(CHUNK_SIZE as i32, 0, 0)))
@@ -859,7 +859,9 @@ fn send_chunk_mesh_events(
             && !light_update_queues.contains_key(&(position + IVec3::new(0, 0, CHUNK_SIZE as i32)))
             && !light_update_queues.contains_key(&(position - IVec3::new(0, 0, CHUNK_SIZE as i32)))
         {
-            chunk_mesh_events.send(ChunkMeshEvent { position });
+            chunk_mesh_events.send(ChunkMeshEvent {
+                chunk_position: position,
+            });
         }
     }
 }

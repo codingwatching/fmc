@@ -3,10 +3,7 @@ use bevy::prelude::*;
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
 use crate::{
-    players::{
-        player::{Equipment, EquippedItem, Player},
-        Players,
-    },
+    players::player::{Equipment, EquippedItem, Player},
     world::items::{
         crafting::{CraftingTable, RecipeCollection, Recipes},
         ItemStack, ItemStorage, Items,
@@ -395,7 +392,6 @@ fn show_hotbar(
 
 fn update_inventory_interface(
     net: Res<NetworkServer>,
-    players: Res<Players>,
     recipes: Res<Recipes>,
     items: Res<Items>,
     mut take_events: EventReader<NetworkData<messages::InterfaceTakeItem>>,
@@ -440,9 +436,9 @@ fn update_inventory_interface(
     let mut inventory_query_p0 = inventory_query.p0();
 
     for take_event in take_events.read() {
-        let player_entity = players.get(&take_event.source);
-        let (mut inventory, mut equipment, mut crafting_table, mut held_item) =
-            inventory_query_p0.get_mut(player_entity).unwrap();
+        let (mut inventory, mut equipment, mut crafting_table, mut held_item) = inventory_query_p0
+            .get_mut(take_event.source.entity())
+            .unwrap();
 
         let mut interface = PlayerInventoryInterface {
             inventory: &mut inventory,
@@ -469,9 +465,9 @@ fn update_inventory_interface(
     }
 
     for place_event in place_events.read() {
-        let player_entity = players.get(&place_event.source);
-        let (mut inventory, mut equipment, mut crafting_table, mut held_item) =
-            inventory_query_p0.get_mut(player_entity).unwrap();
+        let (mut inventory, mut equipment, mut crafting_table, mut held_item) = inventory_query_p0
+            .get_mut(place_event.source.entity())
+            .unwrap();
 
         if held_item.is_empty() {
             continue;
@@ -506,7 +502,6 @@ fn update_inventory_interface(
 
 fn equip_item(
     net: Res<NetworkServer>,
-    players: Res<Players>,
     mut equip_events: EventReader<NetworkData<messages::InterfaceEquipItem>>,
     mut equipped_item_query: Query<&mut EquippedItem>,
 ) {
@@ -520,8 +515,9 @@ fn equip_item(
             continue;
         }
 
-        let player_entity = players.get(&equip_event.source);
-        let mut equipped_item = equipped_item_query.get_mut(player_entity).unwrap();
+        let mut equipped_item = equipped_item_query
+            .get_mut(equip_event.source.entity())
+            .unwrap();
         equipped_item.0 = equip_event.index as usize;
     }
 }

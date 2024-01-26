@@ -9,7 +9,6 @@ use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 use crate::{
     bevy_extensions::f64_transform::{F64GlobalTransform, F64Transform},
     physics::{PhysicsBundle, Velocity},
-    players::Players,
     world::{
         blocks::{BlockFace, BlockRotation, BlockState, Blocks, Friction},
         items::{DroppedItem, Item, ItemStack, ItemStorage, Items},
@@ -39,7 +38,6 @@ pub fn handle_left_clicks(
     mut clicks: EventReader<NetworkData<messages::LeftClick>>,
     mut block_update_writer: EventWriter<BlockUpdate>,
     world_map: Res<WorldMap>,
-    players: Res<Players>,
     items: Res<Items>,
     models: Res<Models>,
     player_query: Query<(&F64GlobalTransform, &Camera)>,
@@ -49,8 +47,7 @@ pub fn handle_left_clicks(
     let now = std::time::Instant::now();
 
     for click in clicks.read() {
-        let player_entity = players.get(&click.source);
-        let (player_position, player_camera) = player_query.get(player_entity).unwrap();
+        let (player_position, player_camera) = player_query.get(click.source.entity()).unwrap();
 
         // Raycast to the nearest block
         let camera_transform = F64Transform {
@@ -209,9 +206,7 @@ pub fn handle_left_clicks(
 
 // Process block events sent by the clients. Client should make sure that it is a valid placement.
 pub fn handle_right_clicks(
-    net: Res<NetworkServer>,
     world_map: Res<WorldMap>,
-    players: Res<Players>,
     items: Res<Items>,
     mut clicks: EventReader<NetworkData<messages::RightClick>>,
     mut player_query: Query<
@@ -226,9 +221,8 @@ pub fn handle_right_clicks(
     mut block_update_writer: EventWriter<BlockUpdate>,
 ) {
     for right_click in clicks.read() {
-        let player_entity = players.get(&right_click.source);
         let (mut inventory, equipped_item, player_position, player_camera) =
-            player_query.get_mut(player_entity).unwrap();
+            player_query.get_mut(right_click.source.entity()).unwrap();
 
         let camera_transform = F64Transform {
             translation: player_position.translation() + player_camera.translation,

@@ -31,6 +31,7 @@ mod furnace;
 mod water;
 
 pub const BLOCK_CONFIG_PATH: &str = "./resources/client/blocks/";
+const BLOCK_MATERIAL_PATH: &str = "./resources/client/materials/";
 
 static BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::new();
 
@@ -48,8 +49,8 @@ impl Plugin for BlockPlugin {
     }
 }
 
-// Reads blocks from resources/client/blocks/ and resources/server/mods/*/blocks and loads them
-// Each block will have a permanent id assigned to it that will persist through restarts.
+// Loads the blocks from file. At first launch, block ids will be generated. These persist between
+// launches.
 fn load_blocks(database: Res<Database>) {
     fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
@@ -85,6 +86,8 @@ fn load_blocks(database: Res<Database>) {
     let mut maybe_blocks = Vec::new();
     maybe_blocks.resize_with(block_ids.len(), Option::default);
 
+    let block_materials = load_block_materials();
+
     for file_path in walk_dir(&crate::world::blocks::BLOCK_CONFIG_PATH) {
         let block_config_json = match BlockConfigJson::from_file(&file_path) {
             Some(b) => b,
@@ -96,12 +99,29 @@ fn load_blocks(database: Res<Database>) {
                 Ok(d) => Some(d),
                 Err(e) => {
                     panic!(
-                        "Failed to read 'drop' field for block at: {}\nError: {e}",
-                        file_path.display()
+                        "Failed to read 'drop' field for block at: {}\nError: {}",
+                        file_path.display(),
+                        e
                     )
                 }
             },
             None => None,
+        };
+
+        // Blocks that are not defined by gltf models are required to use a material. If the
+        // material is not opaque, then it is assumed transparent. If it is a model block it is
+        // always assumed that it is transparent.
+        let is_transparent = if let Some(material_name) = &block_config_json.material {
+            match block_materials.get(material_name) {
+                Some(m) => m.transparency != "opaque",
+                None => panic!(
+                    "Failed to find material for block: '{}', no material by the name: '{}'\
+                    Make sure the material is present at '{}'.",
+                    block_config_json.name, material_name, BLOCK_MATERIAL_PATH
+                ),
+            }
+        } else {
+            true
         };
 
         if let Some(block_id) = block_ids.remove(&block_config_json.name) {
@@ -111,6 +131,7 @@ fn load_blocks(database: Res<Database>) {
                 hardness: block_config_json.hardness,
                 drop,
                 is_rotatable: block_config_json.is_rotatable,
+                is_transparent,
             };
 
             maybe_blocks[block_id as usize] = Some(Block::new(block_config));
@@ -214,21 +235,15 @@ impl Blocks {
 
     #[track_caller]
     pub fn get_id(&self, block_name: &str) -> BlockId {
-        if let Some(id) = self.ids.get(block_name) {
-            return *id;
-        } else {
-            // This function is used at startup for the terrain generation, and will fail if the
-            // required blocks are not present in the resource pack.
-            panic!(
-                "Couldn't find id for block with name: '{}'\nMake sure the corresponding block \
-                config is present in the resource pack.",
-                block_name
-            );
-        }
+        return *self.ids.get(block_name).unwrap();
     }
 
     pub fn clone_ids(&self) -> HashMap<String, BlockId> {
         return self.ids.clone();
+    }
+
+    pub fn contains_block(&self, block_name: &str) -> bool {
+        return self.ids.contains_key(block_name);
     }
 }
 
@@ -302,16 +317,20 @@ impl BlockDrop {
 
 #[derive(Debug, Deserialize)]
 struct BlockConfigJson {
-    /// Name of the block
+    // Name of the block
     name: String,
-    /// The friction/drag.
+    // The friction/drag.
     friction: Friction,
-    /// How long it takes to break the block without a tool
+    // How long it takes to break the block without a tool
     hardness: Option<f32>,
     // Which item(s) the block drops
     drop: Option<BlockDropJson>,
     #[serde(default)]
     is_rotatable: bool,
+    // Renderding material, used to deduce transparency.
+    // None if it's a model block, the transparency is set to true.
+    // If the string is not "opaque", the transparency is set to true.
+    material: Option<String>,
 }
 
 impl BlockConfigJson {
@@ -353,6 +372,7 @@ impl BlockConfigJson {
             Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e),
         };
 
+        // This filters out parent configs
         if json.get("name").is_some_and(|name| name.is_string()) {
             // TODO: When this fails, theres no way to know which field made it panic.
             return match serde_json::from_value(json) {
@@ -377,6 +397,8 @@ pub struct BlockConfig {
     drop: Option<BlockDrop>,
     // If the block is rotatable around the y axis
     pub is_rotatable: bool,
+    // If the block can be seen through
+    pub is_transparent: bool,
 }
 
 impl BlockConfig {
@@ -447,6 +469,10 @@ impl BlockState {
         return BlockState(rotation as u16);
     }
 
+    pub fn as_u16(&self) -> u16 {
+        return self.0;
+    }
+
     pub fn rotation(&self) -> BlockRotation {
         return BlockRotation::from(self.0);
     }
@@ -470,4 +496,63 @@ impl From<u16> for BlockRotation {
     fn from(value: u16) -> Self {
         return unsafe { std::mem::transmute(value & 0b11) };
     }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+struct BlockMaterial {
+    transparency: String,
+}
+
+impl Default for BlockMaterial {
+    fn default() -> Self {
+        Self {
+            transparency: "opaque".to_owned(),
+        }
+    }
+}
+
+// TODO: Loading needs to be done when validating the resources too. Store them?
+fn load_block_materials() -> HashMap<String, BlockMaterial> {
+    let mut materials = HashMap::new();
+
+    let dir = std::path::PathBuf::from(BLOCK_MATERIAL_PATH);
+    for dir_entry in std::fs::read_dir(&dir).unwrap() {
+        let file_path = match dir_entry {
+            Ok(p) => p.path(),
+            Err(e) => panic!(
+                "Failed to read block materials from: '{}'\n Make sure the directory is present.\n
+                Error: {}",
+                BLOCK_MATERIAL_PATH, e
+            ),
+        };
+
+        let material_name = file_path
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+
+        let file = match std::fs::File::open(&file_path) {
+            Ok(f) => f,
+            Err(e) => panic!(
+                "Failed to open block material config.\nPath: {}\nError: {}",
+                file_path.to_string_lossy(),
+                e
+            ),
+        };
+
+        let block_material: BlockMaterial = match serde_json::from_reader(file) {
+            Ok(c) => c,
+            Err(e) => panic!(
+                "Failed to read material configuration at path: '{}'\nError: {}",
+                file_path.to_string_lossy(),
+                e
+            ),
+        };
+
+        materials.insert(material_name, block_material);
+    }
+
+    return materials;
 }

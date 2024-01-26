@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer};
 
-use super::{player::Health, Player, Players, RespawnEvent};
+use super::{player::Health, Player, RespawnEvent};
 
 pub struct HealthPlugin;
 impl Plugin for HealthPlugin {
@@ -42,14 +42,14 @@ fn add_fall_damage_component(
 }
 
 fn fall_damage(
-    players: Res<Players>,
     mut fall_damage_query: Query<(Entity, &mut FallDamage), With<Player>>,
     mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
     mut damage_events: EventWriter<DamageEvent>,
 ) {
     for position_update in position_events.read() {
-        let player_entity = players.get(&position_update.source);
-        let (entity, mut fall_damage) = fall_damage_query.get_mut(player_entity).unwrap();
+        let (entity, mut fall_damage) = fall_damage_query
+            .get_mut(position_update.source.entity())
+            .unwrap();
 
         if fall_damage.0 != 0 && position_update.velocity.y > -0.1 {
             //damage_events.send(DamageEvent {
@@ -105,7 +105,6 @@ fn heal_on_respawn(
 
 fn death_interface(
     net: Res<NetworkServer>,
-    players: Res<Players>,
     health_query: Query<&Health>,
     mut respawn_button_events: EventReader<NetworkData<messages::InterfaceButtonPress>>,
     mut respawn_events: EventWriter<RespawnEvent>,
@@ -115,7 +114,7 @@ fn death_interface(
             return;
         }
 
-        let entity = players.get(&button_press.source);
+        let entity = button_press.source.entity();
         let health = health_query.get(entity).unwrap();
 
         if health.hearts == 0 {

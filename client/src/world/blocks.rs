@@ -190,12 +190,12 @@ pub fn load_blocks(
                     m.clone().typed()
                 } else {
                     net.disconnect(&format!(
-                        "Misconfigured resource pack, tried to use material '{}', but it does not exist.",
-                        material
+                        "Misconfigured resource pack, tried to use material '{}' for block '{}', \
+                        but the material does not exist.",
+                        material, name
                     ));
                     return;
                 };
-
                 let material = materials.get(&material_handle).unwrap();
 
                 let mut mesh_primitives = Vec::new();
@@ -686,7 +686,7 @@ enum BlockConfig {
         quads: Option<Vec<QuadPrimitiveJson>>,
         /// The friction or drag.
         friction: Friction,
-        /// Material that should be used to render
+        /// Material that should be used to render the block.
         material: String,
         /// If the block should only cull quads from blocks of the same type.
         #[serde(default)]
@@ -754,21 +754,20 @@ impl BlockConfig {
 }
 
 // This is derived from the AlphaMode of the block's material as well as the BlockConfig::Cube
-// attribute 'cull_self'.
-// 'All' is for AlphaMode::Opaque e.g. stone
-// 'OnlyTransparent' for all blending AlphaMode's e.g. water
-// 'None' is for AlphaMode::Mask e.g. leaves
-// 'OnlySelf' for AlphaMode::Mask with cull_self==true e.g. glass
+// attribute 'only_cull_self'.
+// only_cull_self==true -> OnlySelf e.g. glass, this takes presedence over AlphaMode
+// AlphaMode::Opaque -> All e.g. stone
+// All blending AlphaMode's -> TransparentOnly e.g. water
+// AlphaMode::Mask -> None e.g. leaves
 #[derive(Debug, PartialEq)]
 enum CullMethod {
-    // Cull all faces that are adjacent.
+    // Cull all faces that are adjacent to the block.
     All,
-    // Cull only other transparent faces that are adjacent. This does not apply to mask
-    // transparency. Use for liquids.
+    // Cull only other transparent faces that are adjacent.
     TransparentOnly,
-    // Do not cull. Use for blocks with masked transparency, glass, leaves.
+    // Do not cull.
     None,
-    // Cull only blocks of the same type.
+    // Only cull adjacent faces when the block is of the same type.
     OnlySelf,
 }
 
@@ -790,10 +789,9 @@ pub struct QuadPrimitive {
 #[derive(Deserialize)]
 struct QuadPrimitiveJson {
     // indexing
-    // 1  3
-    // |\ |
-    // | \|
-    // 0  2
+    // 1   3
+    // | \ |
+    // 0   2
     vertices: [[f32; 3]; 4],
     texture: String,
     cull_face: Option<BlockFace>,

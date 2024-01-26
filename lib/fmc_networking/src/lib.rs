@@ -22,9 +22,12 @@ pub mod messages;
 pub use client::NetworkClient;
 pub use server::NetworkServer;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{
+    hash::Hash,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
-use bevy::{prelude::*, utils::Uuid};
+use bevy::prelude::*;
 use client::AppNetworkClientMessage;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use derive_more::{Deref, DerefMut, Display};
@@ -54,35 +57,34 @@ impl<T> SyncChannel<T> {
 }
 
 /// A [`ConnectionId`] denotes a single connection
-#[derive(Component, Hash, PartialEq, Eq, Clone, Copy, Display, Debug)]
-#[display(fmt = "Connection from {} with ID={}", addr, uuid)]
+#[derive(Component, PartialEq, Eq, Clone, Copy, Display, Debug)]
+#[display(fmt = "Connection from {}", addr)]
 pub struct ConnectionId {
-    uuid: Uuid,
+    // The entity the connection is attached to doubles as a unique identifier of the connection id. It
+    // also comes in handy while handling packets, as you don't need to keep track of the
+    // ConnectionId -> Entity relation, it is available through the connection.
+    entity: Entity,
     addr: SocketAddr,
 }
 
 impl ConnectionId {
-    pub fn default() -> Self {
-        Self {
-            uuid: Uuid::nil(),
-            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
-        }
+    pub fn entity(&self) -> Entity {
+        return self.entity;
     }
 
     pub fn address(&self) -> SocketAddr {
-        self.addr
-    }
-
-    pub(crate) fn server(addr: Option<SocketAddr>) -> ConnectionId {
-        ConnectionId {
-            uuid: Uuid::nil(),
-            addr: addr.unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)),
-        }
+        return self.addr;
     }
 
     /// Check whether this [`ConnectionId`] is a server
     pub fn is_server(&self) -> bool {
-        self.uuid == Uuid::nil()
+        self.entity == Entity::PLACEHOLDER
+    }
+}
+
+impl Hash for ConnectionId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.entity.hash(state);
     }
 }
 
@@ -104,16 +106,15 @@ impl std::fmt::Debug for NetworkPacket {
 /// A network event originating from a [`NetworkServer`]
 #[derive(Debug, Event)]
 pub enum ServerNetworkEvent {
-    /// A client has connected
+    /// A client has connected. A ConnectionId has been added to the entity.
     Connected {
-        connection_id: ConnectionId,
+        // TODO: Most places I access this ends up mapping the entity to the connection instead of
+        // the other way around. Just send the ConnectionId. Same for disconnect.
+        entity: Entity,
         username: String,
     },
-    /// A client has disconnected
-    Disconnected {
-        connection_id: ConnectionId,
-        username: String,
-    },
+    /// A client has disconnected. It will be removed at the end of the update cycle.
+    Disconnected { entity: Entity },
     /// An error occured while trying to do a network operation
     Error(ServerNetworkError),
 }
@@ -153,9 +154,9 @@ impl<T> NetworkData<T> {
 #[derive(Clone, Debug)]
 #[allow(missing_copy_implementations)]
 #[derive(Resource)]
-/// Settings to configure the network, both client and server
+/// Settings to configure the network
 pub struct NetworkSettings {
-    /// Maximum packet size in bytes. If a client ever exceeds this size, they will be disconnected
+    /// Maximum packet size in bytes. If a client ever exceeds this size, it will be disconnected
     /// The default is set to 10MiB
     pub max_packet_length: usize,
 }
@@ -177,15 +178,33 @@ impl Plugin for ServerPlugin {
         app.insert_resource(server::NetworkServer::new())
             .add_event::<ServerNetworkEvent>()
             .init_resource::<NetworkSettings>()
-            // Preupdate -> Connect/register messages
-            // Update -> process messages and register connections that should be disconnected
-            // PostUpdate -> Disconnect
-            .add_systems(PreUpdate, server::handle_connections)
-            .add_systems(PostUpdate, server::handle_disconnections)
+            .add_systems(
+                PreUpdate,
+                (
+                    server::handle_connections,
+                    // TODO: I don't know how I feel about this order trickery. I would like it to
+                    // be just 'Client Disconnected' -> 'immediately despawn connection entity',
+                    // but what do you do with the network messages that arrived in the span
+                    // between the last event registration and the disconnection? It would be nice
+                    // to handle them, but they are probably not that important. The bigger problem
+                    // is that messages have already been added to the message pool, and so are
+                    // hard to filter out again. Probably means separate message queues for each
+                    // connection, and that is a headache. Maybe a way to this with channels?
+                    // HashMap<"packet kind", Sender<NetworkMessage>> passed to recv_task, same but
+                    // with Receiver as entity component. Doesn't need to be mutable anywhere so
+                    // systems can transfer them to events in parallel.
+                    //
+                    // It is purposefully 'before' and not 'after' here, so it can go:
+                    // 1. Send disconnect event
+                    // 2. Application reacts to event, saves player state etc and processes left
+                    //    over accumulated network events. 
+                    // 3. A tick after, the connection entity is despawned
+                    server::handle_disconnection_events.before(server::send_disconnection_events),
+                    server::send_disconnection_events
+                ),
+            )
             .listen_for_server_message::<messages::ClientFinishedLoading>()
             .listen_for_server_message::<messages::RenderDistance>()
-            .listen_for_server_message::<messages::ChunkRequest>()
-            .listen_for_server_message::<messages::UnsubscribeFromChunks>()
             .listen_for_server_message::<messages::PlayerCameraRotation>()
             .listen_for_server_message::<messages::PlayerPosition>()
             .listen_for_server_message::<messages::LeftClick>()
@@ -219,7 +238,7 @@ impl Plugin for ClientPlugin {
             .listen_for_client_message::<messages::DeleteModel>()
             .listen_for_client_message::<messages::ModelUpdateTransform>()
             .listen_for_client_message::<messages::ModelUpdateAsset>()
-            .listen_for_client_message::<messages::ChunkResponse>()
+            .listen_for_client_message::<messages::Chunk>()
             .listen_for_client_message::<messages::BlockUpdates>()
             .listen_for_client_message::<messages::ServerConfig>()
             .listen_for_client_message::<messages::AssetResponse>()

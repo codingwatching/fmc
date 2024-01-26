@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use fmc_networking::{messages, NetworkData, NetworkServer, ServerNetworkEvent};
 
-use crate::players::{Player, Players};
+use crate::players::Player;
 
 pub const CHAT_FONT_SIZE: f32 = 8.0;
 pub const CHAT_TEXT_COLOR: &str = "#ffffff";
@@ -15,7 +15,6 @@ impl Plugin for ChatPlugin {
 
 fn handle_chat_messages(
     net: Res<NetworkServer>,
-    players: Res<Players>,
     player_query: Query<&Player>,
     mut chat_message_query: EventReader<NetworkData<messages::InterfaceTextInput>>,
 ) {
@@ -23,7 +22,7 @@ fn handle_chat_messages(
         if &chat_message.interface_path != "chat/input" {
             continue;
         }
-        let player = player_query.get(players.get(&chat_message.source)).unwrap();
+        let player = player_query.get(chat_message.source.entity()).unwrap();
         let mut chat_history_update = messages::InterfaceTextBoxUpdate::new("chat/history");
         chat_history_update.append_line().with_text(
             format!("[{}] {}", &player.username, &chat_message.text),
@@ -36,6 +35,7 @@ fn handle_chat_messages(
 
 fn send_connection_messages(
     net: Res<NetworkServer>,
+    player_query: Query<&Player>,
     mut network_events: EventReader<ServerNetworkEvent>,
 ) {
     for event in network_events.read() {
@@ -49,10 +49,11 @@ fn send_connection_messages(
                 );
                 net.broadcast(chat_update);
             }
-            ServerNetworkEvent::Disconnected { username, .. } => {
+            ServerNetworkEvent::Disconnected { entity } => {
+                let player = player_query.get(*entity).unwrap();
                 let mut chat_update = messages::InterfaceTextBoxUpdate::new("chat/history");
                 chat_update.append_line().with_text(
-                    format!("{} left the game", username),
+                    format!("{} left the game", player.username),
                     CHAT_FONT_SIZE,
                     CHAT_TEXT_COLOR,
                 );

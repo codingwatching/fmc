@@ -10,7 +10,6 @@ pub struct WorldMapPlugin;
 impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(chunk_manager::ChunkManagerPlugin)
-            .add_plugins(chunk::ChunkPlugin)
             .init_resource::<WorldMap>();
     }
 }

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
-use bevy::{prelude::*, utils::Uuid};
+use bevy::{prelude::*, transform::commands, utils::Uuid};
 use dashmap::DashMap;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -147,9 +147,7 @@ impl NetworkServer {
     pub fn send_one<T: ClientBound>(&self, connection_id: ConnectionId, message: T) {
         let connection = match self.established_connections.get(&connection_id) {
             Some(conn) => conn,
-            None => panic!(
-                "Server should not have access to connections that aren't in the connection pool."
-            ),
+            None => return,
         };
 
         let packet = NetworkPacket {
@@ -157,10 +155,7 @@ impl NetworkServer {
             data: Box::new(message),
         };
 
-        if let Err(err) = connection.send_message.blocking_send(packet) {
-            error!("There was an error sending a message: {}", err);
-            self.disconnect(connection_id);
-        }
+        connection.send_message.blocking_send(packet).ok();
     }
 
     /// Send a message to many clients
@@ -174,7 +169,7 @@ impl NetworkServer {
         for connection_id in connection_ids {
             let connection = match self.established_connections.get(connection_id) {
                 Some(conn) => conn,
-                None => panic!("Server should not have access to connections that aren't in the connection pool."),
+                None => return,
             };
 
             let packet = NetworkPacket {
@@ -182,13 +177,7 @@ impl NetworkServer {
                 data: Box::new(message.clone()),
             };
 
-            match connection.send_message.blocking_send(packet) {
-                Ok(_) => (),
-                Err(err) => {
-                    error!("There was an error sending a message: {}", err);
-                    self.disconnect(*connection_id);
-                }
-            }
+            connection.send_message.blocking_send(packet).ok();
         }
     }
 
@@ -200,13 +189,7 @@ impl NetworkServer {
                 data: Box::new(message.clone()),
             };
 
-            match connection.send_message.blocking_send(packet) {
-                Ok(_) => (),
-                Err(err) => {
-                    error!("There was an error sending a message: {}", err);
-                    self.disconnect(connection.id);
-                }
-            }
+            connection.send_message.blocking_send(packet).ok();
         }
     }
 
@@ -437,6 +420,7 @@ async fn send_task(
 }
 
 pub(crate) fn handle_connections(
+    mut commands: Commands,
     server: Res<NetworkServer>,
     network_settings: Res<NetworkSettings>,
     mut network_events: EventWriter<ServerNetworkEvent>,
@@ -444,10 +428,13 @@ pub(crate) fn handle_connections(
     for connection in server.new_connections.receiver.try_iter() {
         let addr = connection.socket.peer_addr().unwrap();
 
+        let mut entity_commands = commands.spawn_empty();
+
         let connection_id = ConnectionId {
-            uuid: Uuid::new_v4(),
+            entity: entity_commands.id(),
             addr,
         };
+        entity_commands.insert(connection_id.clone());
 
         let (read_socket, send_socket) = connection.socket.into_split();
 
@@ -478,40 +465,44 @@ pub(crate) fn handle_connections(
         );
 
         network_events.send(ServerNetworkEvent::Connected {
-            connection_id,
+            entity: connection_id.entity,
             username: connection.username,
         });
     }
 }
 
 // TODO: When you disconnnect is prints a bunch of errors because it still has
-// access to the connection even though it's disconnected.
+// access to the connection even though it's disconnected when trying to send.
 //
-// Connections are disconnected with a 1 update-cycle lag. This is let the server application
-// process the connection's messages. If the lag wasn't there, the server would recieve the
-// disconnect event, while still having messages to process from the connection.
-// This way it is guaranteed that there will be no messages when it receives the disconnect event.
-pub(crate) fn handle_disconnections(
+pub(crate) fn send_disconnection_events(
     server: Res<NetworkServer>,
     mut network_events: EventWriter<ServerNetworkEvent>,
-    mut to_disconnect: Local<Vec<ConnectionId>>,
 ) {
-    for connection_id in to_disconnect.drain(..) {
-        let connection = match server.established_connections.remove(&connection_id) {
+    for disconnected_connection in server.disconnected_connections.receiver.try_iter() {
+        let connection = match server
+            .established_connections
+            .remove(&disconnected_connection)
+        {
             Some(conn) => conn.1,
             None => continue,
         };
 
-        network_events.send(ServerNetworkEvent::Disconnected {
-            connection_id,
-            username: connection.username.to_owned(),
-        });
-
         connection.stop();
-    }
 
-    for disconnected_connection in server.disconnected_connections.receiver.try_iter() {
-        to_disconnect.push(disconnected_connection);
+        network_events.send(ServerNetworkEvent::Disconnected {
+            entity: disconnected_connection.entity,
+        });
+    }
+}
+
+pub(crate) fn handle_disconnection_events(
+    mut commands: Commands,
+    mut disconnection_events: EventReader<ServerNetworkEvent>,
+) {
+    for event in disconnection_events.read() {
+        if let ServerNetworkEvent::Disconnected { entity } = event {
+            commands.entity(*entity).despawn_recursive();
+        }
     }
 }
 
@@ -522,7 +513,7 @@ pub trait AppNetworkServerMessage {
     /// ## Details
     /// This will:
     /// - Add a new event type of [`NetworkData<T>`]
-    /// - Register the type for transformation over the wire
+    /// - Register the type for transportation over the wire
     /// - Internal bookkeeping
     fn listen_for_server_message<T: ServerBound>(&mut self) -> &mut Self;
 }

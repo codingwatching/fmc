@@ -19,8 +19,8 @@ impl Plugin for WorldPlugin {
 // enough about the rendering stuff to replace Transform. Instead this litters conversions all over
 // the place.
 //
-// For entities that use a Transform, an offset is needed to preserve the precision of f32s. This is
-// updated to be the chunk position of the player every time the player moves between chunk
+// For entities that use a Transform, an offset is needed to preserve the precision of f32s. This
+// is updated to be the chunk position of the player every time the player moves between chunk
 // borders.
 #[derive(Resource, Deref, DerefMut, Clone, Copy)]
 pub struct Origin(pub IVec3);

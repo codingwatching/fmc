@@ -29,6 +29,7 @@ impl Materials {
 #[derive(Deserialize)]
 #[serde(default)]
 struct MaterialConfig {
+    // One of "block" or "standard"
     pub r#type: String,
     pub base_color: Color,
     pub base_color_texture: Option<String>,
@@ -158,7 +159,7 @@ pub fn load_materials(
             "add" => AlphaMode::Add,
             wrong_one => {
                 net.disconnect(format!(
-                    "Failed to read material configuration, path: {}\nError: 'transparency' needs to be one of 'opaque', 'mask', 'multiply', 'premultiplied' and 'add', '{}' is not recognized.",
+                    "Failed to read material configur,tion, path: {}\nError: 'transparency' needs to be one of 'opaque', 'mask', 'multiply', 'premultiplied' and 'add'. '{}' is not recognized.",
                     file_path.to_string_lossy(),
                     wrong_one
                 ));

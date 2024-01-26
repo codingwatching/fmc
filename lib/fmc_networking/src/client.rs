@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 
 use bevy::prelude::*;
 use dashmap::DashMap;
@@ -160,6 +163,17 @@ impl NetworkClient {
         };
     }
 
+    pub fn connection_id(&self) -> ConnectionId {
+        ConnectionId {
+            entity: Entity::PLACEHOLDER,
+            addr: self
+                .server_connection
+                .as_ref()
+                .map(|conn| conn.peer_addr)
+                .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)),
+        }
+    }
+
     /// Returns true if the client has an established connection
     ///
     /// # Note
@@ -214,17 +228,7 @@ fn register_client_message<T>(
         messages
             .drain(..)
             .flat_map(|msg| msg.downcast())
-            .map(|msg| {
-                NetworkData::new(
-                    ConnectionId::server(
-                        net_res
-                            .server_connection
-                            .as_ref()
-                            .map(|conn| conn.peer_addr),
-                    ),
-                    *msg,
-                )
-            }),
+            .map(|msg| NetworkData::new(net_res.connection_id(), *msg)),
     );
 }
 

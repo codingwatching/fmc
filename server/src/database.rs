@@ -11,7 +11,7 @@ use crate::{
         blocks::{BlockState, Blocks},
         items::ItemId,
         models::Model,
-        world_map::chunk::{Chunk, ChunkStatus},
+        world_map::chunk::Chunk,
         WorldProperties,
     },
 };
@@ -309,7 +309,7 @@ impl Database {
     pub async fn load_chunk_blocks(
         &self,
         position: &IVec3,
-    ) -> HashMap<usize, (BlockId, Option<u16>)> {
+    ) -> HashMap<usize, (BlockId, Option<BlockState>)> {
         let conn = self.get_connection();
 
         let mut block_stmt = conn
@@ -349,7 +349,10 @@ impl Database {
 
             blocks.insert(
                 index,
-                (row.get::<_, BlockId>(3).unwrap(), row.get::<_, u16>(4).ok()),
+                (
+                    row.get::<_, BlockId>(3).unwrap(),
+                    row.get::<_, u16>(4).ok().map(BlockState),
+                ),
             );
         }
 

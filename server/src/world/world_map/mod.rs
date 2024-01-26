@@ -135,15 +135,20 @@ fn handle_block_updates(
                     panic!("Tried to change block in non-existing chunk");
                 };
 
-                chunk.try_convert_uniform_to_regular();
-
                 chunk[block_index] = *block_id;
                 chunk.set_block_state(block_index, *block_state);
+
+                // XXX: This is slow, see function defintion. Put here to cause problems.
+                chunk.check_visible_faces();
 
                 let chunked_block_updates =
                     chunked_updates.entry(chunk_pos).or_insert(Vec::default());
 
-                chunked_block_updates.push((block_index, *block_id, block_state.map(|b| b.0)));
+                chunked_block_updates.push((
+                    block_index,
+                    *block_id,
+                    block_state.map(|b| b.as_u16()),
+                ));
             }
         }
     }

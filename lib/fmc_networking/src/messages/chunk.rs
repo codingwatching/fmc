@@ -2,28 +2,18 @@ use std::collections::HashMap;
 
 use crate::BlockId;
 use bevy::prelude::*;
-use fmc_networking_derive::{ClientBound, NetworkMessage, ServerBound};
+use fmc_networking_derive::{ClientBound, NetworkMessage};
 use serde::{Deserialize, Serialize};
 
-/// Asks the server for a set of chunks.
-#[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug)]
-pub struct ChunkRequest {
-    /// Position of the chunks the client wants
-    pub chunks: Vec<IVec3>,
-}
-
-impl ChunkRequest {
-    /// Blank response
-    pub fn new() -> Self {
-        Self { chunks: Vec::new() }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Reponse to a ChunkRequest.
+/// Contains a set of chunks.
+#[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone)]
 pub struct Chunk {
+    /// The position the chunk takes in the block grid.
     pub position: IVec3,
-    // Blocks are stored as one array. To access a block at the coordinate x,y,z
-    // (zero indexed) the formula x * CHUNK_SIZE^2 + y * CHUNK_SIZE + z is used.
+    // If the chunk is uniform(same block) it's length is 1, else it is CHUNK_SIZE^3.
+    // The formula for access is x * CHUNK_SIZE^2 + z * CHUNK_SIZE + y.
+    /// The blocks the chunk consists of.
     pub blocks: Vec<BlockId>,
     // Packed u16 containing optional info.
     // bits:
@@ -33,39 +23,4 @@ pub struct Chunk {
     //      ^---centered
     //     ^----upside down
     pub block_state: HashMap<usize, u16>,
-}
-
-/// Reponse to a ChunkRequest.
-/// Contains a set of chunks.
-#[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone)]
-pub struct ChunkResponse {
-    /// The chunks the client requested.
-    pub chunks: Vec<Chunk>,
-}
-
-impl ChunkResponse {
-    /// new empty response
-    pub fn new() -> Self {
-        Self { chunks: Vec::new() }
-    }
-
-    pub fn add_chunk(
-        &mut self,
-        position: IVec3,
-        blocks: Vec<BlockId>,
-        block_state: HashMap<usize, u16>,
-    ) {
-        self.chunks.push(Chunk {
-            position,
-            blocks,
-            block_state,
-        })
-    }
-}
-
-/// Clients need to send this when it drops chunks.
-#[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug)]
-pub struct UnsubscribeFromChunks {
-    /// Position of the chunks the client wants
-    pub chunks: Vec<IVec3>,
 }

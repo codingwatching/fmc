@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use bevy::prelude::*;
@@ -6,13 +6,20 @@ use fmc_networking::BlockId;
 use noise::Noise;
 use rand::SeedableRng;
 
-use crate::{constants::CHUNK_SIZE, settings::Settings};
+use crate::world::blocks::Blocks;
+use crate::{constants::CHUNK_SIZE, settings::Settings, utils, world::blocks::BlockState};
+
+use super::chunk::Chunk;
 
 mod biomes;
-mod features;
+mod blueprints;
 
 // The heighest point relative to the base height 3d noise can extend to create terrain.
 const MAX_HEIGHT: i32 = 120;
+
+// y_offset is the amount of blocks above the chunk that need to be generated to know how
+// deep we are, in order to know which blocks to use when at the surface.
+const Y_OFFSET: usize = 4;
 
 pub struct TerrainGenerationPlugin;
 
@@ -26,7 +33,7 @@ fn setup(mut commands: Commands, settings: Res<Settings>) {
     commands.insert_resource(TerrainGenerator::new(settings.seed));
 }
 
-#[derive(Resource, Deref, Clone)]
+#[derive(Resource, Clone)]
 pub struct TerrainGenerator(Arc<TerrainGeneratorInner>);
 
 impl TerrainGenerator {
@@ -61,7 +68,7 @@ impl TerrainGenerator {
             // Reduce height of contintents to be between -10%/5% of MAX_HEIGHT
             .clamp(-0.1, 0.05);
 
-        let terrain_height = Noise::perlin(1./128., seed + 1)
+        let terrain_height = Noise::perlin(1. / 128., seed + 1)
             .fbm(5, 0.5, 2.0)
             // Increase so less of the terrain is flat
             .add_value(0.5)
@@ -71,32 +78,44 @@ impl TerrainGenerator {
 
         // When out at sea bottom out the terrain height gradually from the shore, so big
         // landmasses don't poke out.
-        let terrain_height = contintents.clone().range(0.0, -0.05, terrain_height, Noise::constant(0.5));
+        let terrain_height =
+            contintents
+                .clone()
+                .range(0.0, -0.05, terrain_height, Noise::constant(0.5));
 
-        let freq = 1.0/2.0f32.powi(8);
-        let high = Noise::perlin(freq, seed + 2).with_frequency(freq, freq, freq).fbm(5, 0.5, 2.0);
-        let low = Noise::perlin(freq, seed + 3).with_frequency(freq, freq, freq).fbm(5, 0.5, 2.0);
+        let freq = 1.0 / 2.0f32.powi(8);
+        let high = Noise::perlin(freq, seed + 2)
+            .with_frequency(freq, freq, freq)
+            .fbm(4, 0.5, 2.0);
+        let low = Noise::perlin(freq, seed + 3)
+            .with_frequency(freq, freq, freq)
+            .fbm(4, 0.5, 2.0);
 
         // High and low are switched between to create sudden changes in terrain elevation.
-        let freq = 1.0/92.0;
+        //let freq = 1.0/92.0;
+        let freq = 1.0 / 2.0f32.powi(9);
         let terrain_shape = Noise::perlin(0.0, seed + 4)
-            .with_frequency(freq, freq * 0.5, freq)
-            .fbm(4, 0.5, 2.0)
+            .with_frequency(freq, freq, freq)
+            .fbm(8, 0.5, 2.0)
             .range(0.1, -0.1, high, low)
-            .mul_value(1.5);
+            .mul_value(2.0);
 
         Self(Arc::new(TerrainGeneratorInner {
-            biome_map: biomes::BiomeMap::new(),
+            biomes: biomes::Biomes::load(),
             continents: contintents,
             terrain_height,
             terrain_shape,
             seed,
         }))
     }
+
+    pub async fn generate_chunk(&self, chunk_position: IVec3, chunk: &mut Chunk) {
+        self.0.generate_chunk(chunk_position, chunk);
+    }
 }
 
-pub struct TerrainGeneratorInner {
-    biome_map: biomes::BiomeMap,
+struct TerrainGeneratorInner {
+    biomes: biomes::Biomes,
     continents: Noise,
     terrain_height: Noise,
     terrain_shape: Noise,
@@ -104,51 +123,27 @@ pub struct TerrainGeneratorInner {
 }
 
 impl TerrainGeneratorInner {
-    // TODO: Use X direction of noise as Y direction, this way all access of the vector is
-    // sequential, hopefully removing cache misses.
-    //
-    /// Generates all blocks for the chunk at the given position.
-    /// Blocks that are generated outside of the chunk are also included (trees etc.)
-    /// Return type (uniform, blocks), uniform if all blocks are of the same type.
-    pub async fn generate_chunk(&self, chunk_position: IVec3) -> (bool, HashMap<IVec3, BlockId>) {
-        let mut blocks: HashMap<IVec3, BlockId> = HashMap::with_capacity(CHUNK_SIZE.pow(3));
-
-        // TODO: It should be unique to each chunk but I don't know how.
-        // Seed used for feature placing, unique to each chunk column.
-        let seed = self
-            .seed
-            .overflowing_add(chunk_position.x.pow(2))
-            .0
-            .overflowing_add(chunk_position.z)
-            .0;
-        let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
-
+    fn generate_chunk(&self, chunk_position: IVec3, chunk: &mut Chunk) {
         // Don't waste time generating if it is guaranteed to be air.
         if MAX_HEIGHT < chunk_position.y {
-            blocks.insert(chunk_position, self.biome_map.get_biome().air);
-            return (true, blocks);
+            let air = Blocks::get().get_id("air");
+            chunk.make_uniform(air);
+        } else {
+            self.generate_terrain(chunk_position, chunk);
+            self.carve_caves(chunk);
+            self.generate_features(chunk_position, chunk);
         }
 
-        let biome = self.biome_map.get_biome();
-        // TODO: Maybe when the frustum algo is moved to column based,
-        // it's possible to move terrain generation to it too? Like you already know when
-        // the chunk you want to generate is a surface chunk. idk...
-        // Would remove need to generate these blocks.
-        //
-        // y_offset is the amount of blocks above the chunk that need to be generated to know how
-        // deep we are, in order to know which blocks to use when at the surface.
-        let y_offset = biome.top_layer_thickness + biome.mid_layer_thickness;
+        chunk.check_visible_faces();
+    }
 
-        // TODO: There's something going on here. Compression takes ~10 microseconds and terrain
-        // shape takes 2 milliseconds. Terrain shape is 16 times larger than compression (same
-        // amount of octaves).
-        // After investigation: Switching from avx2 to sse2 seemed to alleviate it.
+    fn generate_terrain(&self, chunk_position: IVec3, chunk: &mut Chunk) {
         let (mut terrain_shape, _, _) = self.terrain_shape.generate_3d(
             chunk_position.x as f32,
             chunk_position.y as f32,
             chunk_position.z as f32,
             CHUNK_SIZE,
-            CHUNK_SIZE + y_offset,
+            CHUNK_SIZE + Y_OFFSET,
             CHUNK_SIZE,
         );
 
@@ -171,24 +166,29 @@ impl TerrainGeneratorInner {
                 let index = z << 4 | x;
                 let base_height = base_height[index] * MAX_HEIGHT as f32;
                 let terrain_height = terrain_height[index];
-                for y in 0..CHUNK_SIZE + y_offset {
+                for y in 0..CHUNK_SIZE + Y_OFFSET {
                     // Amount the density should be decreased by per block above the base height
                     // for the maximum height to be MAX_HEIGHT.
                     // MAX_HEIGHT * DECREMENT / mounds_max = 1
                     const DECREMENT: f32 = 1.5 / MAX_HEIGHT as f32;
-                    let mut compression =
-                        ((chunk_position.y + y as i32) as f32 - base_height) * DECREMENT / terrain_height;
+                    let mut compression = ((chunk_position.y + y as i32) as f32 - base_height)
+                        * DECREMENT
+                        / terrain_height;
                     if compression < 0.0 {
                         compression *= 3.0;
                     }
-                    let index = z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
+                    let index = z * (CHUNK_SIZE * (CHUNK_SIZE + Y_OFFSET)) + y * CHUNK_SIZE + x;
                     terrain_shape[index] -= compression;
                 }
             }
         }
 
-        let mut uniform = true;
-        let mut last_block = None;
+        chunk.blocks = vec![0; CHUNK_SIZE.pow(3)];
+
+        let biome = self.biomes.get_biome();
+
+        // TODO: This should actually be "is_uniform"
+        let mut is_air = true;
 
         for x in 0..CHUNK_SIZE {
             for z in 0..CHUNK_SIZE {
@@ -197,11 +197,11 @@ impl TerrainGeneratorInner {
                 let base_height = base_height[z << 4 | x] * MAX_HEIGHT as f32;
 
                 // Find how deep we are from above chunk.
-                for y in CHUNK_SIZE..CHUNK_SIZE + y_offset {
+                for y in CHUNK_SIZE..CHUNK_SIZE + Y_OFFSET {
                     // TODO: This needs to be converted to order xzy in simdnoise fork to make all
                     // access contiguous.
                     let block_index =
-                        z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
+                        z * (CHUNK_SIZE * (CHUNK_SIZE + Y_OFFSET)) + y * CHUNK_SIZE + x;
                     let density = terrain_shape[block_index];
 
                     if density <= 0.0 {
@@ -219,7 +219,7 @@ impl TerrainGeneratorInner {
                     let block_height = chunk_position.y + y as i32;
 
                     let block_index =
-                        z * (CHUNK_SIZE * (CHUNK_SIZE + y_offset)) + y * CHUNK_SIZE + x;
+                        z * (CHUNK_SIZE * (CHUNK_SIZE + Y_OFFSET)) + y * CHUNK_SIZE + x;
                     let density = terrain_shape[block_index];
 
                     let block = if density <= 0.0 {
@@ -233,34 +233,16 @@ impl TerrainGeneratorInner {
                             layer = 0;
                             biome.air
                         }
-                    } else if layer > biome.mid_layer_thickness {
+                    } else if layer > 3 {
                         layer += 1;
                         biome.bottom_layer_block
                     } else if block_height < 2 && base_height < 2.0 {
                         layer += 1;
                         biome.sand
                     } else {
-                        let block = if layer < biome.top_layer_thickness {
-                            for feature_placer in biome.surface_features.iter() {
-                                if let Some(feature) = feature_placer.place(
-                                    chunk_position + IVec3::new(x as i32, y as i32, z as i32),
-                                    &mut rng,
-                                ) {
-                                    for (block_position, block_id) in feature.into_iter() {
-                                        // Generated feature overwrites air, but not solid blocks.
-                                        blocks
-                                            .entry(block_position)
-                                            .and_modify(|block| {
-                                                if *block == biome.air {
-                                                    *block = block_id
-                                                }
-                                            })
-                                            .or_insert(block_id);
-                                    }
-                                }
-                            }
+                        let block = if layer < 1 {
                             biome.top_layer_block
-                        } else if layer < biome.mid_layer_thickness {
+                        } else if layer < 3 {
                             biome.mid_layer_block
                         } else {
                             biome.bottom_layer_block
@@ -269,30 +251,128 @@ impl TerrainGeneratorInner {
                         block
                     };
 
-                    if last_block.is_none() {
-                        last_block = Some(block);
-                    } else if uniform && last_block.unwrap() != block {
-                        uniform = false;
+                    if is_air && biome.air != block {
+                        is_air = false;
                     }
 
-                    blocks
-                        .entry(IVec3::new(
-                            chunk_position.x + x as i32,
-                            block_height,
-                            chunk_position.z + z as i32,
-                        ))
-                        .or_insert(block);
+                    chunk[[x, y, z]] = block;
                 }
             }
         }
 
-        return (uniform, blocks);
+        if is_air {
+            chunk.make_uniform(biome.air);
+        }
     }
 
-    //pub fn get_surface_height(&self, x: i32, z: i32) -> i32 {
-    //    return NoiseBuilder::fbm_2d_offset(x as f32, 1, z as f32, 1)
-    //        .generate()
-    //        .0[0]
-    //        .round() as i32;
-    //}
+    fn carve_caves(&self, chunk: &mut Chunk) {}
+
+    fn generate_features(&self, chunk_position: IVec3, chunk: &mut Chunk) {
+        // TODO: It should be unique to each chunk but I don't know how.
+        let seed = self
+            .seed
+            .overflowing_add(chunk_position.x.pow(2))
+            .0
+            .overflowing_add(chunk_position.z)
+            .0;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
+
+        let air = Blocks::get().get_id("air");
+
+        // TODO: This should be done at terrain generation, but it clutters the code and it's in
+        // flux. Meanwhile it is done here; an entire extra scan of the chunk, and it can't tell
+        // if it's the surface if it's the topmost block in a column.
+        //
+        // The surface contains the first block from the top that is not air for each block column
+        // of the chunk.
+        let mut surface = vec![None; CHUNK_SIZE.pow(2)];
+        for (column_index, block_column) in chunk.blocks.chunks(CHUNK_SIZE).enumerate() {
+            let mut air_encountered = false;
+            for (y_index, block_id) in block_column.into_iter().enumerate().rev() {
+                if air_encountered && *block_id != air {
+                    // The 2d surface stores the index in the 3d chunk and the block. The
+                    // bitshifting just converts it to a chunk index. See 'Chunk::Index' if
+                    // wondering what it means.
+                    surface[column_index] = Some((y_index, *block_id));
+                    break;
+                }
+                if *block_id == air {
+                    air_encountered = true;
+                }
+            }
+        }
+
+        let biome = self.biomes.get_biome();
+
+        for blueprint in biome.blueprints.iter() {
+            let terrain_feature = blueprint.construct(chunk_position, &surface, &mut rng);
+
+            if terrain_feature.blocks.is_empty() {
+                continue;
+            }
+
+            terrain_feature.apply(chunk, chunk_position);
+
+            chunk.terrain_features.push(terrain_feature);
+        }
+    }
+}
+
+pub struct TerrainFeature {
+    // The blocks the feature consists of segmented into the chunks they are a part of.
+    pub blocks: HashMap<IVec3, Vec<(usize, BlockId, Option<u16>)>>,
+    // TODO: Replacement rules should be more granular. Blueprints consist of many sub-blueprints that
+    // each have their own replacement rules that should be followed only for that blueprint.
+    pub can_replace: HashSet<BlockId>,
+}
+
+impl TerrainFeature {
+    fn insert_block(&mut self, position: IVec3, block_id: BlockId) {
+        let (chunk_position, block_index) =
+            utils::world_position_to_chunk_position_and_block_index(position);
+        self.blocks
+            .entry(chunk_position)
+            .or_insert(Vec::new())
+            .push((block_index, block_id, None));
+    }
+
+    // TODO: check for failure and return bool
+    pub fn apply(&self, chunk: &mut Chunk, chunk_position: IVec3) {
+        if let Some(feature_blocks) =
+            self.blocks.get(&chunk_position)
+        {
+            for (block_index, block_id, block_state) in feature_blocks {
+                if !chunk.changed_blocks.contains_key(block_index) {
+                    chunk[*block_index] = *block_id;
+                    chunk.set_block_state(
+                        *block_index,
+                        block_state.map(BlockState),
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn apply_return_changed(&self, chunk: &mut Chunk, chunk_position: IVec3) -> Option<Vec<(usize, BlockId, Option<u16>)>> {
+        if let Some(mut feature_blocks) =
+            self.blocks.get(&chunk_position).cloned()
+        {
+            feature_blocks.retain(|(block_index, block_id, block_state)| {
+                if !chunk.changed_blocks.contains_key(block_index) {
+                    chunk[*block_index] = *block_id;
+                    chunk.set_block_state(
+                        *block_index,
+                        block_state.map(BlockState),
+                    );
+                    true
+                } else {
+                    false
+                }
+            });
+            return Some(feature_blocks);
+        } else {
+            return None;
+        }
+    }
+
 }

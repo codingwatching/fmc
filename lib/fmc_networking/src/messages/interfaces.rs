@@ -38,7 +38,6 @@ impl InterfaceVisibilityUpdate {
     }
 }
 
-
 /// Notifies the server a button was pressed.
 #[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone)]
 pub struct InterfaceButtonPress {
@@ -185,7 +184,7 @@ pub struct Text {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Line {
     pub index: i32,
-    pub sections: Vec<Text>
+    pub sections: Vec<Text>,
 }
 
 impl Line {
@@ -193,7 +192,7 @@ impl Line {
         self.sections.push(Text {
             text,
             font_size,
-            color: color.to_owned()
+            color: color.to_owned(),
         });
         self
     }
@@ -203,14 +202,14 @@ impl Line {
 #[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct InterfaceTextBoxUpdate {
     pub interface_path: String,
-    pub lines: Vec<Line>
+    pub lines: Vec<Line>,
 }
 
 impl InterfaceTextBoxUpdate {
     pub fn new(interface_path: &str) -> Self {
         Self {
             interface_path: interface_path.to_owned(),
-            lines: Vec::new()
+            lines: Vec::new(),
         }
     }
 
@@ -218,7 +217,7 @@ impl InterfaceTextBoxUpdate {
     pub fn append_line(&mut self) -> &mut Line {
         self.lines.push(Line {
             index: i32::MAX,
-            sections: Vec::new()
+            sections: Vec::new(),
         });
         self.lines.last_mut().unwrap()
     }
@@ -227,7 +226,7 @@ impl InterfaceTextBoxUpdate {
     pub fn prepend_line(&mut self) -> &mut Line {
         self.lines.push(Line {
             index: -1,
-            sections: Vec::new()
+            sections: Vec::new(),
         });
         self.lines.last_mut().unwrap()
     }
@@ -236,7 +235,7 @@ impl InterfaceTextBoxUpdate {
     pub fn change_line(&mut self, index: i32) -> &mut Line {
         self.lines.push(Line {
             index,
-            sections: Vec::new()
+            sections: Vec::new(),
         });
         self.lines.last_mut().unwrap()
     }
@@ -244,11 +243,10 @@ impl InterfaceTextBoxUpdate {
     pub fn remove_line(&mut self, index: i32) {
         self.lines.push(Line {
             index,
-            sections: Vec::new()
+            sections: Vec::new(),
         });
     }
 }
-
 
 /// Textbox input sent to the server
 #[derive(NetworkMessage, ServerBound, Serialize, Deserialize, Debug, Clone, Default)]
@@ -256,5 +254,5 @@ pub struct InterfaceTextInput {
     /// Path of the input field
     pub interface_path: String,
     /// The content of the textbox
-    pub text: String
+    pub text: String,
 }

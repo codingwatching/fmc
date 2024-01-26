@@ -35,13 +35,11 @@ pub struct PlayersPlugin;
 impl Plugin for PlayersPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<RespawnEvent>()
-            .insert_resource(Players::default())
             .add_plugins(inventory::InventoryPlugin)
             .add_plugins(health::HealthPlugin)
             .add_systems(
                 Update,
                 (
-                    add_remove_players,
                     respawn_new_players,
                     respawn_players,
                     add_player_model,
@@ -51,71 +49,45 @@ impl Plugin for PlayersPlugin {
                     actions::handle_left_clicks,
                     actions::handle_right_clicks,
                 ),
-            );
+            )
+            .add_systems(PreUpdate, add_and_remove_players);
     }
 }
 
-#[derive(Default, Deref, DerefMut, Resource)]
-pub struct Players(HashMap<ConnectionId, Entity>);
-
-impl Players {
-    #[track_caller]
-    pub fn get(&self, conn_id: &ConnectionId) -> Entity {
-        return match self.0.get(conn_id) {
-            Some(e) => *e,
-            None => panic!(
-                "Could not find a player entity for the connection {}",
-                conn_id
-            ),
-        };
-    }
-}
-
-fn add_remove_players(
+fn add_and_remove_players(
     mut commands: Commands,
     database: Res<Database>,
-    mut players: ResMut<Players>,
+    player_query: Query<(Option<&Player>, &ConnectionId)>,
     mut network_events: EventReader<ServerNetworkEvent>,
 ) {
     for event in network_events.read() {
         match event {
-            ServerNetworkEvent::Connected {
-                connection_id,
-                username,
-            } => {
+            ServerNetworkEvent::Connected { entity, username } => {
                 let player_bundle = if let Some(player_save) = database.load_player(username) {
                     player_save.into()
                 } else {
                     player::PlayerBundle::default()
                 };
 
-                let entity = commands
-                    .spawn((
-                        Player {
-                            username: username.to_owned(),
-                        },
-                        player_bundle,
-                        *connection_id,
-                    ))
-                    .id();
+                commands.entity(*entity).insert((
+                    Player {
+                        username: username.to_owned(),
+                    },
+                    player_bundle,
+                ));
 
-                players.insert(*connection_id, entity);
-
+                let (_, connection_id) = player_query.get(*entity).unwrap();
                 info!(
                     "Player connected, id: {}, username: {}",
                     connection_id, username
                 );
             }
-            ServerNetworkEvent::Disconnected {
-                connection_id,
-                username,
-            } => {
-                let entity = players.remove(connection_id).unwrap();
-                commands.entity(entity).despawn_recursive();
-
+            ServerNetworkEvent::Disconnected { entity } => {
+                let (player, connection_id) = player_query.get(*entity).unwrap();
                 info!(
                     "Player disconnected, id: {}, username: {}",
-                    connection_id, username
+                    connection_id,
+                    player.unwrap().username
                 );
             }
             _ => {}
@@ -125,9 +97,9 @@ fn add_remove_players(
 
 fn send_player_configuration(
     net: Res<NetworkServer>,
-    player_query: Query<(Entity, &ConnectionId, &Aabb, &Camera, &F64Transform), Added<Player>>,
+    player_query: Query<(&ConnectionId, &Aabb, &Camera, &F64Transform), Added<Player>>,
 ) {
-    for (player_entity, connection, aabb, camera, transform) in player_query.iter() {
+    for (connection, aabb, camera, transform) in player_query.iter() {
         net.send_one(
             *connection,
             messages::PlayerConfiguration {
@@ -177,14 +149,13 @@ fn add_player_model(
 
 fn handle_player_position_updates(
     net: Res<NetworkServer>,
-    players: Res<Players>,
     mut player_query: Query<(&mut F64Transform, &mut Velocity), With<Player>>,
     mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
 ) {
     for position_update in position_events.read() {
-        let player_entity = players.get(&position_update.source);
-        let (mut player_position, mut player_velocity) =
-            player_query.get_mut(player_entity).unwrap();
+        let (mut player_position, mut player_velocity) = player_query
+            .get_mut(position_update.source.entity())
+            .unwrap();
         player_position.translation = position_update.position;
         player_velocity.0 = position_update.velocity;
     }
@@ -193,14 +164,14 @@ fn handle_player_position_updates(
 // Client sends the rotation of its camera. Used to know where they are looking, and
 // how the player model should be positioned.
 fn handle_player_rotation_updates(
-    players: Res<Players>,
     mut player_query: Query<(&mut player::Camera, &Children)>,
     mut player_model_transforms: Query<&mut F64Transform, With<Model>>,
     mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
 ) {
     for rotation_update in camera_rotation_events.read() {
-        let entity = players.get(&rotation_update.source);
-        let (mut camera, children) = player_query.get_mut(entity).unwrap();
+        let (mut camera, children) = player_query
+            .get_mut(rotation_update.source.entity())
+            .unwrap();
         camera.rotation = rotation_update.rotation.as_f64();
 
         let mut transform = player_model_transforms

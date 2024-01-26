@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkServer, ServerNetworkEvent};
+use fmc_networking::{messages, ConnectionId, NetworkServer, ServerNetworkEvent};
 
 use crate::{
     settings::Settings,
@@ -15,9 +15,7 @@ impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(fmc_networking::ServerPlugin)
             .add_systems(PostStartup, server_setup)
-            // Postupdate to ensure all packets from disconnected clients have been handled before
-            // the connection is removed.
-            .add_systems(PostUpdate, handle_network_events);
+            .add_systems(Update, handle_network_events);
     }
 }
 
@@ -47,11 +45,13 @@ fn server_setup(
 fn handle_network_events(
     net: Res<NetworkServer>,
     server_config: Res<messages::ServerConfig>,
+    connection_query: Query<&ConnectionId>,
     mut network_events: EventReader<ServerNetworkEvent>,
 ) {
     for event in network_events.read() {
         match event {
-            ServerNetworkEvent::Connected { connection_id, .. } => {
+            ServerNetworkEvent::Connected { entity, .. } => {
+                let connection_id = connection_query.get(*entity).unwrap();
                 net.send_one(*connection_id, server_config.clone());
             }
             _ => {}

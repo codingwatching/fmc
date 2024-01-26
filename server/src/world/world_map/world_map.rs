@@ -10,7 +10,7 @@ use crate::{
     utils,
     world::{
         blocks::{BlockFace, BlockState, Blocks, Friction},
-        world_map::chunk::{Chunk, ChunkStatus},
+        world_map::chunk::Chunk,
     },
 };
 use fmc_networking::BlockId;
@@ -45,12 +45,9 @@ impl WorldMap {
         let (chunk_pos, index) = utils::world_position_to_chunk_position_and_block_index(position);
 
         if let Some(chunk) = self.get_chunk(&chunk_pos) {
-            match chunk.status {
-                ChunkStatus::Finished => Some(chunk[index]),
-                _ => None,
-            }
+            Some(chunk[index])
         } else {
-            return None;
+            None
         }
     }
 

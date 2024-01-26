@@ -302,7 +302,8 @@ fn send_clicks(
 // Fakes a local block update to make it feel more responsive. The server will NOT know if it is
 // a valid placement, so it will not correct it.
 fn place_block(
-    world_map: ResMut<WorldMap>,
+    net: Res<NetworkClient>,
+    world_map: Res<WorldMap>,
     items: Res<Items>,
     origin: Res<Origin>,
     mouse_button_input: Res<Input<MouseButton>>,
@@ -375,10 +376,10 @@ fn place_block(
         // generation. More responsive.
         match block {
             Block::Cube(_) => {
-                block_updates_events.send(NetworkData::new(ConnectionId::default(), message))
+                block_updates_events.send(NetworkData::new(net.connection_id(), message))
             }
             Block::Model(_) => {
-                block_updates_events.send(NetworkData::new(ConnectionId::default(), message))
+                block_updates_events.send(NetworkData::new(net.connection_id(), message))
             }
         }
     }

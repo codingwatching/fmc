@@ -1,75 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 use std::slice::Iter;
 
-use bevy::{
-    prelude::*,
-    tasks::{AsyncComputeTaskPool, Task},
-};
+use bevy::prelude::*;
 use fmc_networking::BlockId;
-use futures_lite::future;
 
+use crate::constants::*;
 use crate::utils;
-use crate::world::blocks::{BlockState, Blocks};
-use crate::{constants::*, game_state::GameState, world::world_map::WorldMap};
-
-pub(super) struct ChunkPlugin;
-impl Plugin for ChunkPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_event::<ComputeVisibleChunkFacesEvent>();
-        app.add_systems(
-            Update,
-            (handle_visibility_tasks, spawn_visiblity_tasks).run_if(GameState::in_game),
-        );
-    }
-}
-
-/// Event sent when the visible chunk faces of a chunk should be recomputed.
-#[derive(Event)]
-pub struct ComputeVisibleChunkFacesEvent(pub IVec3);
-
-#[derive(Component)]
-struct VisibleSidesTask(Task<VisibleChunkFaces>);
-
-// TODO: Would be really nice to use bevy change detection to trigger this instead of events.
-//       Dont' know how, maybe on Mesh change? But only has access to mesh handle.
-/// Run whenever a chunk changes.
-fn spawn_visiblity_tasks(
-    mut commands: Commands,
-    world_map: Res<WorldMap>,
-    mut find_visible_sides_events: EventReader<ComputeVisibleChunkFacesEvent>,
-) {
-    let thread_pool = AsyncComputeTaskPool::get();
-
-    for position in find_visible_sides_events.read() {
-        if let Some(chunk) = world_map.get_chunk(&position.0) {
-            if let Some(entity) = chunk.entity {
-                let task = thread_pool.spawn(VisibleChunkFaces::new(chunk.clone()));
-                commands.entity(entity).insert(VisibleSidesTask(task));
-            }
-        } else {
-            // This happens a lot maybe just remove
-            //warn!(
-            //    "Tried to create visible sides async task for a chunk that doesn't exist, at position {}",
-            //    &position.0
-            //);
-        }
-    }
-}
-
-fn handle_visibility_tasks(
-    mut commands: Commands,
-    mut sides_tasks: Query<(Entity, &mut VisibleSidesTask)>,
-) {
-    for (entity, mut task) in sides_tasks.iter_mut() {
-        if let Some(sides) = future::block_on(future::poll_once(&mut task.0)) {
-            commands
-                .entity(entity)
-                .insert(sides)
-                .remove::<VisibleSidesTask>();
-        }
-    }
-}
+use crate::world::blocks::BlockState;
 
 #[derive(Component)]
 pub struct ChunkMarker;
@@ -83,14 +21,14 @@ pub struct ChunkMarker;
 ///     blocks = Vec::with_capacity(CHUNK_SIZE^3)
 #[derive(Clone)]
 pub struct Chunk {
-    // Entity in the ECS. Has the mesh and chunk::VisibleSides.
+    // Entity in the ECS. Stores mesh, None if the chunk doesn't have one.
     pub entity: Option<Entity>,
     /// XXX: Notice that the coordinates align with the rendering world, the z axis extends
     /// out of the screen. 0,0,0 is the bottom left FAR corner. Not bottom left NEAR.
     /// A CHUNK_SIZE^3 array containing all the blocks in the chunk.
     /// Indexed by x*CHUNK_SIZE^2 + z*CHUNK_SIZE + y
     blocks: Vec<BlockId>,
-    /// Optional block state containing info like rotation and color
+    /// Optional block state
     pub block_state: HashMap<usize, BlockState>,
 }
 
@@ -213,219 +151,7 @@ impl IndexMut<IVec3> for Chunk {
     }
 }
 
-/// Lookup table for which sides are visible from which in a chunk.
-// Only used by chunk_loading_and_frustum_culling_system
-#[derive(Component, Debug)]
-pub struct VisibleChunkFaces {
-    faces: HashMap<ChunkFace, HashSet<ChunkFace>>,
-}
-
-impl VisibleChunkFaces {
-    pub async fn new(chunk: Chunk) -> Self {
-        let mut faces: HashMap<ChunkFace, HashSet<ChunkFace>> = HashMap::with_capacity(6);
-
-        if chunk.is_uniform() {
-            let blocks = Blocks::get();
-
-            if blocks[&chunk[0]].is_transparent() {
-                for chunk_face in [
-                    ChunkFace::Front,
-                    ChunkFace::Back,
-                    ChunkFace::Right,
-                    ChunkFace::Left,
-                    ChunkFace::Top,
-                    ChunkFace::Bottom,
-                    ChunkFace::None,
-                ] {
-                    faces.insert(
-                        chunk_face,
-                        HashSet::from([
-                            ChunkFace::Front,
-                            ChunkFace::Back,
-                            ChunkFace::Right,
-                            ChunkFace::Left,
-                            ChunkFace::Top,
-                            ChunkFace::Bottom,
-                            ChunkFace::None,
-                        ]),
-                    );
-                }
-            } else {
-                for chunk_face in [
-                    ChunkFace::Front,
-                    ChunkFace::Back,
-                    ChunkFace::Right,
-                    ChunkFace::Left,
-                    ChunkFace::Top,
-                    ChunkFace::Bottom,
-                    ChunkFace::None,
-                ] {
-                    faces.insert(chunk_face, HashSet::new());
-                }
-            }
-
-            let visible_chunk_faces = Self { faces };
-            return visible_chunk_faces;
-        }
-
-        for chunk_face in [
-            ChunkFace::Front,
-            ChunkFace::Back,
-            ChunkFace::Right,
-            ChunkFace::Left,
-            ChunkFace::Top,
-            ChunkFace::Bottom,
-            ChunkFace::None,
-        ] {
-            faces.insert(chunk_face, HashSet::new());
-        }
-
-        let mut visible_chunk_faces = Self { faces };
-        visible_chunk_faces.update(&chunk);
-
-        return visible_chunk_faces;
-    }
-
-    // Checks visibility from one side to the other.
-    pub fn is_visible(&self, from: &ChunkFace, to: &ChunkFace) -> bool {
-        return self.get(from).get(to).is_some();
-    }
-
-    pub fn get(&self, dir: &ChunkFace) -> &HashSet<ChunkFace> {
-        self.faces.get(dir).unwrap()
-    }
-
-    fn reset(&mut self) {
-        for side in self.faces.values_mut() {
-            side.clear();
-        }
-    }
-
-    fn extend(&mut self, chunk_faces: HashSet<ChunkFace>) {
-        for face in chunk_faces.iter() {
-            self.faces
-                .get_mut(face)
-                .unwrap()
-                .extend(chunk_faces.clone().into_iter());
-        }
-    }
-
-    // For each face of the chunk, test which of the other sides are viewable looking through that face.
-    pub fn update(&mut self, chunk: &Chunk) {
-        self.reset();
-
-        // Create a hashmap of blocks the floodfill has visited.
-        let mut visited: HashSet<IVec3> = HashSet::with_capacity(CHUNK_SIZE.pow(3));
-
-        // Iterate over the outermost blocks of the chunk
-        for i in 0i32..CHUNK_SIZE as i32 {
-            for j in 0i32..CHUNK_SIZE as i32 {
-                for k in (0i32..CHUNK_SIZE as i32).step_by(CHUNK_SIZE - 1) {
-                    let front_back = IVec3::new(i, j, k);
-                    let left_right = IVec3::new(k, i, j);
-                    let top_bottom = IVec3::new(i, k, j);
-                    if visited.contains(&front_back)
-                        || visited.contains(&left_right)
-                        || visited.contains(&top_bottom)
-                    {
-                        continue;
-                    } else {
-                        // front and back
-                        self.extend(Self::find_visible_chunk_faces(
-                            chunk,
-                            &mut visited,
-                            front_back,
-                        ));
-                        // left and
-                        self.extend(Self::find_visible_chunk_faces(
-                            chunk,
-                            &mut visited,
-                            left_right,
-                        ));
-                        // top and b
-                        self.extend(Self::find_visible_chunk_faces(
-                            chunk,
-                            &mut visited,
-                            top_bottom,
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    // TODO: Maybe there's some smart way to do this? There's probably some floodfill algorithm.
-    //
-    // Starting from the seed block it propagates outwards from the block's sides.
-    // If there's air there, that block is added to the queue of blocks to propagate from.
-    // This continues until all air blocks that are connected are added to "visited".
-    // If a block that is added to the queue is outside the chunk, it means the side from which
-    // the block protrudes is visible from the other sides that are marked visible.
-    fn find_visible_chunk_faces(
-        chunk: &Chunk,
-        visited: &mut HashSet<IVec3>,
-        seed_block: IVec3,
-    ) -> HashSet<ChunkFace> {
-        let mut visible_chunk_faces = HashSet::from([ChunkFace::None]);
-
-        let mut block_queue = Vec::with_capacity(CHUNK_SIZE.pow(3));
-        block_queue.push(seed_block);
-
-        let blocks = Blocks::get();
-
-        // TODO: Do mut pos here and remove clone lines below?
-        while let Some(pos) = block_queue.pop() {
-            let direction = ChunkFace::convert_position(&pos);
-            match direction {
-                ChunkFace::None => (),
-                _ => {
-                    visible_chunk_faces.insert(direction);
-                    // Continue loop since it went outside chunk.
-                    continue;
-                }
-            }
-
-            // Push all faces of block to queue.
-            if !visited.contains(&pos) && blocks[&chunk[pos]].is_transparent() {
-                block_queue.push({
-                    let mut pos = pos.clone();
-                    pos.x -= 1;
-                    pos
-                });
-                block_queue.push({
-                    let mut pos = pos.clone();
-                    pos.x += 1;
-                    pos
-                });
-                block_queue.push({
-                    let mut pos = pos.clone();
-                    pos.y -= 1;
-                    pos
-                });
-                block_queue.push({
-                    let mut pos = pos.clone();
-                    pos.y += 1;
-                    pos
-                });
-                block_queue.push({
-                    let mut pos = pos.clone();
-                    pos.z -= 1;
-                    pos
-                });
-                block_queue.push({
-                    let mut pos = pos.clone();
-                    pos.z += 1;
-                    pos
-                });
-
-                visited.insert(pos);
-            }
-        }
-        return visible_chunk_faces;
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum ChunkFace {
     // Forward is +z direction
     Top,
@@ -562,7 +288,7 @@ impl ChunkFace {
     }
 
     /// Given a relative block position that is immediately adjacent to one of the chunk's faces, return the face.
-    pub fn convert_position(pos: &IVec3) -> Self {
+    pub fn from_position(pos: &IVec3) -> Self {
         if pos.z > (CHUNK_SIZE - 1) as i32 {
             return ChunkFace::Front;
         } else if pos.z < 0 {

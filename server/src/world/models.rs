@@ -11,7 +11,7 @@ use crate::{
     database::Database,
     physics::shapes::Aabb,
     utils,
-    world::world_map::chunk_manager::{ChunkSubscriptionEvent, ChunkSubscriptions},
+    world::world_map::chunk_manager::{ChunkSubscriptions, SubscribeToChunk},
 };
 
 use super::world_map::chunk_manager::ChunkUnloadEvent;
@@ -210,44 +210,25 @@ impl ModelMap {
             self.reverse.insert(entity, chunk_position);
         }
     }
-
-    // Deletes all models that are located in the specified chunk
-    fn remove_chunk(&mut self, chunk_position: &IVec3) {
-        if let Some(entities) = self.models.remove(chunk_position) {
-            for entity in entities {
-                self.reverse.remove(&entity);
-            }
-        }
-    }
-
-    fn remove_model(&mut self, model_entity: Entity) -> IVec3 {
-        if let Some(position) = self.reverse.remove(&model_entity) {
-            self.models
-                .get_mut(&position)
-                .unwrap()
-                .remove(&model_entity);
-            return position;
-        } else {
-            panic!("All models that are created should be entered into the model map. \
-                   If when trying to delete a model it doesn't exist in the model map that is big bad.")
-        }
-    }
 }
 
 fn remove_models(
     net: Res<NetworkServer>,
     mut model_map: ResMut<ModelMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    mut chunk_unload_events: EventReader<ChunkUnloadEvent>,
     mut deleted_models: RemovedComponents<Model>,
 ) {
-    for event in chunk_unload_events.read() {
-        // TODO: This just leaves the model entities hanging
-        model_map.remove_chunk(&event.0);
-    }
-
     for entity in deleted_models.read() {
-        let chunk_pos = model_map.remove_model(entity);
+        let chunk_pos = if let Some(position) = model_map.reverse.remove(&entity) {
+            model_map.models.get_mut(&position).unwrap().remove(&entity);
+            position
+        } else {
+            // TODO: This if condition can be removed, I just want to test for a while that I didn't
+            // mess up.
+            panic!("All models that are created should be entered into the model map. \
+                   If when trying to delete a model it doesn't exist in the model map that is big bad.")
+        };
+
         if let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_pos) {
             net.send_many(subs, messages::DeleteModel { id: entity.index() });
         }
@@ -368,10 +349,10 @@ fn send_models_on_chunk_subscription(
         &F64GlobalTransform,
         &ModelVisibility,
     )>,
-    mut chunk_sub_events: EventReader<ChunkSubscriptionEvent>,
+    mut chunk_sub_events: EventReader<SubscribeToChunk>,
 ) {
     for chunk_sub in chunk_sub_events.read() {
-        if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_pos) {
+        if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_position) {
             for entity in model_entities.iter() {
                 let (maybe_player_parent, model, transform, visibility) = models
                     .get(*entity)

@@ -1,171 +1,68 @@
-use std::collections::HashMap;
+use bevy::prelude::*;
+use std::collections::{HashMap, HashSet};
 use std::ops::{Index, IndexMut};
 
 use crate::database::Database;
 use crate::world::blocks::{BlockState, Blocks};
 use crate::{constants::*, utils};
-use bevy::prelude::IVec3;
 use fmc_networking::BlockId;
 
-use super::terrain_generation::TerrainGenerator;
+use super::terrain_generation::{TerrainFeature, TerrainGenerator};
 
-#[derive(PartialEq, Eq, Debug)]
-pub enum ChunkStatus {
-    // Fully generated, populated by different block types
-    Finished,
-    // A chunk that is either waiting for its neighbors to finish, or was generated only as a
-    // neighbor, to finish another.
-    Unfinished {
-        // Blocks that have been saved to the database.
-        saved_blocks: HashMap<usize, (BlockId, Option<u16>)>,
-        // TODO: It does 26x2 lookups to populate its own neighbors and the ones for its
-        // partial chunks. To speed up make it vectors. The positional offset of the chunks are really
-        // unneeded other than for knowing which chunk is the one immediately below, as that one
-        // takes priority. Simply insert it at the start of the vec and push the rest. Iterate
-        // through normally and it will take precedent.
-        //
-        // Blocks from neighboring chunks
-        neighbors: HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>>,
-    },
-}
-
-impl ChunkStatus {
-    #[track_caller]
-    pub fn neighbors(
-        &mut self,
-    ) -> Option<&mut HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>>> {
-        match self {
-            Self::Unfinished {
-                neighbors: partial_chunks,
-                ..
-            } => Some(partial_chunks),
-            Self::Finished => None,
-        }
-    }
-
-    pub fn unwrap_saved_blocks(&mut self) -> &mut HashMap<usize, (BlockId, Option<u16>)> {
-        match self {
-            Self::Unfinished { saved_blocks, .. } => saved_blocks,
-            _ => panic!("Called 'Chunk::unwrap_saved_blocks()' on a finished chunk"),
-        }
-    }
-}
-// TODO: Is it necessary to pack the block state? It's sent to the clients so needs to be small.
-// Maybe arbitrary data is wanted. When making, thought orientation obviously needed, and nice to
-// change color of things like water or torch, but can't think of anything that is needed
-// otherwise. XXX: It's used by the database to mark uniform chunks by setting it to
-// u16::MAX(an invalid state).
+// TODO: Block state is a small state covering universal things like block rotation. Another
+// storage type should be available for storing larger states required by specific blocks.
+// XXX: block_state is used by the database to mark uniform chunks by setting it to
+// u16::MAX(an otherwise invalid state).
 pub struct Chunk {
-    pub status: ChunkStatus,
-    // The blocks that were generated from this chunk that stretched into other chunks.
-    pub partial_chunks: HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>>,
+    // All blocks that have been changed in the chunk. These are kept in memory at runtime to allow
+    // applying neighbour chunk's terrain features.
+    pub changed_blocks: HashMap<usize, (BlockId, Option<BlockState>)>,
+    // Generated features like trees etc.
+    pub terrain_features: Vec<TerrainFeature>,
     // Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
     // (zero indexed) the formula x * CHUNK_SIZE^2 + z * CHUNK_SIZE + y is used.
     pub blocks: Vec<BlockId>,
-    // Block state containing optional information, see `BlockState` for bit layout
+    // Block state containing optional information, see `BlockState` for bit layout.
     pub block_state: HashMap<usize, u16>,
+    // A map of which chunk faces within the chunk are visible from one another.
+    visible_faces: HashSet<(ChunkFace, ChunkFace)>,
 }
 
 impl Chunk {
-    pub fn new_regular(block_id: BlockId) -> Self {
-        return Self {
-            status: ChunkStatus::Unfinished {
-                saved_blocks: HashMap::new(),
-                neighbors: HashMap::new(),
-            },
-            partial_chunks: HashMap::new(),
-            blocks: vec![block_id; CHUNK_SIZE.pow(3)],
+    pub async fn load(
+        position: IVec3,
+        terrain_generator: TerrainGenerator,
+        database: Database,
+    ) -> (IVec3, Chunk) {
+        let changed_blocks = database.load_chunk_blocks(&position).await;
+        let mut chunk = Self {
+            changed_blocks,
+            terrain_features: Vec::new(),
+            blocks: Vec::new(),
             block_state: HashMap::new(),
+            visible_faces: HashSet::new(),
         };
+
+        terrain_generator.generate_chunk(position, &mut chunk).await;
+
+        return (position, chunk);
     }
 
-    pub fn new_uniform(block_id: BlockId) -> Self {
-        return Self {
-            status: ChunkStatus::Unfinished {
-                saved_blocks: HashMap::new(),
-                neighbors: HashMap::new(),
-            },
-            partial_chunks: HashMap::new(),
-            blocks: vec![block_id; 1],
-            block_state: HashMap::new(),
-        };
-    }
-
-    pub fn get_block_state(&self, index: &usize) -> Option<BlockState> {
-        return self.block_state.get(index).copied().map(BlockState);
+    pub fn make_uniform(&mut self, block_id: BlockId) {
+        self.blocks = vec![block_id; 1];
     }
 
     pub fn is_uniform(&self) -> bool {
         return self.blocks.len() == 1;
     }
 
-    pub fn try_convert_uniform_to_regular(&mut self) {
-        if !self.is_uniform() {
-            return;
-        }
+    fn convert_uniform_to_regular(&mut self) {
         let block_id = self.blocks[0];
         self.blocks = vec![block_id; CHUNK_SIZE.pow(3)];
     }
 
-    // Load/Generate a chunk
-    pub async fn load(
-        position: IVec3,
-        terrain_generator: TerrainGenerator,
-        database: Database,
-    ) -> (IVec3, Chunk) {
-        let mut partial_chunks: HashMap<IVec3, HashMap<usize, (BlockId, Option<u16>)>> =
-            HashMap::new();
-
-        for x in -1..=1 {
-            for y in -1..=1 {
-                for z in -1..=1 {
-                    let pos = IVec3::new(x, y, z) * CHUNK_SIZE as i32;
-                    if pos != IVec3::ZERO {
-                        partial_chunks.insert(pos, HashMap::new());
-                    }
-                }
-            }
-        }
-
-        let air = Blocks::get().get_id("air");
-
-        let saved_blocks = database.load_chunk_blocks(&position).await;
-
-        let (uniform, blocks) = terrain_generator.generate_chunk(position).await;
-
-        if uniform && saved_blocks.len() == 0 {
-            let block = *blocks.get(&position).unwrap();
-            let mut chunk = Chunk::new_uniform(block);
-            chunk.partial_chunks = partial_chunks;
-
-            return (position, chunk);
-        }
-
-        let mut chunk = Chunk::new_regular(air);
-        chunk.partial_chunks = partial_chunks;
-
-        for (world_pos, block) in blocks {
-            let (chunk_pos, block_index) =
-                utils::world_position_to_chunk_position_and_block_index(world_pos);
-            let chunk_offset = chunk_pos - position;
-
-            if chunk_offset == IVec3::ZERO {
-                if block == air {
-                    continue;
-                }
-                chunk[block_index] = block;
-            } else {
-                chunk
-                    .partial_chunks
-                    .get_mut(&chunk_offset)
-                    .expect(&format!("{}", chunk_offset))
-                    .insert(block_index, (block, None));
-            }
-        }
-
-        *chunk.status.unwrap_saved_blocks() = saved_blocks;
-
-        return (position, chunk);
+    pub fn get_block_state(&self, index: &usize) -> Option<BlockState> {
+        return self.block_state.get(index).copied().map(BlockState);
     }
 
     pub fn set_block_state(&mut self, block_index: usize, block_state: Option<BlockState>) {
@@ -176,60 +73,105 @@ impl Chunk {
         }
     }
 
-    pub fn try_finish(&mut self) -> bool {
-        let neighbors = match self.status.neighbors() {
-            Some(n) => n,
-            None => return false,
-        };
+    pub fn is_neighbour_visible(&self, from: ChunkFace, to: ChunkFace) -> bool {
+        return self.visible_faces.contains(&(from, to));
+    }
 
-        if !(neighbors.len() == 26) {
-            // The chunk is ready when all 26 neighbors have had a chance to generate blocks into
-            // it.
-            return false;
+    // TODO: This is expensive and needs to be recomputed every time a block changes. I don't think
+    // it is tenable with many players.
+    // 1. There's the option of off-loading this to the clients and having them send the result
+    //    since they already do the same. The result will be evil though so has to be sampled and
+    //    validated, much hassle.
+    // 2. Which blocks have been 'visited'(blocks that are see-through) can be cached as a
+    //    bitvec(512 bytes). I don't know how to do it, but you could probably use this to skip all
+    //    work in most cases by deducing that the changed block doesn't connect two regions.
+    pub(super) fn check_visible_faces(&mut self) {
+        let blocks = Blocks::get();
+
+        self.visible_faces.clear();
+
+        let mut visited = [false; CHUNK_SIZE.pow(3)];
+
+        const FACES: [ChunkFace; 6] = [
+            ChunkFace::Top,
+            ChunkFace::Bottom,
+            ChunkFace::Right,
+            ChunkFace::Left,
+            ChunkFace::Front,
+            ChunkFace::Back,
+        ];
+
+        if self.is_uniform() {
+            if blocks.get_config(&self[0]).is_transparent {
+                for face in FACES {
+                    for other_face in FACES {
+                        self.visible_faces
+                            .insert((face.clone(), other_face.clone()));
+                        self.visible_faces
+                            .insert((other_face.clone(), face.clone()));
+                    }
+                }
+            }
+            return;
         }
 
-        let status = std::mem::replace(&mut self.status, ChunkStatus::Finished);
+        let mut stack = Vec::new();
 
-        let ChunkStatus::Unfinished {
-            saved_blocks,
-            mut neighbors,
-        } = status
-        else {
-            unreachable!()
-        };
-        let below_blocks = neighbors.remove(&IVec3::new(0, -16, 0)).unwrap();
+        for i in 0..CHUNK_SIZE as i32 {
+            for j in 0..CHUNK_SIZE as i32 {
+                for k in (0..CHUNK_SIZE as i32).step_by(CHUNK_SIZE - 1) {
+                    let front_back = IVec3::new(i, j, k);
+                    let left_right = IVec3::new(k, i, j);
+                    let top_bottom = IVec3::new(i, k, j);
+                    for source_position in [front_back, left_right, top_bottom] {
+                        stack.push(source_position);
 
-        let air = Blocks::get().get_id("air");
-        for (_, blocks) in [(IVec3::new(0, -16, 0), below_blocks)]
-            .into_iter()
-            .chain(neighbors.drain())
-        {
-            if blocks.len() > 0 && self.is_uniform() {
-                self.try_convert_uniform_to_regular();
-            }
+                        // TODO: This is accessed a lot, maybe ChunkFace should be a bitmask and
+                        // you can just | them.
+                        let mut seen = HashSet::new();
 
-            for (block_index, (block, block_state)) in blocks.into_iter() {
-                if &self[block_index] == &air {
-                    self[block_index] = block;
-                    if let Some(block_state) = block_state {
-                        self.set_block_state(block_index, Some(BlockState(block_state)));
+                        while let Some(position) = stack.pop() {
+                            match ChunkFace::from_position(&position) {
+                                ChunkFace::None => (),
+                                face => {
+                                    seen.insert(face);
+                                    // This position is outside the chunk, skip to next position
+                                    continue;
+                                }
+                            }
+
+                            let index = utils::world_position_to_block_index(position);
+                            if !visited[index] && blocks.get_config(&self[index]).is_transparent {
+                                visited[index] = true;
+                                for offset in [
+                                    IVec3::X,
+                                    IVec3::NEG_X,
+                                    IVec3::Y,
+                                    IVec3::NEG_Y,
+                                    IVec3::Z,
+                                    IVec3::NEG_Z,
+                                ] {
+                                    stack.push(position + offset);
+                                }
+                            }
+                        }
+
+                        for face in seen.iter() {
+                            for other_face in seen.iter() {
+                                self.visible_faces
+                                    .insert((face.clone(), other_face.clone()));
+                                self.visible_faces
+                                    .insert((other_face.clone(), face.clone()));
+                            }
+                        }
                     }
                 }
             }
         }
-
-        for (block_index, (block, block_state)) in saved_blocks {
-            self[block_index] = block;
-            if let Some(block_state) = block_state {
-                self.set_block_state(block_index, Some(BlockState(block_state)));
-            }
-        }
-
-        return true;
     }
 }
 
-// So you can index like 'chunk[[1,2,3]]'
+// 'chunk[[x,y,z]]'
 impl Index<[usize; 3]> for Chunk {
     type Output = BlockId;
 
@@ -245,11 +187,9 @@ impl Index<[usize; 3]> for Chunk {
 impl IndexMut<[usize; 3]> for Chunk {
     fn index_mut(&mut self, idx: [usize; 3]) -> &mut Self::Output {
         if self.is_uniform() {
-            // TODO: Probably convert chunk
-            panic!();
-        } else {
-            return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
+            self.convert_uniform_to_regular();
         }
+        return &mut self.blocks[idx[0] * CHUNK_SIZE.pow(2) + idx[2] * CHUNK_SIZE + idx[1]];
     }
 }
 
@@ -268,10 +208,116 @@ impl Index<usize> for Chunk {
 impl IndexMut<usize> for Chunk {
     fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
         if self.is_uniform() {
-            // TODO: Probably convert chunk
-            panic!();
+            self.convert_uniform_to_regular();
+        }
+        return &mut self.blocks[idx];
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum ChunkFace {
+    Top,
+    Bottom,
+    Right,
+    Left,
+    // +z direction
+    Front,
+    Back,
+    None,
+}
+
+impl ChunkFace {
+    // TODO: Is it better to use an associated constant for the normals?
+    pub fn normal(&self) -> Vec3 {
+        match self {
+            &ChunkFace::Front => Vec3::Z,
+            &ChunkFace::Back => -Vec3::Z,
+            &ChunkFace::Right => Vec3::X,
+            &ChunkFace::Left => -Vec3::X,
+            &ChunkFace::Top => Vec3::Y,
+            &ChunkFace::Bottom => -Vec3::Y,
+            &ChunkFace::None => panic!("Can't get normal of ChunkFace::None"),
+        }
+    }
+
+    pub fn opposite(&self) -> Self {
+        match self {
+            &ChunkFace::Front => ChunkFace::Back,
+            &ChunkFace::Back => ChunkFace::Front,
+            &ChunkFace::Right => ChunkFace::Left,
+            &ChunkFace::Left => ChunkFace::Right,
+            &ChunkFace::Top => ChunkFace::Bottom,
+            &ChunkFace::Bottom => ChunkFace::Top,
+            &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
+        }
+    }
+
+    pub fn is_opposite(&self, check_opposing: &Self) -> bool {
+        match self {
+            &ChunkFace::Front => check_opposing == &ChunkFace::Back,
+            &ChunkFace::Back => check_opposing == &ChunkFace::Front,
+            &ChunkFace::Right => check_opposing == &ChunkFace::Left,
+            &ChunkFace::Left => check_opposing == &ChunkFace::Right,
+            &ChunkFace::Top => check_opposing == &ChunkFace::Bottom,
+            &ChunkFace::Bottom => check_opposing == &ChunkFace::Top,
+            &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
+        }
+    }
+
+    /// Moves the position a chunk's length in the direction of the face.
+    pub fn shift_position(&self, mut position: IVec3) -> IVec3 {
+        match self {
+            ChunkFace::Front => position.z += CHUNK_SIZE as i32,
+            ChunkFace::Back => position.z -= CHUNK_SIZE as i32,
+            ChunkFace::Right => position.x += CHUNK_SIZE as i32,
+            ChunkFace::Left => position.x -= CHUNK_SIZE as i32,
+            ChunkFace::Top => position.y += CHUNK_SIZE as i32,
+            ChunkFace::Bottom => position.y -= CHUNK_SIZE as i32,
+            ChunkFace::None => {}
+        }
+        return position;
+    }
+
+    /// Returns the chunk face the vector placed in the middle of the chunk points at.
+    pub fn convert_vector(vec: &Vec3) -> Self {
+        let abs = vec.abs();
+        if abs.x > abs.y && abs.x > abs.z {
+            if vec.x < 0.0 {
+                return ChunkFace::Left;
+            } else {
+                return ChunkFace::Right;
+            }
+        } else if abs.y > abs.x && abs.y > abs.z {
+            if vec.y < 0.0 {
+                return ChunkFace::Bottom;
+            } else {
+                return ChunkFace::Top;
+            }
         } else {
-            return &mut self.blocks[idx];
+            if vec.z < 0.0 {
+                return ChunkFace::Back;
+            } else {
+                return ChunkFace::Front;
+            }
+        }
+    }
+
+    /// Given a relative block position that is immediately adjacent to one of the chunk's faces, return the face.
+    pub fn from_position(position: &IVec3) -> Self {
+        if position.z > (CHUNK_SIZE - 1) as i32 {
+            return ChunkFace::Front;
+        } else if position.z < 0 {
+            return ChunkFace::Back;
+        } else if position.x > (CHUNK_SIZE - 1) as i32 {
+            return ChunkFace::Right;
+        } else if position.x < 0 {
+            return ChunkFace::Left;
+        } else if position.y > (CHUNK_SIZE - 1) as i32 {
+            return ChunkFace::Top;
+        } else if position.y < 0 {
+            return ChunkFace::Bottom;
+        } else {
+            return ChunkFace::None;
         }
     }
 }
