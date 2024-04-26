@@ -5,12 +5,13 @@
 use gltf_json as json;
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::mem;
 
 use clap::Parser;
 use json::validation::Checked::Valid;
 
+// XXX: These are paths to be read at runtime, NOT files that are compiled into the gltf.
 #[derive(Parser)]
 #[clap(about, long_about = None)]
 struct Cli {
@@ -64,7 +65,7 @@ fn get_images(cli: &Cli) -> Vec<json::Image> {
                 uri: Some(
                     cli.sides
                         .as_ref()
-                        .expect("If one of the sides is not used, --sides must be given")
+                        .expect("If one of the sides are omitted, --sides must be used")
                         .clone(),
                 ),
                 buffer_view: None,
@@ -195,8 +196,9 @@ fn main() {
         // positions
         accessors.push(json::Accessor {
             buffer_view: Some(json::Index::new(0)),
-            byte_offset: (triangle_vertices.len() * mem::size_of::<Vertex>()) as u32,
-            count: 6,
+            //byte_offset: (triangle_vertices.len() * mem::size_of::<Vertex>()) as u32,
+            byte_offset: None,
+            count: gltf_json::validation::USize64(6),
             component_type: Valid(json::accessor::GenericComponentType(
                 json::accessor::ComponentType::F32,
             )),
@@ -213,9 +215,10 @@ fn main() {
         // uvs
         accessors.push(json::Accessor {
             buffer_view: Some(json::Index::new(0)),
-            byte_offset: (triangle_vertices.len() * mem::size_of::<Vertex>()
-                + 3 * mem::size_of::<f32>()) as u32,
-            count: 6,
+            //byte_offset: (triangle_vertices.len() * mem::size_of::<Vertex>()
+            //    + 3 * mem::size_of::<f32>()) as u32,
+            byte_offset: None,
+            count: gltf_json::validation::USize64(6),
             component_type: Valid(json::accessor::GenericComponentType(
                 json::accessor::ComponentType::F32,
             )),
@@ -260,7 +263,7 @@ fn main() {
 
         primitives.push(json::mesh::Primitive {
             attributes: {
-                let mut map = HashMap::new();
+                let mut map = BTreeMap::new();
                 map.insert(Valid(json::mesh::Semantic::Positions), json::Index::new(i as u32 * 2));
                 map.insert(Valid(json::mesh::Semantic::TexCoords(0)), json::Index::new(i as u32 * 2 + 1));
                 map
@@ -275,9 +278,9 @@ fn main() {
     }
 
 
-    let buffer_length = (triangle_vertices.len() * mem::size_of::<Vertex>()) as u32;
+    let buffer_length = (triangle_vertices.len() * mem::size_of::<Vertex>()) as u64;
     let buffer = json::Buffer {
-        byte_length: buffer_length,
+        byte_length: gltf_json::validation::USize64(buffer_length),
         extensions: Default::default(),
         extras: Default::default(),
         name: None,
@@ -288,7 +291,7 @@ fn main() {
         buffer: json::Index::new(0),
         byte_length: buffer.byte_length,
         byte_offset: None,
-        byte_stride: Some(mem::size_of::<Vertex>() as u32),
+        byte_stride: Some(json::buffer::Stride(mem::size_of::<Vertex>())),
         extensions: Default::default(),
         extras: Default::default(),
         name: None,
@@ -330,6 +333,7 @@ fn main() {
 
     let root = json::Root {
         accessors,
+        animations: vec![left_click],
         buffers: vec![buffer],
         buffer_views: vec![buffer_view],
         meshes: vec![mesh],
@@ -356,7 +360,7 @@ fn main() {
         header: gltf::binary::Header {
             magic: *b"glTF",
             version: 2,
-            length: json_offset + buffer_length,
+            length: json_offset + buffer_length as u32,
         },
         bin: Some(Cow::Owned(to_padded_byte_vector(triangle_vertices))),
         json: Cow::Owned(json_string.into_bytes()),

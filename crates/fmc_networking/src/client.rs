@@ -44,7 +44,7 @@ pub struct NetworkClient {
     server_connection: Option<ServerConnection>,
     recv_message_map: Arc<DashMap<&'static str, Vec<Box<dyn NetworkMessage>>>>,
     network_events: SyncChannel<ClientNetworkEvent>,
-    connection_events: SyncChannel<(TcpStream, SocketAddr, NetworkSettings)>,
+    connection_events: SyncChannel<(TcpStream, SocketAddr)>,
 }
 
 impl std::fmt::Debug for NetworkClient {
@@ -77,7 +77,6 @@ impl NetworkClient {
     pub fn connect(
         &mut self,
         addr: impl ToSocketAddrs + Send + 'static,
-        network_settings: NetworkSettings,
     ) {
         debug!("Starting connection");
 
@@ -109,7 +108,7 @@ impl NetworkClient {
                 .peer_addr()
                 .expect("Could not fetch peer_addr of existing stream");
 
-            match connection_event_sender.send((stream, addr, network_settings)) {
+            match connection_event_sender.send((stream, addr)) {
                 Ok(_) => (),
                 Err(err) => {
                     error!("Could not initiate connection: {}", err);
@@ -236,7 +235,7 @@ pub fn handle_connection_event(
     mut net_res: ResMut<NetworkClient>,
     mut events: EventWriter<ClientNetworkEvent>,
 ) {
-    let (connection, peer_addr, network_settings) =
+    let (connection, peer_addr) =
         match net_res.connection_events.receiver.try_recv() {
             Ok(event) => event,
             Err(_) => {
@@ -247,7 +246,7 @@ pub fn handle_connection_event(
     let (read_socket, send_socket) = connection.into_split();
     let recv_message_map = net_res.recv_message_map.clone();
     let (send_message, recv_message) = unbounded_channel();
-    let send_settings = network_settings.clone();
+    let send_settings = NetworkSettings::default();
 
     net_res.server_connection = Some(ServerConnection {
         peer_addr,
@@ -304,7 +303,7 @@ pub fn handle_connection_event(
         }),
         receive_task: net_res.runtime.spawn(async move {
             let mut read_socket = read_socket;
-            let network_settings = network_settings;
+            let network_settings = NetworkSettings::default();
             let recv_message_map = recv_message_map;
 
             let mut buffer: Vec<u8> = vec![0; network_settings.max_packet_length];

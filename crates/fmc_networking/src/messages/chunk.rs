@@ -5,8 +5,7 @@ use bevy::prelude::*;
 use fmc_networking_derive::{ClientBound, NetworkMessage};
 use serde::{Deserialize, Serialize};
 
-/// Reponse to a ChunkRequest.
-/// Contains a set of chunks.
+/// A chunk of blocks sent to a client
 #[derive(NetworkMessage, ClientBound, Serialize, Deserialize, Debug, Clone)]
 pub struct Chunk {
     /// The position the chunk takes in the block grid.

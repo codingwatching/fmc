@@ -1,8 +1,6 @@
 use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task},
-    // TODO: This is used instead of std version because extract_if is not stabilized.
-    // TODO: I kinda fixed this, but changing it would mean interleaving data access, keep it?
     utils::{HashMap, HashSet},
 };
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer, ServerNetworkEvent};
@@ -127,10 +125,7 @@ pub struct ChunkUnloadEvent(pub IVec3);
 // everything that happens within a chunk it is subscribed to.
 #[derive(Resource, Default)]
 pub struct ChunkSubscriptions {
-    // Map from chunk position to all connections that are subscribed to it, mapped by their entity for
-    // removal.
     chunk_to_subscribers: HashMap<IVec3, HashSet<ConnectionId>>,
-    // reverse
     subscriber_to_chunks: HashMap<ConnectionId, HashSet<IVec3>>,
 }
 
@@ -276,55 +271,73 @@ fn unsubscribe_from_chunks(
 #[derive(Component)]
 struct ChunkLoadingTask(Task<(IVec3, Chunk)>);
 
+// TODO: This is too expensive to accommodate many players. I'm thinking chunks can be sorted into
+// columns. If it is a chunk that contains blocks, it would be considered a column base. All chunks
+// of air in succession above a base would be part of the column. More generally perhaps, all
+// chunks that share the same set of visible chunk faces. You will then have a set of arbitrary
+// length columns with gaps that you need to traverse. Not obvious to me how to do that, but it
+// gives the advantage of traversing the chunks at the world surface(which is the most expensive
+// case) column by column, almost converting it from a search in 3d to a search in 2d.
+// It might also make sense to split both the column representation and the visible faces part of
+// the chunk into its own struct. It is pretty how it is, but I foresee that there will be
+// contention for the WorldMap. The locations that borrow it mutably will need all the time they
+// can get, and this system will hog it.
+//
+// TODO: Optimization idea. Instead of using events, use an mpsc. Removes the only need for
+// mutability, and so the players can be handled in parallel. Con: Lots of allocation? Keep queues
+// for each player. Maybe the search can be done by recursion? How is stack memory even handled
+// when it is done in parallel.
+//
 // Search for chunks by fanning out from the player's chunk position to find chunks that are
 // visible to it.
-// 1. Fan out from the origin chunk in all directions. The direction the neighbour chunk was
-//    entered by is the primary direction, the opposite direction is now blocked.
-// 2. If there is a path from the chunk face that was entered through to any of the faces
-//    corresponding to the 5 remaining directions add those to the queue. The direction that was
-//    entered through this time is the secondary direction unless the primary was used. This step
-//    is repeated in the next iteration for the tertiary direction, and locks the path of continued
-//    search to those three directions.
-// 3. If a chunk has already been checked, it can no longer be added to the queue.
 fn subscribe_to_visible_chunks(
-    settings: Res<Settings>,
     world_map: Res<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
+    // NOTE: It's not restricted to running only when the origin is changed. Every time a new chunk
+    // is loaded for a player the origin is mutably accessed to trigger the change detection.
     changed_origin_query: Query<
         (&ConnectionId, &PlayerChunkOrigin, &PlayerRenderDistance),
         Changed<PlayerChunkOrigin>,
     >,
     mut subscription_events: EventWriter<SubscribeToChunk>,
+    mut queue: Local<Vec<(IVec3, ChunkFace, ChunkFace)>>,
+    mut already_visited: Local<HashSet<IVec3>>,
 ) {
-    let mut already_visited = HashSet::with_capacity(settings.render_distance.pow(3) as usize);
-    let mut queue = Vec::new();
-
     for (connection_id, chunk_origin, render_distance) in changed_origin_query.iter() {
+        already_visited.clear();
+        already_visited.insert(chunk_origin.0);
+
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
             .get(connection_id)
             .unwrap();
 
-        queue.push((chunk_origin.0, ChunkFace::None, [ChunkFace::None; 3]));
+        if !subscribed_chunks.contains(&chunk_origin.0) {
+            subscription_events.send(SubscribeToChunk {
+                connection_id: *connection_id,
+                chunk_position: chunk_origin.0,
+            });
+        }
 
+        for chunk_face in [
+            ChunkFace::Top,
+            ChunkFace::Bottom,
+            ChunkFace::Right,
+            ChunkFace::Left,
+            ChunkFace::Front,
+            ChunkFace::Back,
+        ] {
+            queue.push((
+                chunk_face.shift_position(chunk_origin.0),
+                chunk_face.opposite(),
+                chunk_face.opposite(),
+            ));
+        }
+
+        // chunk_position = chunk to check
         // from_face = The chunk face the chunk was entered through.
-        // to_faces = The chunk faces it can propagate through
-        while let Some((chunk_position, from_face, to_faces)) = queue.pop() {
-            let distance_to_chunk = (chunk_position - chunk_origin.0) / CHUNK_SIZE as i32;
-            if distance_to_chunk
-                .abs()
-                .cmpgt(IVec3::splat(render_distance.0 as i32))
-                .any()
-            {
-                // TODO: It would be faster to check this before adding a chunk to the queue.
-                continue;
-            }
-
-            if !already_visited.insert(chunk_position) {
-                // insert returns false if the position is in the set
-                continue;
-            }
-
+        // main_face = The chunk face entered through at the start of the search.
+        while let Some((chunk_position, from_face, main_face)) = queue.pop() {
             if !subscribed_chunks.contains(&chunk_position) {
                 subscription_events.send(SubscribeToChunk {
                     connection_id: *connection_id,
@@ -339,96 +352,42 @@ fn subscribe_to_visible_chunks(
                 }
             };
 
-            if from_face == ChunkFace::None {
-                for chunk_face in [
-                    ChunkFace::Top,
-                    ChunkFace::Bottom,
-                    ChunkFace::Right,
-                    ChunkFace::Left,
-                    ChunkFace::Front,
-                    ChunkFace::Back,
-                ] {
+            let surrounding = [
+                ChunkFace::Front,
+                ChunkFace::Back,
+                ChunkFace::Left,
+                ChunkFace::Right,
+                ChunkFace::Top,
+                ChunkFace::Bottom,
+            ]
+            .into_iter()
+            .filter(|face| *face != main_face && *face != from_face);
+
+            for to_face in surrounding {
+                let adjacent_position = to_face.shift_position(chunk_position);
+                let distance_to_adjacent = (adjacent_position - chunk_origin.0) / CHUNK_SIZE as i32;
+                if distance_to_adjacent
+                    .abs()
+                    .cmpgt(IVec3::splat(render_distance.0 as i32))
+                    .any()
+                {
+                    continue;
+                }
+
+                if chunk.is_neighbour_visible(from_face, to_face) {
+                    if !already_visited.insert(adjacent_position) {
+                        // insert returns false if the position is in the set
+                        continue;
+                    }
+
                     queue.push((
-                        chunk_face.shift_position(chunk_position),
-                        chunk_face.opposite(),
-                        [chunk_face, ChunkFace::None, ChunkFace::None],
+                        to_face.shift_position(chunk_position),
+                        to_face.opposite(),
+                        main_face,
                     ));
+                } else if chunk_position == IVec3::new(16, 0, 16) {
+                    dbg!("not visible");
                 }
-                continue;
-            } else if chunk.is_neighbour_visible(from_face, to_faces[0]) {
-                queue.push((
-                    to_faces[0].shift_position(chunk_position),
-                    to_faces[0].opposite(),
-                    to_faces,
-                ));
-            }
-
-            if to_faces[1] == ChunkFace::None {
-                let surrounding = [
-                    ChunkFace::Front,
-                    ChunkFace::Back,
-                    ChunkFace::Left,
-                    ChunkFace::Right,
-                    ChunkFace::Top,
-                    ChunkFace::Bottom,
-                ]
-                .into_iter()
-                .filter(|face| *face != from_face && *face != to_faces[0]);
-
-                for to_face in surrounding {
-                    if chunk.is_neighbour_visible(from_face, to_face) {
-                        queue.push((
-                            to_face.shift_position(chunk_position),
-                            to_face.opposite(),
-                            [to_faces[0], to_face, ChunkFace::None],
-                        ));
-                    }
-                }
-
-                continue;
-            } else if chunk.is_neighbour_visible(from_face, to_faces[1]) {
-                queue.push((
-                    to_faces[1].shift_position(chunk_position),
-                    to_faces[1].opposite(),
-                    to_faces,
-                ));
-            }
-
-            if to_faces[2] == ChunkFace::None {
-                let remaining = match to_faces[0] {
-                    ChunkFace::Top | ChunkFace::Bottom => match to_faces[1] {
-                        ChunkFace::Right | ChunkFace::Left => [ChunkFace::Front, ChunkFace::Back],
-                        ChunkFace::Front | ChunkFace::Back => [ChunkFace::Right, ChunkFace::Left],
-                        _ => unreachable!(),
-                    },
-                    ChunkFace::Right | ChunkFace::Left => match to_faces[1] {
-                        ChunkFace::Top | ChunkFace::Bottom => [ChunkFace::Front, ChunkFace::Back],
-                        ChunkFace::Front | ChunkFace::Back => [ChunkFace::Top, ChunkFace::Bottom],
-                        _ => unreachable!(),
-                    },
-                    ChunkFace::Front | ChunkFace::Back => match to_faces[1] {
-                        ChunkFace::Top | ChunkFace::Bottom => [ChunkFace::Right, ChunkFace::Left],
-                        ChunkFace::Right | ChunkFace::Left => [ChunkFace::Top, ChunkFace::Bottom],
-                        _ => unreachable!(),
-                    },
-                    ChunkFace::None => unreachable!(),
-                };
-
-                for to_face in remaining {
-                    if chunk.is_neighbour_visible(from_face, to_face) {
-                        queue.push((
-                            to_face.shift_position(chunk_position),
-                            to_face.opposite(),
-                            [to_faces[0], to_faces[1], to_face],
-                        ));
-                    }
-                }
-            } else if chunk.is_neighbour_visible(from_face, to_faces[2]) {
-                queue.push((
-                    to_faces[2].shift_position(chunk_position),
-                    to_faces[2].opposite(),
-                    to_faces,
-                ))
             }
         }
     }
@@ -462,15 +421,15 @@ fn handle_chunk_loading_tasks(
                             None => continue,
                         };
 
-                        // Apply neighbour features to the chunk.
+                        // Apply neighbours' features to the chunk.
                         for terrain_feature in neighbour_chunk.terrain_features.iter() {
                             terrain_feature.apply(&mut chunk, chunk_position);
                         }
 
-                        // Apply chunk's features to the neigbour.
+                        // Apply chunk's features to the neigbours.
                         for terrain_feature in chunk.terrain_features.iter() {
-                            if let Some(changed) =
-                                terrain_feature.apply_return_changed(neighbour_chunk, neighbour_position)
+                            if let Some(changed) = terrain_feature
+                                .apply_return_changed(neighbour_chunk, neighbour_position)
                             {
                                 if let Some(subscribers) =
                                     chunk_subscriptions.get_subscribers(&neighbour_position)

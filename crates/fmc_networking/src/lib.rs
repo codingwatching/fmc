@@ -22,10 +22,7 @@ pub mod messages;
 pub use client::NetworkClient;
 pub use server::NetworkServer;
 
-use std::{
-    hash::Hash,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-};
+use std::{hash::Hash, net::SocketAddr};
 
 use bevy::prelude::*;
 use client::AppNetworkClientMessage;
@@ -36,9 +33,18 @@ use network_message::NetworkMessage;
 use serde::{Deserialize, Serialize};
 use server::AppNetworkServerMessage;
 
+// TODO: I want to increase block ids from u16 to u32. Doubling the memory size is bad. Instead
+// replace the blocks a chunk holds with substitutes, and keep a mapping from substitute values to
+// block ids. Then you can have 'lookup: Vec<BlockId>' and 'blocks: Vec<u16>', take the value you want
+// from 'blocks' convert it to usize and index into the lookup with it, you now have the block id.
+// This may even allow reducing the in transit size by using even smaller types. I need to measure
+// but I assume most chunks don't consist of more than a handful of blocks. Maybe it can go all the
+// way down to 4 bits per block for most chunks, in which case keeping it in memory is a good trade
+// off for not having to build the representation each time it is sent.
+//
 // TODO: Should probably define BlockState here too, to avoid hard to parse u16's and easier to
 // change data type.
-// TODO: I don't remember why I went with an alias instead of newtyping it.
+//
 /// Storage type of blocks.
 /// Used by both server and client.
 pub type BlockId = u16;
@@ -58,7 +64,7 @@ impl<T> SyncChannel<T> {
 
 /// A [`ConnectionId`] denotes a single connection
 #[derive(Component, PartialEq, Eq, Clone, Copy, Display, Debug)]
-#[display(fmt = "Connection from {}", addr)]
+#[display(fmt = "{}", addr)]
 pub struct ConnectionId {
     // The entity the connection is attached to doubles as a unique identifier of the connection id. It
     // also comes in handy while handling packets, as you don't need to keep track of the
@@ -151,6 +157,7 @@ impl<T> NetworkData<T> {
     }
 }
 
+// TODO: Remove this, vestige of being adaptable
 #[derive(Clone, Debug)]
 #[allow(missing_copy_implementations)]
 #[derive(Resource)]
@@ -197,10 +204,10 @@ impl Plugin for ServerPlugin {
                     // It is purposefully 'before' and not 'after' here, so it can go:
                     // 1. Send disconnect event
                     // 2. Application reacts to event, saves player state etc and processes left
-                    //    over accumulated network events. 
+                    //    over accumulated network events.
                     // 3. A tick after, the connection entity is despawned
                     server::handle_disconnection_events.before(server::send_disconnection_events),
-                    server::send_disconnection_events
+                    server::send_disconnection_events,
                 ),
             )
             .listen_for_server_message::<messages::ClientFinishedLoading>()

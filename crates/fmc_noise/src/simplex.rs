@@ -67,6 +67,8 @@ where
 
     // Gradients are selected deterministically based on the whole part of `x`
     let ips = x.floor();
+    // NOTE: Converting to int normally was very slow for some reason I don't remember. It called
+    // out to libm? Note applies to perlin noise too.
     let mut i0: Simd<i32, N> = unsafe { ips.to_int_unchecked() };
     let i1 = (i0 + Simd::splat(1)) & Simd::splat(0xff);
 

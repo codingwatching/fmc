@@ -8,6 +8,7 @@ mod pbr_material;
 mod sky_material;
 
 pub use block_material::BlockMaterial;
+pub use pbr_material::PbrLightExtension;
 pub use sky_material::SkyMaterial;
 
 pub const ATTRIBUTE_PACKED_BITS_0: MeshVertexAttribute =

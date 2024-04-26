@@ -14,7 +14,8 @@ use crate::{
     world::world_map::chunk_manager::{ChunkSubscriptions, SubscribeToChunk},
 };
 
-use super::world_map::chunk_manager::ChunkUnloadEvent;
+// TODO:
+//use super::world_map::chunk_manager::ChunkUnloadEvent;
 
 pub const MODEL_PATH: &str = "./resources/client/textures/models/";
 
@@ -34,7 +35,10 @@ impl Plugin for ModelPlugin {
                     update_visibility,
                 ),
             )
-            // XXX: PostUpdate because RemovedComponents are only available from the stage it was
+            // TODO: Maybe all of these systems should be PostUpdate. This way Update is the do
+            // things place, and PostUpdate is the send to client place.
+            //
+            // XXX: PostUpdate because RemovedComponents is only available from the stage it was
             // removed up to CoreStage::Last.
             .add_systems(PostUpdate, remove_models);
     }
@@ -42,34 +46,98 @@ impl Plugin for ModelPlugin {
 
 fn load_models(mut commands: Commands, database: Res<Database>) {
     let ids = database.load_model_ids();
+
+    let mut to_check = ids.clone();
     let mut configs = HashMap::with_capacity(ids.len());
 
-    for (filename, id) in ids.iter() {
-        let file_path = MODEL_PATH.to_owned() + filename + ".glb";
+    let directory = std::fs::read_dir(MODEL_PATH).expect(&format!(
+        "Could not read files from model directory, make sure it is present at '{}'.",
+        &MODEL_PATH
+    ));
 
-        let mut reader = match std::fs::File::open(&file_path) {
-            Ok(f) => BufReader::new(f),
-            Err(e) => panic!("Failed to open model at: {}\nError: {}", &file_path, e),
+    for dir_entry in directory {
+        let path = match dir_entry {
+            Ok(d) => d.path(),
+            Err(e) => panic!("Failed to read the filename of a model, Error: {}", e),
         };
 
-        // Skip magic and header
-        reader.seek_relative(12).unwrap();
+        // TODO: all unwraps can be invalid
+        let Some(id) = to_check.remove(&path.file_stem().unwrap().to_str().unwrap().to_lowercase())
+        else {
+            continue;
+        };
 
-        // Length of json
-        let mut buf = [0u8; 4];
-        reader.read_exact(&mut buf).unwrap();
-        let length = u32::from_le_bytes(buf);
+        let Some(extension) = path.extension() else {
+            panic!(
+                "Invalid model file at '{}', the file is missing an extension",
+                path.display()
+            )
+        };
 
-        // TODO: It will just fail here if it isn't correct. Should do a complete validation of
-        // the assets so that the clients won't encounter malformed assets.
-        let mut buf = vec![0u8; length as usize + 4];
-        reader.read_exact(&mut buf).unwrap();
-        // Skip 'JSON' prefix.
-        let gltf: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
+        if extension == "json" {
+            configs.insert(
+                id,
+                ModelConfig {
+                    aabb: Aabb::from_min_max(DVec3::ZERO, DVec3::ONE),
+                },
+            );
+        } else if extension == "glb" || extension == "gltf" {
+            let mut reader = match std::fs::File::open(&path) {
+                Ok(f) => BufReader::new(f),
+                Err(e) => panic!("Failed to open model at: {}\nError: {}", path.display(), e),
+            };
 
-        let model_config = ModelConfig::from(gltf);
+            // Skip magic and header
+            reader.seek_relative(12).unwrap();
 
-        configs.insert(*id, model_config);
+            // Length of json
+            let mut buf = [0u8; 4];
+            reader.read_exact(&mut buf).unwrap();
+            let length = u32::from_le_bytes(buf);
+
+            // TODO: It will just fail here if it isn't correct. Should do a complete validation of
+            // the assets so that the clients won't encounter malformed assets.
+            let mut buf = vec![0u8; length as usize + 4];
+            reader.read_exact(&mut buf).unwrap();
+            // Skip 'JSON' prefix.
+            let gltf: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
+
+            let mut min = DVec3::splat(f64::MAX);
+            let mut max = DVec3::splat(f64::MIN);
+
+            for accessor in gltf["accessors"].as_array().unwrap().iter() {
+                let accessor_min = match accessor.get("min") {
+                    Some(serde_json::Value::Array(min)) if min.len() == 3 => min,
+                    _ => continue,
+                };
+                let accessor_max = match accessor.get("max") {
+                    Some(serde_json::Value::Array(max)) if max.len() == 3 => max,
+                    _ => continue,
+                };
+
+                for i in 0..3 {
+                    min[i] = min[i].min(accessor_min[i].as_f64().unwrap());
+                    max[i] = max[i].max(accessor_max[i].as_f64().unwrap());
+                }
+            }
+
+            configs.insert(
+                id,
+                ModelConfig {
+                    aabb: Aabb::from_min_max(min, max),
+                },
+            );
+        } else {
+            panic!("Invalid ")
+        }
+    }
+
+    if to_check.len() != 0 {
+        panic!(
+            "Failed to load models. Some models are missing from '{}': {:?}",
+            MODEL_PATH,
+            to_check.keys()
+        );
     }
 
     commands.insert_resource(Models { ids, configs });
@@ -115,34 +183,7 @@ pub struct ModelConfig {
     pub aabb: Aabb,
 }
 
-impl From<serde_json::Value> for ModelConfig {
-    fn from(value: serde_json::Value) -> Self {
-        let mut min = DVec3::splat(f64::MAX);
-        let mut max = DVec3::splat(f64::MIN);
-
-        for accessor in value["accessors"].as_array().unwrap().iter() {
-            let accessor_min = match accessor.get("min") {
-                Some(serde_json::Value::Array(min)) if min.len() == 3 => min,
-                _ => continue,
-            };
-            let accessor_max = match accessor.get("max") {
-                Some(serde_json::Value::Array(max)) if max.len() == 3 => max,
-                _ => continue,
-            };
-
-            for i in 0..3 {
-                min[i] = min[i].min(accessor_min[i].as_f64().unwrap());
-                max[i] = max[i].max(accessor_max[i].as_f64().unwrap());
-            }
-        }
-
-        ModelConfig {
-            aabb: Aabb::from_min_max(min, max),
-        }
-    }
-}
-
-// TODO: Convert to OnceCell
+// TODO: Convert to OnceCell?
 #[derive(Resource)]
 pub struct Models {
     // A map from asset filename(without extenstion) to model id.
@@ -354,9 +395,10 @@ fn send_models_on_chunk_subscription(
     for chunk_sub in chunk_sub_events.read() {
         if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_position) {
             for entity in model_entities.iter() {
-                let (maybe_player_parent, model, transform, visibility) = models
-                    .get(*entity)
-                    .expect("Entity to exist while it is contained in ModelMap");
+                let Ok((maybe_player_parent, model, transform, visibility)) = models.get(*entity)
+                else {
+                    continue;
+                };
 
                 if !visibility.is_visible {
                     continue;

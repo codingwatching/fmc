@@ -287,7 +287,7 @@ fn simulate_player_physics(
                 & backwards_time.cmpgt(Vec3::splat(0.0));
             let resolution_axis = Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element();
 
-            match blocks[&block_id].friction() {
+            match blocks.get_config(block_id).friction() {
                 Friction::Static {
                     front,
                     back,
@@ -424,7 +424,7 @@ fn swimming(
     let blocks = Blocks::get();
 
     for block_id in collisions.clone() {
-        match blocks[&block_id].friction() {
+        match blocks.get_config(block_id).friction() {
             Friction::Static { .. } => (),
             Friction::Drag(drag) => {
                 if !player.is_swimming {

@@ -75,73 +75,74 @@ pub enum Blueprint {
 
 impl Blueprint {
     fn new(
-        json_blueprint: &BlueprintJson,
-        named_blueprints: &HashMap<String, BlueprintJson>,
+        json_blueprint: &AmbiguousJsonBlueprint,
+        named_blueprints: &HashMap<String, AmbiguousJsonBlueprint>,
     ) -> Self {
         let blocks = Blocks::get();
         match json_blueprint {
-            BlueprintJson::Collection { blueprints, .. } => {
-                let mut collection = Vec::with_capacity(blueprints.len());
-                for sub_blueprint in blueprints {
-                    let sub_blueprint = Blueprint::new(
-                        named_blueprints.get(sub_blueprint).unwrap(),
-                        named_blueprints,
-                    );
-                    collection.push(sub_blueprint);
-                }
-                Blueprint::Collection(collection)
+            AmbiguousJsonBlueprint::Named(name) => {
+                Blueprint::new(named_blueprints.get(name).unwrap(), named_blueprints)
             }
-            BlueprintJson::Distribution {
-                blueprint,
-                count,
-                vertical_range,
-            } => {
-                let sub_blueprint =
-                    Blueprint::new(named_blueprints.get(blueprint).unwrap(), named_blueprints);
-                Blueprint::Distribution {
-                    blueprint: Box::new(sub_blueprint),
+            AmbiguousJsonBlueprint::Inline(json_blueprint) => match json_blueprint {
+                JsonBlueprint::Collection { blueprints, .. } => {
+                    let mut collection = Vec::with_capacity(blueprints.len());
+                    for sub_blueprint in blueprints {
+                        let sub_blueprint = Blueprint::new(sub_blueprint, named_blueprints);
+                        collection.push(sub_blueprint);
+                    }
+                    Blueprint::Collection(collection)
+                }
+                JsonBlueprint::Distribution {
+                    blueprint,
+                    count,
+                    vertical_range,
+                } => {
+                    let sub_blueprint = Blueprint::new(blueprint, named_blueprints);
+                    Blueprint::Distribution {
+                        blueprint: Box::new(sub_blueprint),
+                        count: *count,
+                        vertical_range: vertical_range.clone(),
+                    }
+                }
+                JsonBlueprint::Tree {
+                    trunk_block,
+                    leaf_block,
+                    trunk_height,
+                    random_height,
+                    trunk_width,
+                    soil_blocks,
+                    can_replace,
+                } => Blueprint::Tree {
+                    trunk_block: blocks.get_id(&trunk_block),
+                    leaf_block: blocks.get_id(&leaf_block),
+                    canopy_clipper: rand::distributions::Bernoulli::new(0.5).unwrap(),
+                    trunk_height: *trunk_height as i32,
+                    random_height: rand::distributions::Uniform::new_inclusive(
+                        0,
+                        random_height.unwrap_or(0) as i32,
+                    ),
+                    trunk_width: *trunk_width,
+                    soil_blocks: soil_blocks
+                        .iter()
+                        .map(|block_name| blocks.get_id(block_name))
+                        .collect::<HashSet<BlockId>>(),
+                    can_replace: can_replace
+                        .iter()
+                        .map(|block_name| blocks.get_id(block_name))
+                        .collect::<HashSet<BlockId>>(),
+                },
+                JsonBlueprint::OreVein {
+                    ore_block,
+                    count,
+                    can_replace,
+                } => Blueprint::OreVein {
+                    ore_block: blocks.get_id(&ore_block),
                     count: *count,
-                    vertical_range: vertical_range.clone(),
-                }
-            }
-            BlueprintJson::Tree {
-                trunk_block,
-                leaf_block,
-                trunk_height,
-                random_height,
-                trunk_width,
-                soil_blocks,
-                can_replace,
-            } => Blueprint::Tree {
-                trunk_block: blocks.get_id(&trunk_block),
-                leaf_block: blocks.get_id(&leaf_block),
-                canopy_clipper: rand::distributions::Bernoulli::new(0.5).unwrap(),
-                trunk_height: *trunk_height as i32,
-                random_height: rand::distributions::Uniform::new_inclusive(
-                    0,
-                    random_height.unwrap_or(0) as i32,
-                ),
-                trunk_width: *trunk_width,
-                soil_blocks: soil_blocks
-                    .iter()
-                    .map(|block_name| blocks.get_id(block_name))
-                    .collect::<HashSet<BlockId>>(),
-                can_replace: can_replace
-                    .iter()
-                    .map(|block_name| blocks.get_id(block_name))
-                    .collect::<HashSet<BlockId>>(),
-            },
-            BlueprintJson::OreVein {
-                ore_block,
-                count,
-                can_replace,
-            } => Blueprint::OreVein {
-                ore_block: blocks.get_id(&ore_block),
-                count: *count,
-                can_replace: can_replace
-                    .iter()
-                    .map(|block_name| blocks.get_id(block_name))
-                    .collect::<HashSet<BlockId>>(),
+                    can_replace: can_replace
+                        .iter()
+                        .map(|block_name| blocks.get_id(block_name))
+                        .collect::<HashSet<BlockId>>(),
+                },
             },
         }
     }
@@ -208,8 +209,11 @@ impl Blueprint {
                 soil_blocks,
                 can_replace,
             } => {
-                // We get a 3d position, convert to 2d and check if there's a surface.
-                let index = utils::world_position_to_block_index(origin) >> 4;
+                // The distribution goes over a 3d space, so we convert it to 2d and set the y to
+                // whatever the surface height is at that position.
+                let (chunk_position, index) =
+                    utils::world_position_to_chunk_position_and_block_index(origin);
+                let index = index >> 4;
                 let (surface_y, surface_block) = match &surface[index] {
                     Some(s) => s,
                     None => return,
@@ -220,7 +224,7 @@ impl Blueprint {
                 }
 
                 let mut position = origin;
-                position.y = *surface_y as i32;
+                position.y = chunk_position.y + *surface_y as i32;
 
                 feature.can_replace.extend(can_replace);
 
@@ -302,14 +306,41 @@ impl Blueprint {
     }
 }
 
+// This allows json blueprints to be nested in an ergonomic way in exchange for less ergonomic
+// code.
+//
+// named:
+// {
+//     type: some_blueprint_type,
+//     field_1: some_value,
+//     nested_blueprint: "blueprint_1"
+// }
+//
+// inline:
+// {
+//     type: some_blueprint_type
+//     field_1: some_value,
+//     nested_blueprint: {
+//         type: some_blueprint_type,
+//         field_1: some_value,
+//         ...
+//     }
+// }
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AmbiguousJsonBlueprint {
+    Named(String),
+    Inline(JsonBlueprint),
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-enum BlueprintJson {
+enum JsonBlueprint {
     Collection {
-        blueprints: Vec<String>,
+        blueprints: Vec<AmbiguousJsonBlueprint>,
     },
     Distribution {
-        blueprint: String,
+        blueprint: Box<AmbiguousJsonBlueprint>,
         count: u32,
         vertical_range: Option<[i32; 2]>,
     },
@@ -362,7 +393,7 @@ pub fn load_blueprints() -> HashMap<String, Blueprint> {
     fn validate_blueprint(
         parent_name: &str,
         child_name: &str,
-        named_blueprints: &HashMap<String, BlueprintJson>,
+        named_blueprints: &HashMap<String, AmbiguousJsonBlueprint>,
     ) {
         if !named_blueprints.contains_key(child_name) {
             panic!(
@@ -389,40 +420,49 @@ pub fn load_blueprints() -> HashMap<String, Blueprint> {
 
     for (blueprint_name, json_blueprint) in named_json_blueprints.iter() {
         match json_blueprint {
-            BlueprintJson::Collection { blueprints } => {
-                for child_name in blueprints {
-                    validate_blueprint(blueprint_name, child_name, &named_json_blueprints)
-                }
+            AmbiguousJsonBlueprint::Named(child_name) => {
+                validate_blueprint(blueprint_name, child_name, &named_json_blueprints)
             }
-            BlueprintJson::Distribution { blueprint, .. } => {
-                validate_blueprint(blueprint_name, &blueprint, &named_json_blueprints);
-            }
-            BlueprintJson::Tree {
-                trunk_block,
-                leaf_block,
-                soil_blocks,
-                can_replace,
-                ..
-            } => {
-                validate_block(blueprint_name, &trunk_block);
-                validate_block(blueprint_name, &leaf_block);
-                for block_name in soil_blocks.iter() {
-                    validate_block(blueprint_name, block_name)
+            AmbiguousJsonBlueprint::Inline(json_blueprint) => match json_blueprint {
+                JsonBlueprint::Collection { blueprints } => {
+                    for child_blueprint in blueprints {
+                        if let AmbiguousJsonBlueprint::Named(child_name) = child_blueprint {
+                            validate_blueprint(blueprint_name, child_name, &named_json_blueprints)
+                        }
+                    }
                 }
-                for block_name in can_replace.iter() {
-                    validate_block(blueprint_name, block_name)
+                JsonBlueprint::Distribution { blueprint, .. } => {
+                    if let AmbiguousJsonBlueprint::Named(child_name) = blueprint.as_ref() {
+                        validate_blueprint(blueprint_name, child_name, &named_json_blueprints)
+                    }
                 }
-            }
-            BlueprintJson::OreVein {
-                ore_block,
-                can_replace,
-                ..
-            } => {
-                validate_block(blueprint_name, &ore_block);
-                for block_name in can_replace.iter() {
-                    validate_block(blueprint_name, block_name)
+                JsonBlueprint::Tree {
+                    trunk_block,
+                    leaf_block,
+                    soil_blocks,
+                    can_replace,
+                    ..
+                } => {
+                    validate_block(blueprint_name, &trunk_block);
+                    validate_block(blueprint_name, &leaf_block);
+                    for block_name in soil_blocks.iter() {
+                        validate_block(blueprint_name, block_name)
+                    }
+                    for block_name in can_replace.iter() {
+                        validate_block(blueprint_name, block_name)
+                    }
                 }
-            }
+                JsonBlueprint::OreVein {
+                    ore_block,
+                    can_replace,
+                    ..
+                } => {
+                    validate_block(blueprint_name, &ore_block);
+                    for block_name in can_replace.iter() {
+                        validate_block(blueprint_name, block_name)
+                    }
+                }
+            },
         }
     }
 

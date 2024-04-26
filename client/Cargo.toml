@@ -1,5 +1,5 @@
 [package]
-name = "bevy_game"
+name = "client"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.12.1", features = []}
 
-fmc_networking = { path = "../lib/fmc_networking" }
-serde_json = { path = "../lib/json"}
+fmc_networking = { path = "../crates/fmc_networking" }
+serde_json = { path = "../crates/json"}
 
 #dirs = "5.0.1"
 futures-lite = "1.13.0"
@@ -28,8 +28,8 @@ tar = "0.4.40"
 zstd = "0.12.4"
 
 # Enable a small amount of optimization in debug mode
-#[profile.dev]
-#strip = "debuginfo"
+[profile.dev]
+strip = "debuginfo"
 #opt-level = 1
 
 # Enable high optimizations for dependencies (incl. Bevy), but not for our code:

@@ -9,9 +9,9 @@ edition = "2021"
 #bevy = { git = "https://github.com/bevyengine/bevy", rev = "bc1f33d", default-features=false, features = ["filesystem_watcher", "multi-threaded"]}
 bevy = { version = "0.12.1", default-features=false, features = ["file_watcher", "multi-threaded"]}
 
-fmc_networking = { path = "../lib/fmc_networking" }
-serde_json = { path = "../lib/json"}
-noise = { path = "../lib/noise" }
+fmc_networking = { path = "../crates/fmc_networking" }
+serde_json = { path = "../crates/json"}
+noise = { path = "../crates/fmc_noise" }
 
 tar = "0.4.40"
 zstd = "0.12.4"
@@ -37,6 +37,10 @@ opt-level = 1
 # Enable high optimizations for dependencies (incl. Bevy), but not for our code:
 [profile.dev.package."*"]
 opt-level = 3
+# TODO: The procedural noise is 10-20x slower with debug assertions on. The
+# standard library has some debug asserts in the vec module. Probably from the
+# set_len method. Try to remove the method.
+debug-assertions = false
 
 # flamegraph
 #[profile.release]

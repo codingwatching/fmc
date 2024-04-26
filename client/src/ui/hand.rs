@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use bevy::{
     gltf::{Gltf, GltfMesh},
@@ -7,7 +7,7 @@ use bevy::{
     render::{mesh::VertexAttributeValues, primitives::Aabb},
     window::{CursorGrabMode, PrimaryWindow},
 };
-use fmc_networking::{messages, ConnectionId, NetworkClient, NetworkData};
+use fmc_networking::{messages, NetworkClient, NetworkData};
 
 use crate::{
     assets::models::Models,
@@ -69,10 +69,15 @@ struct HandMarker;
 #[derive(Resource, Default)]
 struct SwitchAnimation {
     elapsed: f32,
+    // Transform we are going from
     old_transform: Transform,
+    // How far down the old transform must be shifted down to not be visible anymore.
     old_offset: f32,
+    // Transform we are going to
     new_transform: Transform,
+    // Same but reverse
     new_offset: f32,
+    // New scene that should be shown after old item has been hidden
     scene_handle: Handle<Scene>,
 }
 // Equips the item that is selected in any visible interface where equipment=true in the config.
@@ -147,13 +152,19 @@ fn equip_item(
             // name with the AnimationClip paths. There is an animation player inserted deep in
             // the hierarchy below the hand entity that gets inserted immediately. It is too
             // cumbersome to get to. This is a hack.
-            let name = Name::new(gltf.named_nodes.iter().next().unwrap().0.to_owned());
+            let name = Name::new(
+                gltf.named_nodes
+                    .keys()
+                    .next()
+                    .unwrap_or(&"model".to_owned())
+                    .to_owned(),
+            );
             commands
                 .entity(hand_entity)
                 .insert((name, AnimationPlayer::default()));
 
             let gltf_mesh = gltf_meshes.get(&gltf.meshes[0]).unwrap();
-            // Cumbersomely extract aabb height from gltf in an error prone way. I don't know how
+            // Extract aabb height from gltf in an error prone way. I don't know how
             // to do it through the scenes.
             let mut min: f32 = 0.0;
             let mut max: f32 = 0.0;
@@ -173,6 +184,7 @@ fn equip_item(
 
             let animation_handle = gltf.named_animations.get("left_click").unwrap().clone();
             let animation_clip = animation_clips.get(&animation_handle).unwrap();
+            //dbg!(animation_clip);
 
             for curve in &animation_clip.curves()[0] {
                 match &curve.keyframes {
@@ -206,6 +218,7 @@ fn play_switch_animation(
     mut switch_animation: ResMut<SwitchAnimation>,
     mut hand_query: Query<(&mut Transform, &mut Handle<Scene>), With<HandMarker>>,
     mut finished: Local<bool>,
+    scenes: Res<Assets<Scene>>,
 ) {
     const DURATION: f32 = 0.3;
 
@@ -218,6 +231,12 @@ fn play_switch_animation(
 
         if switch_animation.elapsed + time.delta_seconds() > DURATION / 2.0 {
             *scene = switch_animation.scene_handle.clone();
+            if let Some(scene) = scenes.get(scene.as_ref()) {
+                //dbg!(&scene.world);
+                //for entity in scene.world.iter_entities() {
+                //    dbg!(scene.world.inspect_entity(entity.id()));
+                //}
+            }
         }
 
         *finished = false;
@@ -229,6 +248,7 @@ fn play_switch_animation(
 
         *finished = false;
     } else if !*finished && switch_animation.new_transform != *transform {
+        // elapsed is almost never exactly equal DURATION, so set it manually
         *transform = switch_animation.new_transform;
         *finished = true;
     }
@@ -250,6 +270,7 @@ fn play_use_animation(
         return;
     };
 
+    // TODO: Needs a robust way to see if interface is open
     // Only play if not in interface
     if window.single().cursor.visible {
         return;
@@ -269,9 +290,9 @@ fn play_use_animation(
         let animation_handle = gltf.named_animations.get("left_click").unwrap();
         let animation_clip = animation_clips.get(animation_handle).unwrap();
 
-        if mouse_button_input.just_pressed(MouseButton::Left) {
-            player.start_with_transition(animation_handle.clone(), Duration::from_millis(10));
-        } else if player.elapsed() >= animation_clip.duration() {
+        if mouse_button_input.just_pressed(MouseButton::Left)
+            || player.elapsed() >= animation_clip.duration()
+        {
             player.start(animation_handle.clone());
         }
     } else if mouse_button_input.just_pressed(MouseButton::Right) {
@@ -279,6 +300,13 @@ fn play_use_animation(
             gltf.named_animations.get("left_click").unwrap().clone(),
             Duration::from_millis(10),
         );
+    } else if player.is_finished() {
+        // XXX: Hack to get the item back to its starting position. I think the animation player just goes:
+        // elapsed is 0.3 and the animation duration is 0.4, if I add the time delta, elapsed time
+        // is 0.5, we're done here. So the animation stays at whatever position 0.3 corresponds to.
+        // Note this causes the player to run each update, which is bad. Make an effort to
+        // fix.
+        //player.seek_to(0.0);
     }
 }
 
@@ -307,7 +335,7 @@ fn place_block(
     items: Res<Items>,
     origin: Res<Origin>,
     mouse_button_input: Res<Input<MouseButton>>,
-    mut equipped_query: Query<&mut ItemStack, With<EquippedItem>>,
+    mut equipped_query: Query<&mut ItemBox, With<EquippedItem>>,
     player_query: Query<(&Aabb, &GlobalTransform), With<Player>>,
     camera_transform: Query<&GlobalTransform, With<PlayerCameraMarker>>,
     // We pretend the block update came from the server so it instantly updates without having to
@@ -320,7 +348,6 @@ fn place_block(
         let Ok(mut equipped_item) = equipped_query.get_single_mut() else {
             return;
         };
-        let blocks = Blocks::get();
 
         let (mut block_position, _block_id, block_face) = match world_map.raycast_to_block(
             &camera_transform.compute_transform(),
@@ -354,33 +381,26 @@ fn place_block(
             return;
         }
 
-        let block_id = match equipped_item.item {
+        let block_id = match equipped_item.item_stack.item {
             Some(item_id) => match &items.get(&item_id).block {
-                Some(block_id) => block_id,
+                Some(block_id) => *block_id,
                 None => return,
             },
             None => return,
         };
 
-        equipped_item.subtract(1);
+        equipped_item.item_stack.subtract(1);
 
-        let block = &blocks[&block_id];
-
+        dbg!(block_position);
         let (chunk_position, block_index) =
             utils::world_position_to_chunk_position_and_block_index(block_position);
         let message = messages::BlockUpdates {
             chunk_position,
-            blocks: vec![(block_index, *block_id, None)],
+            blocks: vec![(block_index, block_id, None)],
         };
+
         // Pretend we get the block from the server so it gets the update immediately for mesh
-        // generation. More responsive.
-        match block {
-            Block::Cube(_) => {
-                block_updates_events.send(NetworkData::new(net.connection_id(), message))
-            }
-            Block::Model(_) => {
-                block_updates_events.send(NetworkData::new(net.connection_id(), message))
-            }
-        }
+        // generation. Makes it more responsive.
+        block_updates_events.send(NetworkData::new(net.connection_id(), message))
     }
 }

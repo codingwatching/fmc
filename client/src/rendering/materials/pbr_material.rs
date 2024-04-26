@@ -1,8 +1,9 @@
 use bevy::{
     math::Vec3A,
     pbr::{
-        MaterialPipeline, MaterialPipelineKey, StandardMaterialFlags, StandardMaterialUniform,
-        MAX_CASCADES_PER_LIGHT, MAX_DIRECTIONAL_LIGHTS, MaterialExtension, ExtendedMaterial,
+        ExtendedMaterial, MaterialExtension, MaterialPipeline, MaterialPipelineKey,
+        StandardMaterialFlags, StandardMaterialUniform, MAX_CASCADES_PER_LIGHT,
+        MAX_DIRECTIONAL_LIGHTS,
     },
     prelude::*,
     reflect::{TypePath, TypeUuid},
@@ -23,7 +24,9 @@ use super::ATTRIBUTE_PACKED_BITS_0;
 pub struct PbrMaterialPlugin;
 impl Plugin for PbrMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<ExtendedMaterial<StandardMaterial, PbrExtension>>::default())
+        app.add_plugins(MaterialPlugin::<
+            ExtendedMaterial<StandardMaterial, PbrLightExtension>,
+        >::default())
             // Some weird schedule ordering here to avoid flickering when replacing the meshes.
             // Chosen at random until it worked.
             .add_systems(PostUpdate, replace_material_and_mesh)
@@ -37,8 +40,11 @@ fn update_light(
     mesh_query: Query<
         (&GlobalTransform, &mut Handle<Mesh>),
         (
-            With<Handle<ExtendedMaterial<StandardMaterial, PbrExtension>>>,
-            Or<(Changed<GlobalTransform>, Added<Handle<ExtendedMaterial<StandardMaterial, PbrExtension>>>)>,
+            With<Handle<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
+            Or<(
+                Changed<GlobalTransform>,
+                Added<Handle<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
+            )>,
         ),
     >,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -64,7 +70,7 @@ fn update_light(
                     .as_ivec3();
                 if let Some(light) = light_map.get_light(position) {
                     if light.sunlight() > new_light.sunlight() {
-                        new_light.set_sunlight(light.sunlight());
+                        new_light.set_sunlight(light);
                     }
                     if light.artificial() > new_light.artificial() {
                         new_light.set_artificial(light.artificial());
@@ -105,14 +111,14 @@ fn replace_material_and_mesh(
         Added<Handle<StandardMaterial>>,
     >,
     standard_materials: Res<Assets<StandardMaterial>>,
-    mut pbr_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, PbrExtension>>>,
+    mut pbr_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     for (entity, standard_handle, mesh_handle) in material_query.iter() {
         let standard_material = standard_materials.get(standard_handle).unwrap();
         let extension_handle = pbr_materials.add(ExtendedMaterial {
             base: standard_material.clone(),
-            extension: PbrExtension::default()
+            extension: PbrLightExtension::default(),
         });
         let mut entity_commands = commands.entity(entity);
         entity_commands.remove::<Handle<StandardMaterial>>();
@@ -123,13 +129,13 @@ fn replace_material_and_mesh(
 }
 
 #[derive(Default, Asset, AsBindGroup, Reflect, Debug, Clone)]
-pub struct PbrExtension {
+pub struct PbrLightExtension {
     // XXX: This is a useless variable to satisfy the AsBindGroup requirement. Ripped from example
     #[uniform(100)]
     _dummy: u32,
 }
 
-impl MaterialExtension for PbrExtension {
+impl MaterialExtension for PbrLightExtension {
     fn vertex_shader() -> ShaderRef {
         "src/rendering/shaders/pbr_mesh.wgsl".into()
     }
@@ -139,17 +145,35 @@ impl MaterialExtension for PbrExtension {
     }
 
     fn specialize(
-            _pipeline: &bevy::pbr::MaterialExtensionPipeline,
-            descriptor: &mut RenderPipelineDescriptor,
-            layout: &MeshVertexBufferLayout,
-            _key: bevy::pbr::MaterialExtensionKey<Self>,
-        ) -> Result<(), SpecializedMeshPipelineError> {
+        _pipeline: &bevy::pbr::MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayout,
+        _key: bevy::pbr::MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        let vertex_layout = layout
+            .get_layout(&[
+                Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+                ATTRIBUTE_PACKED_BITS_0.at_shader_location(2),
+            ])
+            .unwrap();
         // I'll probably get bit in the ass for doing this, but I don't want to keep it in sync
         // with changes to StandardMaterial. I have no idea what side effects this might cause, I
-        // just did kinda what the bevy code does. 
-        let layout_attribute = layout.layout().attributes[descriptor.vertex.buffers[0].attributes.len()];
-        descriptor.vertex.buffers[0].attributes.push(VertexAttribute {
-            format: layout_attribute.format, offset: layout_attribute.offset, shader_location: ATTRIBUTE_PACKED_BITS_0.at_shader_location(7).shader_location });
+        // just did kinda what the bevy code does.
+        let index = layout
+            .attribute_ids()
+            .iter()
+            .position(|id| *id == ATTRIBUTE_PACKED_BITS_0.at_shader_location(7).id)
+            .unwrap();
+        let layout_attribute = layout.layout().attributes[index];
+        descriptor.vertex.buffers[0]
+            .attributes
+            .push(VertexAttribute {
+                format: layout_attribute.format,
+                offset: layout_attribute.offset,
+                shader_location: ATTRIBUTE_PACKED_BITS_0
+                    .at_shader_location(7)
+                    .shader_location,
+            });
         Ok(())
     }
 }

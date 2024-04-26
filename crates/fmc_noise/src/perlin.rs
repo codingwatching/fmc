@@ -41,6 +41,7 @@ where
     let mut xs = x.floor();
     let mut ys = y.floor();
 
+    // NOTE: See simplex for unsafe
     let x0 = unsafe { xs.to_int_unchecked() * Simd::splat(X_PRIME) };
     let y0 = unsafe { ys.to_int_unchecked() * Simd::splat(Y_PRIME) };
     let x1 = x0 + Simd::splat(X_PRIME);

@@ -11,7 +11,6 @@ use fmc_networking::{messages, NetworkData};
 use crate::{
     assets::models::Models,
     game_state::GameState,
-    player::Player,
     world::{MovesWithOrigin, Origin},
 };
 

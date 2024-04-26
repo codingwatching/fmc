@@ -9,7 +9,7 @@
             0.8
         ]
     },
-    "light_attenuation": 0,
+    "light_attenuation": 1,
     "fog": {
         "color": {
             "Rgba": {

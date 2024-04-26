@@ -257,7 +257,7 @@ pub fn handle_right_clicks(
 
         // TODO: Placing blocks like stairs can be annoying, as situations often arise where your
         // position alone isn't adequate to find the correct placement.
-        // There's a clever way to do this I think. If you partition a block face as such:
+        // There's a clever way to do this I think. If you partition a block face like this:
         //  -------------------
         //  | \_____________/ |
         //  | |             | |
@@ -267,7 +267,7 @@ pub fn handle_right_clicks(
         //  | |_____________| |
         //  |/              \ |
         //  -------------------
-        //  (Depicts 4 outer trapezoids and one inner square)
+        //  (4 outer trapezoids and one inner square)
         // By comparing which sector was clicked and the angle of the camera I think a more
         // intuitive block placement can be achieved.
         let block_state = if blocks.get_config(&item_config.block).is_rotatable {

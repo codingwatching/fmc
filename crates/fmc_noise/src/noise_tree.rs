@@ -149,16 +149,16 @@ where
                     });
                     add_node(nodes, source);
                 }
-                NoiseSettings::MaxNoise { left, right } => {
+                NoiseSettings::Max { left, right } => {
                     // push a fake to reserve the index
                     nodes.push(NoiseNode {
                         settings: NoiseNodeSettings::MaxNoise {
                             left_source: 0,
                             right_source: 0,
                         },
-                        function_1d: crate::minmax::max_1d(),
-                        function_2d: crate::minmax::max_2d(),
-                        function_3d: crate::minmax::max_3d(),
+                        function_1d: crate::min_and_max::max_1d(),
+                        function_2d: crate::min_and_max::max_2d(),
+                        function_3d: crate::min_and_max::max_3d(),
                     });
                     let index = nodes.len() - 1;
 
@@ -172,21 +172,21 @@ where
                             left_source,
                             right_source,
                         },
-                        function_1d: crate::minmax::max_1d(),
-                        function_2d: crate::minmax::max_2d(),
-                        function_3d: crate::minmax::max_3d(),
+                        function_1d: crate::min_and_max::max_1d(),
+                        function_2d: crate::min_and_max::max_2d(),
+                        function_3d: crate::min_and_max::max_3d(),
                     };
                 }
-                NoiseSettings::MinNoise { left, right } => {
+                NoiseSettings::Min { left, right } => {
                     // push a fake to reserve the index
                     nodes.push(NoiseNode {
                         settings: NoiseNodeSettings::MinNoise {
                             left_source: 0,
                             right_source: 0,
                         },
-                        function_1d: crate::minmax::min_1d(),
-                        function_2d: crate::minmax::min_2d(),
-                        function_3d: crate::minmax::min_3d(),
+                        function_1d: crate::min_and_max::min_1d(),
+                        function_2d: crate::min_and_max::min_2d(),
+                        function_3d: crate::min_and_max::min_3d(),
                     });
                     let index = nodes.len() - 1;
 
@@ -200,9 +200,9 @@ where
                             left_source,
                             right_source,
                         },
-                        function_1d: crate::minmax::min_1d(),
-                        function_2d: crate::minmax::min_2d(),
-                        function_3d: crate::minmax::min_3d(),
+                        function_1d: crate::min_and_max::min_1d(),
+                        function_2d: crate::min_and_max::min_2d(),
+                        function_3d: crate::min_and_max::min_3d(),
                     };
                 }
                 NoiseSettings::MulValue { value, source } => {
@@ -295,6 +295,17 @@ where
                         function_3d: crate::range::range_3d(),
                     };
                 }
+                NoiseSettings::Square { source } => {
+                    nodes.push(NoiseNode {
+                        settings: NoiseNodeSettings::Square {
+                            source: nodes.len() + 1,
+                        },
+                        function_1d: crate::square::square_1d(),
+                        function_2d: crate::square::square_2d(),
+                        function_3d: crate::square::square_3d(),
+                    });
+                    add_node(nodes, source);
+                }
             };
         }
         let mut nodes = Vec::with_capacity(8);
@@ -367,6 +378,9 @@ pub(crate) enum NoiseNodeSettings {
         selector: usize,
         low_source: usize,
         high_source: usize,
+    },
+    Square {
+        source: usize,
     },
 }
 

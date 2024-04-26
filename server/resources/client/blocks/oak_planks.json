@@ -10,5 +10,5 @@
         "back": "oak_planks.png"
     },
     "tools": ["axe"],
-    "drop": "oak"
+    "drop": "oak_planks"
 }

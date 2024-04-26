@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 
-use crate::{constants::CHUNK_SIZE, game_state::GameState, player::Player};
+use crate::{
+    game_state::GameState,
+    player::{Player, PlayerCameraMarker},
+};
 
 pub mod blocks;
 pub mod world_map;
@@ -31,7 +34,7 @@ pub struct MovesWithOrigin;
 fn update_origin(
     mut origin: ResMut<Origin>,
     mut positions: ParamSet<(
-        Query<&Transform, (Changed<Transform>, With<Player>)>,
+        Query<&GlobalTransform, (Changed<GlobalTransform>, With<PlayerCameraMarker>)>,
         Query<&mut Transform, With<MovesWithOrigin>>,
     )>,
 ) {
@@ -42,8 +45,8 @@ fn update_origin(
         return;
     };
 
-    let true_translation = player_transform.translation.as_dvec3() + origin.0.as_dvec3();
-    let new_origin = crate::utils::world_position_to_chunk_pos(true_translation.as_ivec3());
+    let true_translation = player_transform.translation().as_dvec3() + origin.0.as_dvec3();
+    let new_origin = crate::utils::world_position_to_chunk_pos(true_translation.floor().as_ivec3());
 
     if new_origin == origin.0 {
         return;

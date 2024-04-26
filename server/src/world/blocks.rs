@@ -229,13 +229,17 @@ impl Blocks {
         BLOCKS.get().unwrap()
     }
 
+    // TODO: Better ergonomics if this doesn't take a reference?
     pub fn get_config(&self, block_id: &BlockId) -> &Block {
         return &self.blocks[*block_id as usize];
     }
 
     #[track_caller]
     pub fn get_id(&self, block_name: &str) -> BlockId {
-        return *self.ids.get(block_name).unwrap();
+        match self.ids.get(block_name) {
+            Some(b) => *b,
+            None => panic!("No block with name '{}'", block_name),
+        }
     }
 
     pub fn clone_ids(&self) -> HashMap<String, BlockId> {

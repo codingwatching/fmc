@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Index, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use bevy::prelude::*;
 use fmc_networking::{messages, BlockId, NetworkClient};
@@ -113,7 +113,7 @@ pub fn load_blocks(
     // Recursively walk block configuration directory
     fn walk_dir<T: AsRef<std::path::Path>>(
         dir: T,
-    ) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         let mut files = Vec::new();
 
         let directory = std::fs::read_dir(dir)?;
@@ -461,24 +461,20 @@ impl Blocks {
         unsafe {
             return BLOCKS
                 .get()
-                .expect("The blocks have not been loaded yet, make sure this is only used after.");
+                .expect("The blocks have not been loaded yet, make sure this is only used after they have been.");
         }
+    }
+
+    pub fn get_config(&self, id: BlockId) -> &Block {
+        return &self.blocks[id as usize];
     }
 
     pub fn get_id(&self, name: &str) -> Option<&BlockId> {
         return self.block_ids.get(name);
     }
 
-    pub fn contain(&self, block_id: BlockId) -> bool {
+    pub fn contains(&self, block_id: BlockId) -> bool {
         return (block_id as usize) < self.blocks.len();
-    }
-}
-
-impl Index<&BlockId> for Blocks {
-    type Output = Block;
-
-    fn index(&self, index: &BlockId) -> &Self::Output {
-        return &self.blocks[*index as usize];
     }
 }
 
@@ -511,7 +507,8 @@ pub struct Cube {
     cull_delimiters: [Option<(f32, f32)>; 4],
     // If the block is rotateable around the y-axis
     is_rotatable: bool,
-    // If transparent, should this decrease the vertical sunlight level.
+    // How much the block attenuates light. '0' will make sunlight travel downwards unimpeded, but
+    // otherwise as if '1'.
     light_attenuation: u8,
     // Fog rendered if the camera is inside the bounds of the cube.
     pub fog_settings: Option<FogSettings>,

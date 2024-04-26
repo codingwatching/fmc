@@ -1,6 +1,6 @@
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
-use bevy::{prelude::*, transform::commands, utils::Uuid};
+use bevy::prelude::*;
 use dashmap::DashMap;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -17,7 +17,6 @@ use tokio::{
 };
 
 use crate::{
-    error::ServerNetworkError,
     messages::ClientIdentification,
     network_message::{ClientBound, NetworkMessage, ServerBound},
     ConnectionId, NetworkData, NetworkPacket, NetworkSettings, ServerNetworkEvent, SyncChannel,
@@ -48,6 +47,7 @@ impl ClientConnection {
 impl std::fmt::Debug for ClientConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClientConnection")
+            .field("username", &self.username)
             .field("id", &self.id)
             .field("addr", &self.addr)
             .finish()
@@ -162,7 +162,6 @@ impl NetworkServer {
     #[track_caller]
     pub fn send_many<'a, T: ClientBound + Clone>(
         &self,
-        //connection_ids: &HashSet<ConnectionId>,
         connection_ids: impl IntoIterator<Item = &'a ConnectionId>,
         message: T,
     ) {

@@ -4,7 +4,7 @@ use bevy::prelude::*;
 // TODO: Move all three to world_map I believe
 // Translates a block position into the chunk position of the chunk the block is in.
 pub fn world_position_to_chunk_pos(mut position: IVec3) -> IVec3 {
-    // Removing bits_of(chunk_size) - 1 is rounding down to nearest CHUNK_SIZE divisible.
+    // Removing bits of CHUNK_SIZE - 1 (0b1111) is rounding down to nearest CHUNK_SIZE divisible.
     position = position & !(CHUNK_SIZE - 1) as i32;
     return position;
 }
@@ -17,7 +17,8 @@ pub fn world_position_to_block_index(mut position: IVec3) -> usize {
     return (position.x << 8 | position.z << 4 | position.y) as usize;
 }
 
-// Converts world space coordinates to index in self.chunks and index of block in chunk
+// Translates a block position into the position of the chunk that contains it, and the index of
+// the block position inside the chunk.
 pub fn world_position_to_chunk_position_and_block_index(position: IVec3) -> (IVec3, usize) {
     let chunk_coord = world_position_to_chunk_pos(position);
     let block_coord = world_position_to_block_index(position);

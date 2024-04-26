@@ -14,6 +14,8 @@ use super::{InterfacePath, Interfaces};
 
 pub type ItemId = u32;
 
+const ITEM_IMAGE_PATH: &str = "server_assets/textures/items/";
+
 pub struct ItemPlugin;
 impl Plugin for ItemPlugin {
     fn build(&self, app: &mut App) {
@@ -71,7 +73,8 @@ pub struct Items {
 }
 
 impl Items {
-    /// Convenience method for interfaces as items are checked to exist before they are added.
+    // TODO: Should this be implemented as Index? There is probably convention of returning Option
+    // when the function has get in the name.
     #[track_caller]
     pub fn get(&self, id: &ItemId) -> &ItemConfig {
         return self.configs.get(id).unwrap();
@@ -155,12 +158,21 @@ pub fn load_items(
 
         let config = ItemConfig {
             name: json_config.name,
-            image_path: "server_assets/textures/items/".to_owned() + &json_config.image,
+            image_path: ITEM_IMAGE_PATH.to_owned() + &json_config.image,
             model_id,
             stack_size: json_config.stack_size,
             categories: json_config.categories,
             block: block_id,
         };
+
+        if !std::path::Path::new(&config.image_path).exists() {
+            net.disconnect(&format!(
+                "Misconfigured resource pack: failed to read item config at: '{}', \
+                    no item image by the name '{}' at '{}', make sure it is present.",
+                &file_path, json_config.image, ITEM_IMAGE_PATH,
+            ));
+            return;
+        }
 
         configs.insert(*id, config);
     }
@@ -169,7 +181,7 @@ pub fn load_items(
 }
 
 /// ItemStacks are used to represent the data part of an item box in an interface.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Component)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ItemStack {
     // The item occupying the stack
     pub item: Option<ItemId>,

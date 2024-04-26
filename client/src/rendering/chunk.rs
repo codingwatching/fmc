@@ -15,22 +15,29 @@ use crate::{
     rendering::materials,
     world::{
         blocks::{Block, BlockFace, BlockRotation, BlockState, Blocks, QuadPrimitive},
-        world_map::{chunk::{Chunk, ChunkMarker}, WorldMap},
+        world_map::{chunk::Chunk, WorldMap},
+        Origin,
     },
 };
 
-use super::lighting::{Light, LightChunk, LightMap};
+use super::{
+    lighting::{Light, LightChunk, LightMap},
+    RenderSet,
+};
 
 const TRIANGLES: [u32; 6] = [0, 1, 2, 2, 1, 3];
 
-pub struct ChunkPlugin;
+pub struct ChunkMeshPlugin;
 
-impl Plugin for ChunkPlugin {
+impl Plugin for ChunkMeshPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ChunkMeshEvent>();
         app.add_systems(
             Update,
-            (mesh_system, handle_mesh_tasks).run_if(GameState::in_game),
+            (mesh_system, apply_deferred, handle_mesh_tasks)
+                .chain()
+                .in_set(RenderSet::Mesh)
+                .run_if(GameState::in_game),
         );
     }
 }
@@ -43,19 +50,23 @@ pub struct ChunkMeshEvent {
 }
 
 #[derive(Component)]
-pub struct ChunkMeshTask(
-    Task<(
+pub struct ChunkMeshTask {
+    position: IVec3,
+    task: Task<(
         Vec<(Handle<materials::BlockMaterial>, Mesh)>,
         Vec<(Handle<Scene>, Transform)>,
     )>,
-);
+}
 
 /// Launches new mesh tasks when chunks change.
 fn mesh_system(
     mut commands: Commands,
+    origin: Res<Origin>,
     world_map: Res<WorldMap>,
     light_map: Res<LightMap>,
     mut mesh_events: EventReader<ChunkMeshEvent>,
+    mut count: Local<HashMap<IVec3, u32>>,
+    mut target: Local<u32>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
@@ -63,13 +74,29 @@ fn mesh_system(
         match world_map.get_chunk(&event.chunk_position) {
             Some(chunk) => {
                 if chunk.entity.is_some() {
+                    *target += 1;
+                    let c = count.entry(event.chunk_position).or_insert(0);
+                    *c += 1;
                     let expanded_chunk = world_map.get_expanded_chunk(event.chunk_position);
                     let expanded_light_chunk = light_map.get_expanded_chunk(event.chunk_position);
 
-                    let task = thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk));
+                    let task = if (event.chunk_position - origin.0)
+                        .abs()
+                        .cmple(IVec3::splat(CHUNK_SIZE as i32))
+                        .all()
+                    {
+                        let result =
+                            future::block_on(build_mesh(expanded_chunk, expanded_light_chunk));
+                        thread_pool.spawn(async { result })
+                    } else {
+                        thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk))
+                    };
                     commands
                         .entity(chunk.entity.unwrap())
-                        .insert(ChunkMeshTask(task));
+                        .insert(ChunkMeshTask {
+                            position: event.chunk_position,
+                            task,
+                        });
                 }
             }
             None => {
@@ -77,6 +104,22 @@ fn mesh_system(
             }
         }
     }
+
+    //if *target > 20000 {
+    //    let mut bins = HashMap::new();
+    //    for (_, value) in count.iter() {
+    //        bins.entry(*value).or_insert(0).add_assign(1);
+    //    }
+    //    bins.retain(|_, value| {
+    //        if *value > 1 {
+    //            true
+    //        } else {
+    //            false
+    //        }
+    //    });
+    //    dbg!(bins);
+    //    panic!();
+    //}
 }
 
 // Meshes are computed async, this handles completed meshes
@@ -84,10 +127,17 @@ fn handle_mesh_tasks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut chunk_meshes: Query<(Entity, &mut ChunkMeshTask)>,
+    mut count: Local<HashMap<IVec3, u32>>,
+    mut target: Local<u32>,
 ) {
     for (entity, mut task) in chunk_meshes.iter_mut() {
-        if let Some((block_meshes, block_models)) = future::block_on(future::poll_once(&mut task.0))
+        if let Some((block_meshes, block_models)) =
+            future::block_on(future::poll_once(&mut task.task))
         {
+            //*target += 1;
+            //let c = count.entry(task.position).or_insert(0);
+            //*c += 1;
+
             let mut children = Vec::with_capacity(block_meshes.len() + block_models.len());
 
             for (material_handle, mesh) in block_meshes.into_iter() {
@@ -98,7 +148,6 @@ fn handle_mesh_tasks(
                             material: material_handle.clone(),
                             ..Default::default()
                         })
-                        .insert(NoFrustumCulling)
                         .id(),
                 );
             }
@@ -124,6 +173,22 @@ fn handle_mesh_tasks(
                 .push_children(&children);
         }
     }
+
+    //if *target > 10000 {
+    //    let mut bins = HashMap::new();
+    //    for (_, value) in count.iter() {
+    //        bins.entry(*value).or_insert(0).add_assign(1);
+    //    }
+    //    bins.retain(|_, value| {
+    //        if *value > 1 {
+    //            true
+    //        } else {
+    //            false
+    //        }
+    //    });
+    //    dbg!(bins);
+    //    panic!();
+    //}
 }
 
 /// Used to build a block mesh
@@ -217,7 +282,7 @@ async fn build_mesh(
             for z in 1..CHUNK_SIZE + 1 {
                 let block_id = chunk.get_block(x, y, z).unwrap();
 
-                let block_config = &blocks[&block_id];
+                let block_config = blocks.get_config(block_id);
 
                 let block_state = if block_config.can_have_block_state() {
                     chunk
@@ -255,7 +320,7 @@ async fn build_mesh(
                                     None => continue,
                                 };
 
-                                let adjacent_block_config = &blocks[&adjacent_block_id];
+                                let adjacent_block_config = blocks.get_config(adjacent_block_id);
 
                                 if adjacent_block_config.culls(block_config) {
                                     let adjacent_block_state =

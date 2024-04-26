@@ -1,7 +1,7 @@
 use sha1::Digest;
 use std::io::prelude::*;
 
-use bevy::{asset::LoadState, gltf::Gltf, prelude::*};
+use bevy::prelude::*;
 use fmc_networking::{messages, NetworkData};
 
 mod block_textures;

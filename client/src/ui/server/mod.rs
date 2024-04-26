@@ -9,12 +9,9 @@ use bevy::{
 use fmc_networking::{messages, NetworkClient, NetworkData};
 use serde::Deserialize;
 
-use crate::{
-    game_state::GameState,
-    ui::{widgets::TextBox, DEFAULT_FONT_HANDLE},
-};
+use crate::{game_state::GameState, ui::widgets::TextBox};
 
-use self::items::{CursorItemBox, ItemBoxSection, ItemStack, Items};
+use self::items::{CursorItemBox, ItemBoxSection};
 use super::widgets::Widgets;
 
 pub mod items;
@@ -135,7 +132,7 @@ pub fn load_interfaces(
                 bevy::render::texture::ImageType::Extension("png"),
                 CompressedImageFormats::NONE,
                 false,
-                ImageSampler::Default
+                ImageSampler::Default,
             ) {
                 Ok(i) => i,
                 Err(_) => {

@@ -37,6 +37,7 @@ fn finished_loading_start_game(net: Res<NetworkClient>, mut state: ResMut<NextSt
     state.set(GameState::Playing);
 }
 
+// TODO: If the client was paused by being unfocused it should unpause when focused again.
 fn pause_when_unfocused(
     state: Res<State<GameState>>,
     mut next_state: ResMut<NextState<GameState>>,

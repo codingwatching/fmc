@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use fmc_networking::NetworkSettings;
 
 use crate::{game_state::GameState, ui::widgets::*};
 
@@ -63,7 +62,7 @@ fn press_play_button(
             ip.push_str(":42069");
         }
 
-        net.connect(ip.clone(), NetworkSettings::default());
+        net.connect(ip.clone());
         game_state.set(GameState::Connecting);
     }
 }

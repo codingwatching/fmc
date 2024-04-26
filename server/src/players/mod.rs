@@ -84,7 +84,7 @@ fn add_and_remove_players(
             ServerNetworkEvent::Disconnected { entity } => {
                 let (player, connection_id) = player_query.get(*entity).unwrap();
                 info!(
-                    "Player disconnected, id: {}, username: {}",
+                    "Player disconnected, ip: {}, username: {}",
                     connection_id,
                     player.unwrap().username
                 );

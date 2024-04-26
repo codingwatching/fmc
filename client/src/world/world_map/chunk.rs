@@ -21,7 +21,7 @@ pub struct ChunkMarker;
 ///     blocks = Vec::with_capacity(CHUNK_SIZE^3)
 #[derive(Clone)]
 pub struct Chunk {
-    // Entity in the ECS. Stores mesh, None if the chunk doesn't have one.
+    // Entity in the ECS. Stores mesh, None if the chunk shouldn't have one.
     pub entity: Option<Entity>,
     /// XXX: Notice that the coordinates align with the rendering world, the z axis extends
     /// out of the screen. 0,0,0 is the bottom left FAR corner. Not bottom left NEAR.
@@ -29,7 +29,7 @@ pub struct Chunk {
     /// Indexed by x*CHUNK_SIZE^2 + z*CHUNK_SIZE + y
     blocks: Vec<BlockId>,
     /// Optional block state
-    pub block_state: HashMap<usize, BlockState>,
+    block_state: HashMap<usize, BlockState>,
 }
 
 impl Chunk {
@@ -164,19 +164,6 @@ pub enum ChunkFace {
 }
 
 impl ChunkFace {
-    // TODO: Is it better to use an associated constant for the normals?
-    pub fn normal(&self) -> Vec3 {
-        match self {
-            &ChunkFace::Front => Vec3::Z,
-            &ChunkFace::Back => -Vec3::Z,
-            &ChunkFace::Right => Vec3::X,
-            &ChunkFace::Left => -Vec3::X,
-            &ChunkFace::Top => Vec3::Y,
-            &ChunkFace::Bottom => -Vec3::Y,
-            &ChunkFace::None => panic!("Can't get normal of ChunkFace::None"),
-        }
-    }
-
     pub fn opposite(&self) -> Self {
         match self {
             &ChunkFace::Front => ChunkFace::Back,
@@ -189,66 +176,8 @@ impl ChunkFace {
         }
     }
 
-    pub fn is_opposite(&self, check_opposing: &Self) -> bool {
-        match self {
-            &ChunkFace::Front => check_opposing == &ChunkFace::Back,
-            &ChunkFace::Back => check_opposing == &ChunkFace::Front,
-            &ChunkFace::Right => check_opposing == &ChunkFace::Left,
-            &ChunkFace::Left => check_opposing == &ChunkFace::Right,
-            &ChunkFace::Top => check_opposing == &ChunkFace::Bottom,
-            &ChunkFace::Bottom => check_opposing == &ChunkFace::Top,
-            &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
-        }
-    }
-
-    /// Finds the chunk faces orthogonal to self.
-    pub fn surrounding(&self) -> Vec<Self> {
-        let mut all = vec![
-            Self::Front,
-            Self::Back,
-            Self::Left,
-            Self::Right,
-            Self::Top,
-            Self::Bottom,
-        ];
-        all.retain(|dir| dir != &self.opposite() && dir != self);
-        return all;
-    }
-
-    /// Find the chunk faces that are orthogonal on each ChunkFace in 'surrounding', but that do not
-    /// go in the direction of self, or its opposite.
-    pub fn orthogonal(&self, surrounding: &Vec<Self>) -> Vec<[Self; 2]> {
-        let mut ortho = Vec::with_capacity(4);
-        for chunk_face in surrounding {
-            if self == &ChunkFace::Top || self == &ChunkFace::Bottom {
-                match chunk_face {
-                    ChunkFace::Right => ortho.push([ChunkFace::Front, ChunkFace::Back]),
-                    ChunkFace::Left => ortho.push([ChunkFace::Front, ChunkFace::Back]),
-                    ChunkFace::Front => ortho.push([ChunkFace::Left, ChunkFace::Right]),
-                    ChunkFace::Back => ortho.push([ChunkFace::Left, ChunkFace::Right]),
-                    _ => {}
-                }
-            } else if self == &ChunkFace::Front || self == &ChunkFace::Back {
-                match chunk_face {
-                    ChunkFace::Right => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
-                    ChunkFace::Left => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
-                    ChunkFace::Top => ortho.push([ChunkFace::Left, ChunkFace::Right]),
-                    ChunkFace::Bottom => ortho.push([ChunkFace::Left, ChunkFace::Right]),
-                    _ => {}
-                }
-            } else if self == &ChunkFace::Right || self == &ChunkFace::Left {
-                match chunk_face {
-                    ChunkFace::Front => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
-                    ChunkFace::Back => ortho.push([ChunkFace::Top, ChunkFace::Bottom]),
-                    ChunkFace::Top => ortho.push([ChunkFace::Front, ChunkFace::Back]),
-                    ChunkFace::Bottom => ortho.push([ChunkFace::Front, ChunkFace::Back]),
-                    _ => {}
-                }
-            }
-        }
-        return ortho;
-    }
-
+    // TODO: This looks bad. There should be a ChunkPosition struct, it has the method shift(face:
+    // ChunkFace)
     /// Moves the position a chunk's length in the direction of the face.
     pub fn shift_position(&self, mut position: IVec3) -> IVec3 {
         match self {
@@ -261,54 +190,5 @@ impl ChunkFace {
             ChunkFace::None => {}
         }
         return position;
-    }
-
-    /// Returns the chunk face the vector placed in the middle of the chunk points at.
-    pub fn convert_vector(vec: &Vec3) -> Self {
-        let abs = vec.abs();
-        if abs.x > abs.y && abs.x > abs.z {
-            if vec.x < 0.0 {
-                return ChunkFace::Left;
-            } else {
-                return ChunkFace::Right;
-            }
-        } else if abs.y > abs.x && abs.y > abs.z {
-            if vec.y < 0.0 {
-                return ChunkFace::Bottom;
-            } else {
-                return ChunkFace::Top;
-            }
-        } else {
-            if vec.z < 0.0 {
-                return ChunkFace::Back;
-            } else {
-                return ChunkFace::Front;
-            }
-        }
-    }
-
-    /// Given a relative block position that is immediately adjacent to one of the chunk's faces, return the face.
-    pub fn from_position(pos: &IVec3) -> Self {
-        if pos.z > (CHUNK_SIZE - 1) as i32 {
-            return ChunkFace::Front;
-        } else if pos.z < 0 {
-            return ChunkFace::Back;
-        } else if pos.x > (CHUNK_SIZE - 1) as i32 {
-            return ChunkFace::Right;
-        } else if pos.x < 0 {
-            return ChunkFace::Left;
-        } else if pos.y > (CHUNK_SIZE - 1) as i32 {
-            return ChunkFace::Top;
-        } else if pos.y < 0 {
-            return ChunkFace::Bottom;
-        } else {
-            return ChunkFace::None;
-        }
-    }
-
-    pub fn iter() -> Iter<'static, ChunkFace> {
-        use self::ChunkFace::*;
-        static CHUNK_FACES: [ChunkFace; 6] = [Front, Back, Right, Left, Top, Bottom];
-        CHUNK_FACES.iter()
     }
 }

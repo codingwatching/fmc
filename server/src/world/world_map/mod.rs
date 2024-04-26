@@ -29,7 +29,7 @@ impl Plugin for WorldMapPlugin {
         .add_event::<BlockUpdate>()
         .add_event::<ChangedBlockEvent>()
         .add_systems(
-            PreUpdate,
+            PostUpdate,
             (
                 handle_block_updates.run_if(on_event::<BlockUpdate>()),
                 send_changed_block_event.after(handle_block_updates),

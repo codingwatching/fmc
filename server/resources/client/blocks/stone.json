@@ -9,5 +9,5 @@
         "front": "stone.png",
         "back": "stone.png"
     },
-    "drop": "stick"
+    "drop": "stone"
 }

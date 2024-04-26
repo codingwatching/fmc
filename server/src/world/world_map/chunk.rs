@@ -34,7 +34,7 @@ impl Chunk {
         terrain_generator: TerrainGenerator,
         database: Database,
     ) -> (IVec3, Chunk) {
-        let changed_blocks = database.load_chunk_blocks(&position).await;
+        let changed_blocks = database.load_chunk_blocks(&position);
         let mut chunk = Self {
             changed_blocks,
             terrain_features: Vec::new(),
@@ -43,7 +43,7 @@ impl Chunk {
             visible_faces: HashSet::new(),
         };
 
-        terrain_generator.generate_chunk(position, &mut chunk).await;
+        terrain_generator.generate_chunk(position, &mut chunk);
 
         return (position, chunk);
     }
@@ -79,12 +79,9 @@ impl Chunk {
 
     // TODO: This is expensive and needs to be recomputed every time a block changes. I don't think
     // it is tenable with many players.
-    // 1. There's the option of off-loading this to the clients and having them send the result
-    //    since they already do the same. The result will be evil though so has to be sampled and
-    //    validated, much hassle.
-    // 2. Which blocks have been 'visited'(blocks that are see-through) can be cached as a
-    //    bitvec(512 bytes). I don't know how to do it, but you could probably use this to skip all
-    //    work in most cases by deducing that the changed block doesn't connect two regions.
+    // Which blocks have been 'visited'(blocks that are transparent) can be cached as a
+    // bitvec(512 bytes). I don't know how to do it, but you could probably use this to skip all
+    // work in most cases by deducing that the changed block doesn't connect two regions.
     pub(super) fn check_visible_faces(&mut self) {
         let blocks = Blocks::get();
 
@@ -126,7 +123,7 @@ impl Chunk {
                     for source_position in [front_back, left_right, top_bottom] {
                         stack.push(source_position);
 
-                        // TODO: This is accessed a lot, maybe ChunkFace should be a bitmask and
+                        // TODO: This is too heavy, maybe ChunkFace could be a bitmask and
                         // you can just | them.
                         let mut seen = HashSet::new();
 
@@ -227,55 +224,30 @@ pub enum ChunkFace {
 }
 
 impl ChunkFace {
-    // TODO: Is it better to use an associated constant for the normals?
-    pub fn normal(&self) -> Vec3 {
-        match self {
-            &ChunkFace::Front => Vec3::Z,
-            &ChunkFace::Back => -Vec3::Z,
-            &ChunkFace::Right => Vec3::X,
-            &ChunkFace::Left => -Vec3::X,
-            &ChunkFace::Top => Vec3::Y,
-            &ChunkFace::Bottom => -Vec3::Y,
-            &ChunkFace::None => panic!("Can't get normal of ChunkFace::None"),
-        }
-    }
-
     pub fn opposite(&self) -> Self {
         match self {
-            &ChunkFace::Front => ChunkFace::Back,
-            &ChunkFace::Back => ChunkFace::Front,
-            &ChunkFace::Right => ChunkFace::Left,
-            &ChunkFace::Left => ChunkFace::Right,
-            &ChunkFace::Top => ChunkFace::Bottom,
-            &ChunkFace::Bottom => ChunkFace::Top,
-            &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
-        }
-    }
-
-    pub fn is_opposite(&self, check_opposing: &Self) -> bool {
-        match self {
-            &ChunkFace::Front => check_opposing == &ChunkFace::Back,
-            &ChunkFace::Back => check_opposing == &ChunkFace::Front,
-            &ChunkFace::Right => check_opposing == &ChunkFace::Left,
-            &ChunkFace::Left => check_opposing == &ChunkFace::Right,
-            &ChunkFace::Top => check_opposing == &ChunkFace::Bottom,
-            &ChunkFace::Bottom => check_opposing == &ChunkFace::Top,
-            &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
+            ChunkFace::Front => ChunkFace::Back,
+            ChunkFace::Back => ChunkFace::Front,
+            ChunkFace::Right => ChunkFace::Left,
+            ChunkFace::Left => ChunkFace::Right,
+            ChunkFace::Top => ChunkFace::Bottom,
+            ChunkFace::Bottom => ChunkFace::Top,
+            ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
         }
     }
 
     /// Moves the position a chunk's length in the direction of the face.
-    pub fn shift_position(&self, mut position: IVec3) -> IVec3 {
+    pub fn shift_position(&self, mut chunk_position: IVec3) -> IVec3 {
         match self {
-            ChunkFace::Front => position.z += CHUNK_SIZE as i32,
-            ChunkFace::Back => position.z -= CHUNK_SIZE as i32,
-            ChunkFace::Right => position.x += CHUNK_SIZE as i32,
-            ChunkFace::Left => position.x -= CHUNK_SIZE as i32,
-            ChunkFace::Top => position.y += CHUNK_SIZE as i32,
-            ChunkFace::Bottom => position.y -= CHUNK_SIZE as i32,
+            ChunkFace::Front => chunk_position.z += CHUNK_SIZE as i32,
+            ChunkFace::Back => chunk_position.z -= CHUNK_SIZE as i32,
+            ChunkFace::Right => chunk_position.x += CHUNK_SIZE as i32,
+            ChunkFace::Left => chunk_position.x -= CHUNK_SIZE as i32,
+            ChunkFace::Top => chunk_position.y += CHUNK_SIZE as i32,
+            ChunkFace::Bottom => chunk_position.y -= CHUNK_SIZE as i32,
             ChunkFace::None => {}
         }
-        return position;
+        return chunk_position;
     }
 
     /// Returns the chunk face the vector placed in the middle of the chunk points at.

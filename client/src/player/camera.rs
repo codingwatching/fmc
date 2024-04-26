@@ -171,7 +171,7 @@ fn fog(
         };
 
         let blocks = Blocks::get();
-        let block_config = &blocks[&block_id];
+        let block_config = blocks.get_config(block_id);
         if let Some(fog) = block_config.fog_settings() {
             *fog_settings = fog.clone();
         } else {

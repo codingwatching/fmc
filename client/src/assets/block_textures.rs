@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     render::{
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        texture::{CompressedImageFormats, ImageType, ImageSampler},
+        texture::{CompressedImageFormats, ImageSampler, ImageType},
     },
 };
 
@@ -62,7 +62,7 @@ pub fn load_block_textures(mut commands: Commands, mut images: ResMut<Assets<Ima
             ImageType::MimeType("image/png"),
             CompressedImageFormats::NONE,
             true,
-            ImageSampler::Default
+            ImageSampler::Default,
         )
         .unwrap();
 

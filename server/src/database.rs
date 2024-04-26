@@ -306,7 +306,7 @@ impl Database {
     //    }
     //}
 
-    pub async fn load_chunk_blocks(
+    pub fn load_chunk_blocks(
         &self,
         position: &IVec3,
     ) -> HashMap<usize, (BlockId, Option<BlockState>)> {
@@ -609,7 +609,7 @@ impl Database {
         let mut model_names = Vec::new();
 
         let directory = std::fs::read_dir(crate::world::models::MODEL_PATH)
-            .expect("Could not read files from model directory, make sure it is present.\n");
+            .expect("Could not read files from model directory, make sure it is present.");
 
         for dir_entry in directory {
             let file_path = match dir_entry {

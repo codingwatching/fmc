@@ -1,6 +1,9 @@
-#import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::mesh_bindings::mesh
-#import bevy_pbr::mesh_functions
+#import bevy_pbr::{
+    mesh_functions,
+    mesh_view_bindings,
+    mesh_bindings,
+    view_transformations::position_world_to_clip
+}
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -27,7 +30,7 @@ struct Vertex {
 };
 
 struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
+    @builtin(position) position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
 #ifdef VERTEX_UVS
@@ -62,7 +65,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 #ifdef VERTEX_POSITIONS
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.clip_position = mesh_functions::mesh_position_world_to_clip(out.world_position);
+    out.position = position_world_to_clip(out.world_position.xyz);
 #endif
 
 #ifdef VERTEX_UVS

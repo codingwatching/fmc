@@ -1,4 +1,4 @@
-use std::simd::{LaneCount, Simd, SimdFloat, SupportedLaneCount};
+use std::simd::{LaneCount, Simd, num::SimdFloat, SupportedLaneCount};
 
 use multiversion::multiversion;
 

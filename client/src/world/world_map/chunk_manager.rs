@@ -1,14 +1,14 @@
 use bevy::prelude::*;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use fmc_networking::{messages, NetworkClient, NetworkData};
 
 use crate::{
     constants::*,
     game_state::GameState,
-    player::Player,
-    settings, utils,
+    rendering::RenderSet,
+    settings,
     world::{
         blocks::{Block, BlockState, Blocks},
         world_map::{
@@ -23,25 +23,49 @@ use crate::{
 pub struct ChunkManagerPlugin;
 impl Plugin for ChunkManagerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Pause>().add_systems(
-            Update,
-            (
-                handle_new_chunks,
-                prepare_for_frustum_culling,
-                handle_block_updates.after(handle_new_chunks),
-                pause_system,
+        app.init_resource::<Pause>()
+            .add_event::<NewChunkEvent>()
+            .add_systems(
+                Update,
+                (
+                    handle_new_chunks,
+                    prepare_for_frustum_culling,
+                    handle_block_updates
+                        .after(handle_new_chunks)
+                        .in_set(RenderSet::UpdateBlocks),
+                    pause_system,
+                )
+                    .run_if(GameState::in_game),
             )
-                .run_if(GameState::in_game),
-        )
-        .add_systems(
-            // This has to be run postupdate because of the async mesh/visibility tasks. If
-            // it despawns the same tick a task is finished it will panic on trying to insert
-            // for non-existing entity. https://github.com/bevyengine/bevy/issues/3845 relevant
-            // issue
-            PostUpdate,
-            unload_chunks.run_if(resource_changed::<Origin>()),
-        );
+            .add_systems(
+                // BUG: Other systems add components to the chunk entity. If we're unlucky this
+                // system's commands will despawn the entity before those commands are applied.
+                //
+                // Ambiguous system order
+                // A <-> B
+                // B -> A
+                // Command application order
+                //
+                // Insert a component on an entity in A, despawn the entity in B
+                // result:
+                // Apply B: despawn, Apply A: panic, no entity
+                //
+                // Relevant issues:
+                //  https://github.com/bevyengine/bevy/issues/10122
+                //  https://github.com/bevyengine/bevy/issues/3845
+                //
+                // To work around this, it is run in PostUpdate. Systems that change components are
+                // kept in Update.
+                PostUpdate,
+                unload_chunks.run_if(resource_changed::<Origin>()),
+            );
     }
+}
+
+/// Event sent after a chunk has been added to the world map
+#[derive(Event)]
+pub struct NewChunkEvent {
+    pub position: IVec3,
 }
 
 #[derive(Resource, Default)]
@@ -123,17 +147,14 @@ fn unload_chunks(
 // it was too hard to imagine how it would work. Went with simpler version to save time. Maybe
 // implement this or maybe ray tracing can solve it. Meanwhile, it will take up a huge chunk of the
 // frame time.
-// TODO: This isn't actually frustum culling it just marks the chunks that can possibly be viewed
-// by the player as visible. The frustum culling is done by bevy. It could be converted into a culling
-// algo, but it has to be faster, traversing the world map each update it too expensive. It could
-// also be made to just run when looking through a different chunk face and when the origin is
-// changed.
+// TODO: This could be made to do culling too. It's not fast enough to run each frame, but running
+// it when the player looks through a different chunk face could be good enough.
 //
 // This traverses all chunks that are visible from the chunk the player is currently in. It does
-// this by fanning out from the origin chunk, each step it takes it marks the direction it entered
+// this by fanning out from the origin chunk, each step it takes, it marks the direction it entered
 // the chunk by up to a total of three directions. From then on it can only travel in those
 // directions. This makes it so that for example chunks that are on the other side of a mountain
-// are marked as not visible, culling the amount of chunks that need to be rendered. 
+// are marked as not visible, culling the amount of chunks that need to be rendered.
 fn prepare_for_frustum_culling(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
@@ -253,9 +274,9 @@ fn prepare_for_frustum_culling(
     }
 }
 
-// TODO: This could take like ResMut<Events<ChunkResponse>> and drain the chunks to avoid
+// TODO: This could take ResMut<Events<ChunkResponse>> and drain the chunks to avoid
 // reallocation. The lighting system listens for the same event, and it is nice to have the systems
-// self-contained. Maybe the world map should contain only the chunk entity. This way There would
+// self-contained. Maybe the world map should contain only the chunk entity. This way there would
 // no longer be a need for ComputeVisibleChunkFacesEvent either. Everything just listens for
 // Changed<Chunk>. Accessing the world_map isn't actually a bottleneck I think, and doing a double
 // lookup can't be that bad.
@@ -266,14 +287,15 @@ fn handle_new_chunks(
     net: Res<NetworkClient>,
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
-    mut new_chunks: EventReader<NetworkData<messages::Chunk>>,
+    mut new_chunk_events: EventWriter<NewChunkEvent>,
+    mut received_chunks: EventReader<NetworkData<messages::Chunk>>,
 ) {
-    for chunk in new_chunks.read() {
+    for chunk in received_chunks.read() {
         let blocks = Blocks::get();
 
         // TODO: Need to validate block state too. Server can crash client.
         for block_id in chunk.blocks.iter() {
-            if !blocks.contain(*block_id) {
+            if !blocks.contains(*block_id) {
                 net.disconnect(format!(
                     "Server sent chunk with unknown block id: '{}'",
                     block_id
@@ -282,10 +304,14 @@ fn handle_new_chunks(
             }
         }
 
+        new_chunk_events.send(NewChunkEvent {
+            position: chunk.position,
+        });
+
         // TODO: Only handles uniform air chunks. These ifs can be collapsed, handle uniformity
         // in Chunk::new, skip entity like now if the chunk won't have a mesh.
         if chunk.blocks.len() == 1
-            && match &blocks[&chunk.blocks[0]] {
+            && match blocks.get_config(chunk.blocks[0]) {
                 Block::Cube(b) if b.quads.len() == 0 => true,
                 _ => false,
             }
@@ -328,8 +354,8 @@ fn handle_new_chunks(
     }
 }
 
-// TODO: This doesn't belong in this file?
-fn handle_block_updates(
+// TODO: This doesn't feel like it belongs in this file
+pub fn handle_block_updates(
     mut commands: Commands,
     net: Res<NetworkClient>,
     origin: Res<Origin>,
@@ -337,11 +363,21 @@ fn handle_block_updates(
     mut block_updates_events: EventReader<NetworkData<messages::BlockUpdates>>,
 ) {
     for event in block_updates_events.read() {
+        if event.blocks.len() == 0 {
+            // This is for hygiene only, although technically bad.
+            net.disconnect(&format!(
+                "Server error: Received an empty set of block updates."
+            ));
+            return;
+        }
+
         let chunk = if let Some(c) = world_map.get_chunk_mut(&event.chunk_position) {
             c
         } else {
-            net.disconnect("Server sent block update for non-existing chunk.");
-            return;
+            // TODO: I'm not sure that this is valid. It sometimes hits this where I'd presume it would
+            // not. Leaning towards there being some kind of error. It's supposed to use that tcp
+            // is ordered, and chunk should be sent before any updates.
+            continue;
         };
 
         if chunk.is_uniform() {
@@ -359,24 +395,12 @@ fn handle_block_updates(
 
         let blocks = Blocks::get();
         for (index, block, block_state) in event.blocks.iter() {
-            if !blocks.contain(*block) {
+            if !blocks.contains(*block) {
                 net.disconnect(
                     "Server sent block update with non-existing block, no block \
                     with the id: '{block}'",
                 );
                 return;
-            }
-
-            if chunk[*index] == *block {
-                // TODO: On initial chunk reception this gets triggered a bunch of times. The
-                // server cannot generate blocks that originate from other chunks, so they are sent
-                // as block updates. I assume this is tree leaves, but check that it
-                // is not air!
-                // TODO: This is perhaps not sound, and it should also make sure the state hasn't
-                // changed maybe.
-                //
-                // Server sends blocks this client has placed, so we skip.
-                continue;
             }
 
             chunk[*index] = *block;

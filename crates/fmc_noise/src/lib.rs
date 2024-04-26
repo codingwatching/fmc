@@ -12,12 +12,13 @@ mod constant;
 mod fbm;
 mod gradient;
 mod lerp;
-mod minmax;
+mod min_and_max;
 mod mul;
 mod noise_tree;
 mod perlin;
 mod range;
 mod simplex;
+mod square;
 
 // TODO: Make a cargo feature "f64", makes it compile to f64 instead of f32
 //if cfg(f64)
@@ -27,7 +28,7 @@ mod simplex;
 //type Float = f32;
 //type Int = i32;
 
-// TODO: Find some way to make this Copy. You often use the same noise many places and clone makes
+// TODO: Find some way to make this Copy? You often use the same noise many places and clone makes
 // it noisy.
 #[derive(Clone, Debug)]
 pub struct Noise {
@@ -94,7 +95,7 @@ impl Noise {
         self
     }
 
-    /// Fractal Brownian Motion
+    /// Fractal Brownian Motion (layered noise)
     pub fn fbm(mut self, octaves: u32, gain: f32, lacunarity: f32) -> Self {
         let mut amp = gain;
         let mut scale = 1.0;
@@ -132,6 +133,7 @@ impl Noise {
         self
     }
 
+    // TODO: Remove and replace with noise::constant, same for mul_value
     /// Add a value to the noise
     pub fn add_value(mut self, value: f32) -> Self {
         self.settings = NoiseSettings::AddValue {
@@ -141,6 +143,7 @@ impl Noise {
         self
     }
 
+    /// Clamp the noise values between min and max
     pub fn clamp(mut self, min: f32, max: f32) -> Self {
         self.settings = NoiseSettings::Clamp {
             min,
@@ -152,7 +155,7 @@ impl Noise {
 
     /// Take the max value between the two noises
     pub fn max(mut self, other: Self) -> Self {
-        self.settings = NoiseSettings::MaxNoise {
+        self.settings = NoiseSettings::Max {
             left: Box::new(self.settings),
             right: Box::new(other.settings),
         };
@@ -161,13 +164,14 @@ impl Noise {
 
     /// Take the min value between the two noises
     pub fn min(mut self, other: Self) -> Self {
-        self.settings = NoiseSettings::MinNoise {
+        self.settings = NoiseSettings::Min {
             left: Box::new(self.settings),
             right: Box::new(other.settings),
         };
         self
     }
 
+    // TODO: Convert to just 'mul' and take a noise
     /// Multiply the noise by a value.
     pub fn mul_value(mut self, value: f32) -> Self {
         self.settings = NoiseSettings::MulValue {
@@ -176,16 +180,6 @@ impl Noise {
         };
         self
     }
-
-    ///// Combine two noises so that the max value of both is chosen where the first noise is positive,
-    ///// and the min value where it is negative.
-    //pub fn minmax(mut self, other: Self) -> Self {
-    //    self.settings = NoiseSettings::MulValue {
-    //        value,
-    //        source: Box::new(self.settings),
-    //    };
-    //    self
-    //}
 
     pub fn lerp(mut self, high: Self, low: Self) -> Self {
         self.settings = NoiseSettings::Lerp {
@@ -203,6 +197,13 @@ impl Noise {
             selector_source: Box::new(self.settings),
             high_source: Box::new(high_noise.settings),
             low_source: Box::new(low_noise.settings),
+        };
+        self
+    }
+
+    pub fn square(mut self) -> Self {
+        self.settings = NoiseSettings::Square {
+            source: Box::new(self.settings),
         };
         self
     }
@@ -277,22 +278,22 @@ enum NoiseSettings {
         max: f32,
         source: Box<NoiseSettings>,
     },
-    MaxNoise {
+    Lerp {
+        selector_source: Box<NoiseSettings>,
+        high_source: Box<NoiseSettings>,
+        low_source: Box<NoiseSettings>,
+    },
+    Max {
         left: Box<NoiseSettings>,
         right: Box<NoiseSettings>,
     },
-    MinNoise {
+    Min {
         left: Box<NoiseSettings>,
         right: Box<NoiseSettings>,
     },
     MulValue {
         value: f32,
         source: Box<NoiseSettings>,
-    },
-    Lerp {
-        selector_source: Box<NoiseSettings>,
-        high_source: Box<NoiseSettings>,
-        low_source: Box<NoiseSettings>,
     },
     Range {
         high: f32,
@@ -301,10 +302,9 @@ enum NoiseSettings {
         high_source: Box<NoiseSettings>,
         low_source: Box<NoiseSettings>,
     },
-}
-
-trait AsNoiseSettings {
-    fn as_noise_settings(self, source: NoiseSettings) -> NoiseSettings;
+    Square {
+        source: Box<NoiseSettings>,
+    },
 }
 
 #[multiversion(targets = "simd")]
@@ -384,8 +384,8 @@ fn generate_2d(noise: &Noise, x: f32, y: f32, width: usize, height: usize) -> (V
     };
 
     let tree = noise_tree::NoiseTree::<N>::new(noise);
-    let start_x = x;
-    let start_y = y;
+    let start_x = y;
+    let start_y = x;
 
     let mut min_s = Simd::splat(f32::MAX);
     let mut max_s = Simd::splat(f32::MIN);
@@ -478,30 +478,30 @@ fn generate_3d(
     }
     let mut i = 0;
     let vector_width = N;
-    let remainder = width % vector_width;
-    let mut x_arr = Vec::with_capacity(vector_width);
+    let remainder = height % vector_width;
+    let mut y_arr = Vec::with_capacity(vector_width);
     unsafe {
-        x_arr.set_len(vector_width);
+        y_arr.set_len(vector_width);
     }
     for i in (0..vector_width).rev() {
-        x_arr[i] = start_x + i as f32;
+        y_arr[i] = start_y + i as f32;
     }
 
-    // TODO: This loop in loop system is probably not good for branch prediction, try a flat design
-    // where "overflowing" values of the first axis is transfered to the second, and same for
-    // second to third every iteration.
-    let mut z = Simd::splat(start_z);
-    for _ in 0..depth {
-        let mut y = Simd::splat(start_y);
-        for _ in 0..height {
-            let mut x = Simd::from_slice(&x_arr);
-            for _ in 0..width / vector_width {
+    // TODO: This loop in loop system is maybe not good? Try a flat design where "overflowing"
+    // values of the first axis is transfered to the second, and same for second to third every
+    // iteration.
+    let mut x = Simd::splat(start_x);
+    for _ in 0..width {
+        let mut z = Simd::splat(start_z);
+        for _ in 0..depth {
+            let mut y = Simd::from_slice(&y_arr);
+            for _ in 0..height / vector_width {
                 let f = unsafe { (tree.nodes[0].function_3d)(&tree, &tree.nodes[0], x, y, z) };
                 max_s = max_s.simd_max(f);
                 min_s = min_s.simd_min(f);
                 f.copy_to_slice(&mut result[i..]);
                 i += vector_width;
-                x = x + Simd::splat(vector_width as f32);
+                y = y + Simd::splat(vector_width as f32);
             }
             if remainder != 0 {
                 let f = unsafe { (tree.nodes[0].function_3d)(&tree, &tree.nodes[0], x, y, z) };
@@ -519,9 +519,9 @@ fn generate_3d(
                     i += 1;
                 }
             }
-            y = y + Simd::splat(1.0);
+            z = z + Simd::splat(1.0);
         }
-        z = z + Simd::splat(1.0);
+        x = x + Simd::splat(1.0);
     }
     for i in 0..vector_width {
         if min_s[i] < min {
