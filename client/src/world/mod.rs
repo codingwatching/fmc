@@ -18,7 +18,7 @@ impl Plugin for WorldPlugin {
     }
 }
 
-// TODO: This could have been made to be just f64 transforms as with the server, but I don't know
+// TODO: Transforms could have been made to be f64 as with the server, but I don't know
 // enough about the rendering stuff to replace Transform. Instead this litters conversions all over
 // the place.
 //

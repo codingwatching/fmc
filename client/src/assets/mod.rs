@@ -32,8 +32,10 @@ enum LoadingState {
     Two,
 }
 
-// TODO: Almost all of this is workarounds for assets having to be loaded async. Bevy 0.11 will
-// come with changed to the asset system, so reevaluate then.
+// TODO: Remove everything, call all functions from their modules, check for resource_added for
+// dependencies. Tough when it comes to the stuff that depends Blocks since that is a global.
+// I want to clean this up so stuff doesn't have to be exposed, and it would be nice to have
+// asset reloading where things that dependron each other are automatically redone.
 pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
@@ -41,11 +43,11 @@ impl Plugin for AssetPlugin {
 
         app.add_systems(
             Update,
-            start_asset_loading.run_if(in_state(AssetState::Inactive)),
-        )
-        .add_systems(
-            Update,
-            handle_assets_response.run_if(in_state(AssetState::Downloading)),
+            (
+                start_asset_loading.run_if(in_state(AssetState::Inactive)),
+                handle_assets_response.run_if(in_state(AssetState::Downloading)),
+                test_finished_load_state_one.run_if(in_state(LoadingState::One)),
+            ),
         )
         .add_systems(OnEnter(AssetState::Loading), start_loading)
         .add_systems(
@@ -55,10 +57,6 @@ impl Plugin for AssetPlugin {
                 models::load_models,
                 crate::ui::server::key_bindings::load_key_bindings,
             ),
-        )
-        .add_systems(
-            Update,
-            test_finished_load_state_one.run_if(in_state(LoadingState::One)),
         )
         .add_systems(
             OnEnter(LoadingState::Two),

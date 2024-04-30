@@ -61,11 +61,12 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
         ),
     );
 
-    let camera_entity = commands
+    let head = commands
         .spawn((camera::CameraBundle::default(), settings.fog.clone()))
+        .insert(SpatialListener::new(0.2))
         .id();
 
-    let player_entity = commands
+    let body = commands
         .spawn(player)
         // XXX: I did not want this, but it is required for visibility by the visibility
         // propagation system.
@@ -78,9 +79,7 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
         .insert(aabb)
         .id();
 
-    commands
-        .entity(player_entity)
-        .push_children(&[camera_entity]);
+    commands.entity(body).push_children(&[head]);
 }
 
 // TODO: The config event is sometimes missed says bevy. Probably because the sever sends it on

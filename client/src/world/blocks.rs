@@ -185,6 +185,7 @@ pub fn load_blocks(
                 is_rotatable,
                 light_attenuation,
                 fog,
+                sound,
             } => {
                 let material_handle = if let Some(m) = material_handles.get(&material) {
                     m.clone().typed()
@@ -364,6 +365,7 @@ pub fn load_blocks(
                     is_rotatable,
                     light_attenuation: light_attenuation.unwrap_or(15).min(15),
                     fog_settings,
+                    sound,
                 })
             }
 
@@ -373,6 +375,7 @@ pub fn load_blocks(
                 side_model,
                 friction,
                 interactable,
+                sound,
             } => {
                 let center_model = if let Some(center_model) = center_model {
                     let path = MODEL_PATH.to_owned() + &center_model.name + ".glb#Scene0";
@@ -417,6 +420,7 @@ pub fn load_blocks(
                     side: side_model,
                     friction,
                     interactable,
+                    sound,
                 })
             }
         };
@@ -512,6 +516,8 @@ pub struct Cube {
     light_attenuation: u8,
     // Fog rendered if the camera is inside the bounds of the cube.
     pub fog_settings: Option<FogSettings>,
+    // Sounds played when walked on or in (random pick)
+    sound: Vec<String>,
 }
 
 // TODO: This was made before the Models collection was made. This could hold model ids instead of
@@ -537,6 +543,8 @@ pub struct BlockModel {
     /// If when the player uses their equipped item on this block, it should count as an
     /// interaction, or it should count as trying to place a block.
     interactable: bool,
+    // Sounds played when walked on or in (random pick)
+    sound: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -623,6 +631,18 @@ impl Block {
             Block::Model(_) => None,
         }
     }
+
+    pub fn walking_sound(&self) -> Option<&String> {
+        // Random index, don't know if correct
+        let index = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as usize;
+        match self {
+            Block::Cube(c) => c.sound.get(index % c.sound.len().max(1)),
+            Block::Model(m) => m.sound.get(index % m.sound.len().max(1)),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -698,6 +718,9 @@ enum BlockConfig {
         light_attenuation: Option<u8>,
         /// If fog should be rendered when the player camera is inside the block.
         fog: Option<FogJson>,
+        /// Sounds played when walking on/in block
+        #[serde(default)]
+        sound: Vec<String>,
     },
     Model {
         /// Name of the block, must be unique
@@ -711,6 +734,9 @@ enum BlockConfig {
         /// If the block is interactable
         #[serde(default)]
         interactable: bool,
+        /// Sounds played when walking on/in block
+        #[serde(default)]
+        sound: Vec<String>,
     },
 }
 

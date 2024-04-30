@@ -19,11 +19,7 @@ use crate::{
     },
 };
 
-// TODO: This needs to be run on fixed timestep. Tabbing out causes game to slow down, delta
-// seconds too large, clip beneath world. Maybe better to do iterations and check every block the
-// player will pass through. This way has guaranteed no tunneling.
-
-// sqrt(2 * gravity * wanted height(1.4)) + some for air resistance that I don't bother calculating
+// sqrt(2 * gravity * wanted height(1.4)) + some for air resistance
 const JUMP_VELOCITY: f32 = 9.0;
 const GRAVITY: Vec3 = Vec3::new(0.0, -32.0, 0.0);
 // TODO: I think this should be a thing only if you hold space. If you are skilled you can press
@@ -355,7 +351,9 @@ fn simulate_player_physics(
             }
         }
 
-        transform.translation = pos_after_move + move_back;
+        if transform.translation != pos_after_move + move_back {
+            transform.translation = pos_after_move + move_back;
+        }
     }
 
     // TODO: The result of this varies with exectuion speed.

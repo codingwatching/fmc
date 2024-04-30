@@ -1,5 +1,5 @@
 # Fmc 
-![picture](github/picture.png)
+![picture](.github/picture.png)
 # How to run
 Rust nightly **required** and [mold linker](https://github.com/rui314/mold) if you use linux.
 ```

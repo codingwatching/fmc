@@ -30,3 +30,6 @@ pub use interfaces::{
     InterfaceOpen, InterfacePlaceItem, InterfaceTakeItem, InterfaceTextBoxUpdate,
     InterfaceTextInput, InterfaceVisibilityUpdate,
 };
+
+mod audio;
+pub use audio::{EnableClientAudio, Sound};

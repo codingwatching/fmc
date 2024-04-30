@@ -9,5 +9,11 @@
         "front": "grass_side.png",
         "back": "grass_side.png"
     },
-    "drop": "dirt"
+    "drop": "dirt",
+    "sound": [
+        "server_assets/audio/grass_1.ogg",
+        "server_assets/audio/grass_2.ogg",
+        "server_assets/audio/grass_3.ogg",
+        "server_assets/audio/grass_4.ogg"
+    ]
 }

@@ -3,17 +3,13 @@ use bevy::{
 };
 
 // The ui module handles two different ui systems. The 'server' system which handles in-game ui
-// sent by the server at constructed at runtime, and the 'gui' system which handles 'client' ui
+// sent by the server that's constructed at runtime, and the 'gui' system which handles 'client' ui
 // e.g. the main menu, the server list and the pause menu.
 
 mod gui;
-pub mod server;
-// TODO: This module doesn't fit here, it is logically a part of the player. It needs access to the
-// focused item of the server interfaces to know which item to equip though, since sending what
-// item to equip from the server has too much latency. To solve I think it can just be turned on
-// its head. Make the server module private, expose EquippedItem from the player module and set it
-// from the server module. Move hand module to player.
+// Hand/equipped item is a special type of interface.
 mod hand;
+pub mod server;
 // Common widgets used between the two ui systems.
 mod widgets;
 

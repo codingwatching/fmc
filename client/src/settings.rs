@@ -22,7 +22,7 @@ pub struct Settings {
     /// Field of view of camera
     pub fov: f32,
     /// Sound volume
-    pub volume: i32,
+    pub volume: f32,
     /// Mouse sensitivity
     pub sensitivity: f32,
     /// Horizontal speed while flying
@@ -51,7 +51,7 @@ impl Default for Settings {
         Self {
             render_distance: 16,
             fov: std::f32::consts::PI / 3.0,
-            volume: 100,
+            volume: 1.0,
             sensitivity: 0.00005,
             flight_speed: 50.0,
             fog: FogSettings {

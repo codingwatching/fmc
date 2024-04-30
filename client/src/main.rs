@@ -5,6 +5,7 @@ use bevy::{
 };
 
 mod assets;
+mod audio;
 mod constants;
 mod game_state;
 mod launcher;
@@ -32,6 +33,7 @@ fn main() {
         //.add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(networking::ClientPlugin)
         .add_plugins(assets::AssetPlugin)
+        .add_plugins(audio::AudioPlugin)
         .add_plugins(game_state::GameStatePlugin)
         .add_plugins(rendering::RenderingPlugin)
         .add_plugins(player::PlayerPlugin)

@@ -253,6 +253,8 @@ impl Plugin for ClientPlugin {
             .listen_for_client_message::<messages::PlayerConfiguration>()
             .listen_for_client_message::<messages::PlayerCameraRotation>()
             .listen_for_client_message::<messages::PlayerPosition>()
+            .listen_for_client_message::<messages::Sound>()
+            .listen_for_client_message::<messages::EnableClientAudio>()
             .listen_for_client_message::<messages::Time>();
     }
 }
